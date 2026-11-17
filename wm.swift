@@ -53,14 +53,14 @@ final class WindowManager {
     static let minVisible = 48
 
     /// Launcher hooks (taskbar buttons, Super+Enter / Ctrl-Alt-T, `open`).
-    /// Phase L sets openTerminal to open a TerminalWindow, Phase N
-    /// openEditor an EditorWindow. They take the WM as a parameter so they
+    /// Phase L sets openTerminal to open a TerminalWindow; openEditor opens
+    /// an untitled EditorWindow (Phase N). They take the WM as a parameter so they
     /// needn't capture it (no retain cycle).
     var openTerminal: (WindowManager) -> Void = { wm in
         wm.add(PlaceholderWindow(title: "Terminal \(wm.nextID)", note: "terminal placeholder (Phase L)"))
     }
     var openEditor: (WindowManager) -> Void = { wm in
-        wm.add(PlaceholderWindow(title: "Editor \(wm.nextID)", note: "editor placeholder (Phase N)"))
+        openEditorWindow(wm, path: nil) // an untitled EditorWindow (editor_window.swift)
     }
 
     // Pointer state.

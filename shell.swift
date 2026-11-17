@@ -46,6 +46,7 @@ struct Shell<T: Terminal> {
     init(terminal: T) {
         term = terminal
         commands = Shell.builtins() + Shell.fileCommands() + Shell.desktopCommands()
+            + Shell.editorCommands()
     }
 
     mutating func run() -> Never {

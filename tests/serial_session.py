@@ -120,6 +120,8 @@ WINDOW_RE = re.compile(r"window #(\d+) x=(-?\d+) y=(-?\d+) w=(\d+) h=(\d+)( focu
 BUTTON_RE = re.compile(r"button x=(\d+) y=(\d+) w=(\d+) h=(\d+) '([^']*)'")
 TITLE_FOCUSED, TITLE_UNFOCUSED = bytes.fromhex("1E5AA8"), bytes.fromhex("3C3C3C")
 TASKBAR_BG = bytes.fromhex("202830")
+# Phase N: EditorColors (editor_window.swift).
+EDITOR_GUTTER_BG, EDITOR_STATUS_BG = bytes.fromhex("2B303B"), bytes.fromhex("2E7D32")
 
 UPTIME_RE = re.compile(r"uptime: (\d+\.\d\d) s \((\d+) ticks\)")
 
@@ -553,6 +555,7 @@ def main():
     # Phase K runs on its own machine: `desktop` changes the screen layout
     # the main session's screen checks and selftests expect.
     desk = None if opts.command else Session(monitor=True)
+    ed = None if opts.command else Session(monitor=True)  # Phase N, also in the desktop
     try:
         boot = s.read_prompt(opts.timeout)
         if not PROMPT_RE.search(boot):
@@ -723,6 +726,8 @@ def main():
 
         if desk:
             failures += desktop_checks(desk, opts.timeout)
+        if ed:
+            failures += editor_checks(ed, opts.timeout)
 
         # In-kernel self-tests: QEMU exits with (code << 1) | 1.
         s.send("selftest")
@@ -740,6 +745,8 @@ def main():
             fault_screen.close()
         if desk:
             desk.close()
+        if ed:
+            ed.close()
 
 
 def desktop_checks(s: Session, timeout: float) -> int:
@@ -853,6 +860,91 @@ def desktop_checks(s: Session, timeout: float) -> int:
     w, h, after = read_ppm(dump)
     band = slice((h - 20) * w * 3, h * w * 3)
     check(before[band] != after[band], "taskbar clock updates")
+    return failures
+
+
+def enter_desktop(s: Session, timeout: float):
+    """Boot to the shell and switch to the desktop; the `desktop` output (or
+    None if that failed). If boot goes straight into the desktop (Phase L),
+    only the wait for the first prompt is needed."""
+    boot = s.read_prompt(timeout)
+    if not PROMPT_RE.search(boot):
+        return None
+    got = s.command("desktop")
+    return got if "desktop: on" in got else None
+
+
+def key_names(text: str):
+    """`sendkey` names for plain text (lower case, digits, space, newline)."""
+    names = {" ": "spc", "\n": "ret", ".": "dot", "/": "slash", "-": "minus"}
+    return [names.get(c, c) for c in text]
+
+
+def editor_checks(s: Session, timeout: float) -> int:
+    """Phase N end to end: `edit /notes.txt` over serial opens a focused
+    editor window; text typed on the PS/2 keyboard (sendkey) goes into it,
+    a typo is fixed with arrows and Backspace, Ctrl-S saves (`cat` over
+    serial, which still reaches the console's shell, shows the file), the
+    window is checked in a screendump, a dirty close is refused until "n",
+    and Ctrl-Q closes."""
+    failures = 0
+    dump = os.path.join(ROOT, "build", "editor.ppm")
+
+    def check(ok, label, detail=""):
+        nonlocal failures
+        failures += not ok
+        print(f"{'PASS' if ok else 'FAIL'}: editor: {label}" + ("" if ok or not detail else f"\n  {detail}"))
+        return ok
+
+    if not check(enter_desktop(s, timeout) is not None, "desktop is on"):
+        return failures
+    got = s.command("edit /notes.txt")
+    if not check("edit: window #2: /notes.txt: new file" in got and "wm: focus #2" in got,
+                 "edit /notes.txt opens a focused window", repr(got)):
+        return failures
+    wins, _ = s.windows()
+    ew = wins.get(2)
+    check(ew and ew[4] and ew[5] == "/notes.txt", "window #2 titled /notes.txt", str(wins))
+
+    # Type two lines with a typo, then fix it: Up, End, 4 x Backspace, retype.
+    s.sendkeys(key_names("hello wrold\nsecond line") + ["up", "end"] + ["backspace"] * 4 + key_names("orld"))
+    s.sendkeys(["ctrl-s"])
+    time.sleep(0.3)
+    got = s.command("cat /notes.txt")
+    check("hello world\r\nsecond line\r\n" in got, "Ctrl-S saved the typed text", repr(got))
+    wins, _ = s.windows()
+    check(wins.get(2, (0,) * 6)[5] == "/notes.txt" and wins[2][4], "title clean after save, editor still focused",
+          str(wins))
+
+    # The window on screen: gutter at the content's top-left, status line
+    # along its bottom.
+    x, y, w, h = ew[:4]
+    gutter = s.wait_pixel(x + 3, y + 23, EDITOR_GUTTER_BG, dump)
+    status = s.pixel_at(x + 2 + 200, y + h - 2 - 4, dump)
+    check(gutter == EDITOR_GUTTER_BG and status == EDITOR_STATUS_BG, "screen: gutter and status line drawn",
+          f"gutter {gutter.hex()} status {status.hex()}")
+
+    # A dirty close (Alt-F4) is refused and asks; "n" discards and closes.
+    s.sendkeys(key_names("x") + ["alt-f4"])
+    time.sleep(0.3)
+    wins, _ = s.windows()
+    check(2 in wins and wins[2][5] == "/notes.txt [+]", "dirty Alt-F4 keeps the window", str(wins))
+    s.sendkeys(["n"])
+    check(b"wm: close #2" in s.read_until(b"wm: close #2", timeout), "n discards and closes")
+    got = s.command("cat /notes.txt")
+    check("hello world\r\nsecond line\r\n" in got and "linex" not in got, "the file kept the saved text",
+          repr(got))
+
+    # `open editor` (the taskbar's + Editor hook): an untitled editor; Ctrl-Q
+    # closes it.
+    s.command("open editor")
+    wins, _ = s.windows()
+    new = [i for i, v in wins.items() if v[5] == "untitled"]
+    check(len(new) == 1 and wins[new[0]][4], "open editor: an untitled, focused editor", str(wins))
+    if new:
+        s.sendkeys(["ctrl-q"])
+        want = f"wm: close #{new[0]}".encode()
+        check(want in s.read_until(want, timeout), "Ctrl-Q closes a clean editor")
     return failures
 
 

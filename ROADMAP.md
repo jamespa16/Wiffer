@@ -291,6 +291,18 @@ where it started.
 
 ## Phase N: text editor
 
+**Done** (N1–N3; `textbuffer.swift`, `editor_model.swift`, `editor_window.swift`,
+`editor_selftest.swift`, `editor_window_selftest.swift`). N4 is not started.
+`EditorWindow` has no task: `handle(_:)` drives the `EditorModel` directly
+and turns `takeDamage()` into rows to repaint; `draw()` paints only those
+rows and the status line, without allocating (the window's single
+`pendingDamage` rect still unions them for the compositor). Quitting removes
+the window through an `unowned(unsafe)` reference to its WM (set by
+`openEditorWindow`). `edit [path]` (relative to the shell's cwd) needs the
+desktop; the taskbar's "+ Editor" and `open editor` open an untitled editor.
+The harness (`editor_checks`, using `enter_desktop()`) types into the editor
+with `sendkey` while serial still drives the console's shell.
+
 `EditorWindow: Window`, opened with `edit <path>` from a terminal or the
 taskbar button. The editing model is a plain struct that knows nothing
 about windows, so it can be tested with scripted keys like the shell.
