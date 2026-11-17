@@ -25,10 +25,19 @@ public func kernelMain() -> Never {
     }
     puts("Hello from Embedded Swift!\n")
 
-    // Phase A/B: descriptor tables first, then the PIC (remapped before any
-    // IRQ can arrive), the timer, and finally interrupts on.
+    // Descriptor tables first so any fault after this point gets a report.
     gdtInit()
     idtInit()
+
+    // Frame allocator next: the Swift heap draws its memory from it, so no
+    // allocation (classes, Array, String, print) may happen before this.
+    guard pmm.initialize() else {
+        puts("pmm: no usable memory map / HHDM\n")
+        hcf()
+    }
+    print("free: \(pmm.freeFrames) frames")
+
+    // PIC is remapped before any IRQ can arrive, then the timer, then sti.
     picInit()
     pitInit()
     sti()

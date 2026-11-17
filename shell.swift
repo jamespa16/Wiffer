@@ -1,5 +1,5 @@
 // Part 1 serial shell: line editing, parsing, and built-in commands.
-// Runs under -no-allocations: all state lives in fixed-size stack storage.
+// The line buffer is fixed-size stack storage; commands may use the heap.
 
 /// A view of `line[start..<end]` without copying.
 struct Span {
@@ -101,7 +101,7 @@ struct Shell {
             echo <text>     print text
             clear           clear the screen
             fb              framebuffer info
-            mem             usable memory from the Limine memory map
+            mem             memory map, frame and heap stats
             peek <hex>      read a 64-bit value at an address
             uptime          time since boot (timer ticks at 100 Hz)
             fault <kind>    raise an exception: ud, de, pf, gp, df
@@ -212,7 +212,13 @@ func memoryInfo() {
         total += e.pointee.length
         if e.pointee.type == UInt64(LIMINE_MEMMAP_USABLE) { usable += e.pointee.length }
     }
-    puts("memory map: "); printDec(resp.pointee.entry_count); puts(" entries\n")
-    puts("usable: "); printDec(usable / 1024); puts(" KiB ("); printDec(usable >> 20); puts(" MiB)\n")
-    puts("all entries: "); printDec(total >> 20); puts(" MiB (incl. reserved/MMIO)\n")
+    let mib = { (frames: Int) in (frames * frameSize) >> 20 }
+    print("memory map: \(resp.pointee.entry_count) entries, usable \(usable >> 20) MiB, all \(total >> 20) MiB (incl. reserved/MMIO)")
+    print("frames: \(pmm.totalFrames) total (\(mib(pmm.totalFrames)) MiB), \(pmm.usedFrames) used (\(mib(pmm.usedFrames)) MiB), \(pmm.freeFrames) free (\(mib(pmm.freeFrames)) MiB)")
+    print("heap: \(heap.bytesInUse) bytes in \(heap.liveCount) blocks, \(heap.chunkFrames) chunk frames, \(heap.allocations) allocs / \(heap.deallocations) frees")
+    var classes = "heap classes:"
+    for i in 0..<heapClassCount where heap.liveBlocks[i] > 0 {
+        classes += " \(Heap.classSize(i))B:\(heap.liveBlocks[i])"
+    }
+    print(classes + " large:\(heap.largeBlocks) (\(heap.largeFrames) frames)")
 }
