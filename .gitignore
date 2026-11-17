@@ -1,0 +1,4 @@
+build/
+/kernel.ll
+/kernel.o
+.DS_Store
