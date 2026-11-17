@@ -25,6 +25,13 @@ volatile struct limine_hhdm_request hhdm_request = {
     .revision = 0,
 };
 
+// Phase M: the rootfs.tar module (limine.conf module_path), parsed by ustar.swift.
+__attribute__((used, section(".limine_requests")))
+volatile struct limine_module_request module_request = {
+    .id = LIMINE_MODULE_REQUEST_ID,
+    .revision = 0,
+};
+
 __attribute__((used, section(".limine_requests_end")))
 static volatile uint64_t limine_requests_end_marker[] = LIMINE_REQUESTS_END_MARKER;
 

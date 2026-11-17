@@ -22,6 +22,9 @@ struct Shell<T: Terminal> {
     var history: [String] = []
     /// Variables for `set`/`get`/`vars` (Phase D: Dictionary with String keys).
     var vars: [String: Int] = [:]
+    /// Phase M: the filesystem and this shell's current directory (a path).
+    var fs: FileSystem = vfs
+    var cwd = "/"
 
     /// Bold green "> ". Its visible width is promptWidth.
     let prompt = "\u{1B}[1;32m> \u{1B}[0m"
@@ -42,7 +45,7 @@ struct Shell<T: Terminal> {
 
     init(terminal: T) {
         term = terminal
-        commands = Shell.builtins()
+        commands = Shell.builtins() + Shell.fileCommands()
     }
 
     mutating func run() -> Never {

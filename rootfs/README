@@ -1,0 +1,7 @@
+Wiffer RAM filesystem
+
+These files were packed into rootfs.tar (ustar) by build.sh, loaded by
+Limine as a boot module, and copied into the kernel's RAM filesystem.
+Nothing is saved: changes last until the next reboot.
+
+Try: ls, cd, pwd, cat, mkdir, rm, mv, touch, write <file> <text>, df.
