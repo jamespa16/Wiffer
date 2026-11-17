@@ -1,339 +1,387 @@
 # Roadmap
 
-- **Part 1: Serial shell.** The simplest possible prompt, built under the
-  current constraints (no heap, no interrupts, no SSE).
-- **Part 2: Graphical shell.** Descriptor tables, interrupts, memory
-  management, a Swift heap, a framebuffer console, and keyboard/mouse input.
+- **Part 1: Serial shell.** Done (M1–M4).
+- **Part 2: Graphical shell.** Done (Phases A–G). The original plan for both
+  parts is in git history (`git show 4cf881e:ROADMAP.md`).
+- **Part 3: Window manager and text editor.** This document.
+
+Goal: boot into a desktop with overlapping, draggable windows. Each shell
+runs in its own terminal window, and a text editor can open, edit and save
+files.
 
 ```
-Part 1:  M1 echo → M2 line edit → M3 dispatch → M4 numbers
-                                       │
-Part 2:  A GDT/IDT ─→ B timer/IRQs ─→ F input ───────────────┐
-            │                                                ▼
-            └──→ C memory + heap ─→ E graphical console ─→ G graphical shell
-                        │
-                        └──→ D SSE (optional: Dictionary, Set, Float)
+            H events + tasks ──────────────┐
+                                           ▼
+I surfaces ─→ J compositor ─→ K window manager ─→ L terminal windows
+                                           │
+            M RAM filesystem ──────────────┴─→ N text editor
+                                                  │
+                                                  └─→ O (stretch) disk, widgets
 ```
 
----
-
-# Part 1: Serial shell
-
-Goal: boot, print `> `, read a line, run a built-in command, repeat.
-
-The shortest path uses the **serial port (COM1)** for both input and output.
-QEMU's `-nographic` (`./run.sh --nographic`) connects it to your terminal, so:
-
-- no keyboard driver, font, or framebuffer text rendering
-- no interrupts, GDT/IDT, or heap: polling a UART is enough
-- everything stays inside the current constraints (`-no-allocations`, no SSE)
-
-A serial echo loop with an `InlineArray<128, UInt8>` line buffer has already
-been prototyped and works under the current build flags.
+H, I and M don't depend on each other, so they can be built in parallel.
 
 ---
 
-## Milestone 1: echo (≈20 lines)
+# Where we are
 
-- `getc()`: spin until COM1 line-status bit 0 (data ready, port `0x3FD`) is
-  set, then `inb(0x3F8)`.
-- `putc()`: existing transmit-empty wait (bit 5) + `outb`.
-- Main loop: `putc(getc())` forever.
+What Part 3 builds on:
 
-**Done when:** typed characters appear in `./run.sh --nographic`.
+- **Interrupts and input.** GDT/TSS/IDT with exception reports, 8259 PIC,
+  PIT at 100 Hz, and PS/2 keyboard and mouse into ring buffers.
+  `KeyEvent` has characters (Ctrl-letters arrive as control codes),
+  arrows, Home/End, PgUp/PgDn, Insert and Delete. It has no Alt,
+  function keys, or key-up events.
+- **Memory.** A frame allocator and a size-class Swift heap. Large blocks
+  are contiguous frame runs. QEMU has 256 MiB. Classes, `Array`, `String`,
+  `Dictionary`, `Set` and `Float` all work (SSE is on).
+- **Display.** `Console` is a cell grid with ANSI escapes. `Display`
+  renders it into a back buffer and copies dirty rows to the framebuffer.
+  The G4 layout is a status bar plus one titled "window", which is really
+  a frame drawn in the cell grid. The mouse cursor is drawn straight onto
+  the framebuffer and repainted after each row copy.
+- **Shell.** `Shell<T: Terminal>` is generic over a blocking
+  `read() -> KeyEvent`. It has history, completion, and a command table.
+- **One flow of control.** `readKey()` is the idle loop. It polls serial,
+  keyboard and mouse, refreshes the status bar, flushes the console, and
+  calls `hlt`.
+- **Tests.** `./run.sh --test` (and `--test --uefi`) runs in-kernel
+  selftests plus a Python harness. The harness types through the QEMU
+  monitor (`sendkey`, `mouse_move`) and checks `screendump` against a
+  replayed serial transcript.
 
-Gotchas: the terminal sends Enter as `\r` (13), not `\n`; output needs
-`\r\n` to return to column 0. Quit QEMU with `Ctrl-A X`.
+Two things stand in the way of a window manager:
 
-## Milestone 2: line editing
+1. **Everything is cell-based.** Overlapping windows need pixel surfaces,
+   clipping, and a compositor that owns the screen.
+2. **The shell blocks inside `read()`.** Two shells can't both be waiting
+   for a key. Phase H solves this without rewriting the shell.
 
-- Line buffer: `var line = InlineArray<128, UInt8>(repeating: 0)` + `len`
-  (stack storage, no heap).
-- Enter (`\r`): print `\r\n`, hand `line[0..<len]` to the dispatcher, reset.
-- Backspace (`0x7F` from most terminals, sometimes `0x08`): if `len > 0`,
-  decrement and print `"\u{8} \u{8}"` to erase on screen.
-- Ignore other control bytes (< 32); stop accepting input when full.
-- Print the prompt `> ` after each line.
+## Ground rules (carried over, plus new ones)
 
-**Done when:** you can type, fix typos, and submit lines.
-
-## Milestone 3: parse and dispatch
-
-- Split the line on the first space into `command` and `args`
-  (just indices into the buffer, no copies).
-- Compare bytes against `StaticString` names with a small `equals(_:_:)`
-  helper (`StaticString.withUTF8Buffer` + length check + byte loop).
-- `switch`/`if` chain over built-ins; unknown → `unknown command: <cmd>`.
-
-Initial built-ins (each is a few lines):
-
-| Command  | Implementation                                          |
-|----------|---------------------------------------------------------|
-| `help`   | print the command list                                  |
-| `echo`   | print `args`                                            |
-| `clear`  | print `ESC[2J ESC[H`                                    |
-| `halt`   | `hcf()`                                                 |
-| `reboot` | `outb(0x64, 0xFE)` (keyboard controller reset line)     |
-
-**Done when:** `help`, `echo hello`, `clear`, `reboot` all work. ← *the
-simplest shell prompt.*
-
-## Milestone 4 (optional polish): output numbers
-
-- `printHex(UInt64)` / `printDec(UInt64)` using a fixed digit buffer
-  (avoid `String(describing:)` / string interpolation — they allocate).
-- Unlocks informative commands: `fb` (framebuffer width/height/pitch from the
-  existing Limine response), `peek <hex addr>`, `mem` (add a Limine memmap
-  request in `boot.c` and sum usable entries).
+- Kernel flags stay: `-mno-red-zone`, `-mcmodel=kernel`, no stack protector.
+- **No allocation in interrupt handlers.** IRQs only fill ring buffers. The
+  event loop does the work.
+- **Heap objects and stacks live at lower-half addresses** (the C3
+  tag-bit problem). The framebuffer stays a raw
+  `UnsafeMutablePointer<UInt32>`. New task stacks come from the heap or
+  the frame allocator at identity-mapped addresses, never HHDM.
+- **Never read the framebuffer.** All composition happens in a RAM back
+  buffer, and only damaged rectangles are copied out.
+- **Everything below the hardware is testable off-screen.** Surfaces, the
+  compositor, the window manager and the editor are plain Swift types,
+  driven in selftests with synthetic events and small sizes (as `Console`
+  and `ScriptedTerminal` are today).
+- **Prefer generics over `any`** (existentials are limited in Embedded
+  Swift). Where a heterogeneous list is unavoidable, such as the window
+  list, use a class hierarchy (`class Window`, subclassed by apps). Embedded
+  Swift supports class inheritance and dynamic dispatch.
 
 ---
 
-# Part 2: Graphical shell
+# Part 3: Window manager and text editor
 
-Goal: a shell on the QEMU display, typed on the PS/2 keyboard, written in
-ordinary Swift (`String`, `Array`, classes, `print`), with faults reported
-instead of silent reboots.
+## Phase H: event loop and cooperative tasks
 
-Ground rules that carry through every phase:
+**H1. One event queue.**
 
-- **Kernel flags stay:** `-mno-red-zone`, `-mcmodel=kernel`, and no stack
-  protector.
-- **Interrupt and exception entry points are assembly.** Swift has no
-  `interrupt` calling convention. Add a `cpu.S` (assembled by `clang -c`,
-  not LTO) with stubs that save registers, call into Swift through a
-  `@_cdecl` function, then `iretq`. Put the register-frame struct in
-  `bridge.h` so Swift sees its layout.
-- **No allocation inside interrupt handlers.** Handlers push into
-  fixed-size ring buffers, and the main loop does the real work.
-- **Debugging:** run with `-d int,cpu_reset -no-reboot` to see the fault
-  behind a triple fault. Use `-s -S` and `lldb build/kernel.elf`
-  (`gdb-remote 1234`) to single-step.
+- Define an `Event` enum: `.key(KeyEvent)`, `.mouse(x, y, buttons)`
+  (absolute position, after clamping), `.tick`, and later
+  `.close` / `.focus(Bool)` / `.resize`.
+- Split `readKey()` into `pollEvents()`, which drains serial, PS/2 and
+  timer into an `[Event]` queue, and an idle step (flush the screen, `hlt`).
+  Keep `readKey()` as a thin wrapper so Part 2 keeps working until L.
 
-## Phase A: descriptor tables and exceptions
+**H2. Richer keys.**
 
-**A1. GDT + TSS.** Replace Limine's GDT with your own:
+- Track Alt (`0x38`, and `E0 38` for AltGr). Decode F1–F12 and the
+  Windows/Super key (`E0 5B`).
+- Carry the modifiers with each key, e.g.
+  `struct Key { var code: KeyEvent; var ctrl, alt, shift: Bool }`. The WM
+  needs Alt-Tab and Alt-F4, and the editor needs Ctrl-S without guessing at
+  control codes.
+- Serial still yields plain `KeyEvent`s with the modifiers off.
 
-- Entries: null, 64-bit kernel code, kernel data, a TSS descriptor (16
-  bytes), and user code/data slots for later.
-- The TSS's `ist1` points at a dedicated stack for double faults, so a
-  kernel stack overflow can still be reported.
-- Load it with `lgdt`, reload CS with a far return (`lretq`) in `cpu.S`,
-  reload the data segment registers, then `ltr`.
+**H3. Cooperative kernel tasks.** This is what lets the existing blocking
+`Shell.run()` live in a window unchanged.
 
-**A2. IDT + exception handlers.**
+- `final class Task` holds a stack (64 KiB from the frame allocator, at an
+  identity-mapped address), a saved `rsp`, and an inbox `[Event]`.
+- Add `context_switch(from: &oldRSP, to: newRSP)` to `cpu.S`. It pushes
+  the SysV callee-saved registers (`rbx`, `rbp`, `r12`–`r15`), swaps `rsp`,
+  pops and `ret`s. It also saves `MXCSR` and the x87 control word, because
+  those are callee-saved too. A new task's stack is pre-built so its
+  first `ret` lands in a trampoline that calls the task's closure.
+- The scheduler is a run queue plus `yield()`. A task waiting for input
+  blocks until its inbox is non-empty. The main loop is task 0: it polls
+  events, routes them, runs ready tasks, and `hlt`s when none are ready.
+- No preemption. The timer IRQ never switches tasks, so the heap and
+  console need no locks beyond what they already have. A task that spins
+  forever hangs the desktop, which is fine for now. Add a status-bar
+  watchdog warning if a task runs for more than 1 s without yielding.
+- Guard pages are a stretch goal. They need your own page tables (the old
+  C3 note). Until then, put a canary word at the bottom of each stack and
+  check it on every switch.
 
-- 256 gates. Vectors 0–31 come from a macro-generated stub table in
-  `cpu.S`.
-- Stubs for vectors without a CPU error code push a dummy 0, so every
-  vector has the same frame layout.
-- One Swift dispatcher `@_cdecl("interrupt_dispatch")(frame)`.
-- For exceptions, print the vector name, error code, `rip`, `rsp`, and
-  (for #PF) `cr2`, then call `hcf()`.
-- Double fault (#8) uses IST1.
+**Done when:** a selftest runs two tasks that ping-pong 10,000 messages
+through their inboxes without corrupting registers or the heap. And the
+Part 2 shell, run as a task, still passes `./run.sh --test`.
 
-**Done when:** `ud2`, divide-by-zero, and a write to an unmapped address
-each print a report instead of rebooting QEMU. Add a `fault <kind>` shell
-command to trigger them on demand.
+## Phase I: pixel surfaces and drawing
 
-## Phase B: interrupts and timer
+**I1. `Rect` and `Surface`.**
 
-**B1. Interrupt controller.**
+- `struct Rect { x, y, w, h }` with `intersection`, `union`, `contains`,
+  `isEmpty`, and `offsetBy`.
+- `final class Surface` owns `width × height` `UInt32` pixels on the heap
+  (a 640×480 window is 1.2 MiB, which is a large-block allocation). It also
+  holds a current clip rect.
 
-- Start with the legacy **8259 PIC**: remap it to vectors 0x20–0x2F and
-  mask everything except the IRQs you handle.
-- It's far less code than the APIC path (ACPI MADT parsing, LAPIC/IOAPIC
-  MMIO), which you only need for SMP or MSI. Defer it.
+**I2. Primitives,** all clipped and allocation-free:
 
-**B2. Timer.**
+- `fill(rect, color)`, `hline`/`vline`, `frame(rect, color)`
+- `blit(from: Surface, src: Rect, to: Point)`
+- `drawGlyph` / `drawText(String, at:, fg:, bg:)` using the existing
+  `PSFFont`. Measure text in cells, because the font is monospace.
+- A 1-bit sprite blit with a mask. The mouse cursor art moves to this.
 
-- Program the PIT (channel 0) to ~100 Hz and count ticks on IRQ0.
-- Send an EOI at the end of each handler. Forgetting it is the classic
-  "interrupts stop after the first one" bug.
-- `sti` once the IDT is loaded; replace busy loops with `hlt` when idle.
+**I3. Port `Display` onto it.** Rendering a `Console` becomes
+`ConsoleView.render(console, into: Surface, at: Point)`, drawing only dirty
+rows. The full-screen console is then just one surface. This keeps Part 2
+working and proves the API before any windows exist.
 
-**Done when:** an `uptime` command shows seconds increasing, and the idle
-CPU sits in `hlt`.
+**Done when:** selftests check primitives pixel-by-pixel on small surfaces
+(including clipping at every edge and negative coordinates). The boot
+console still looks identical in the `screendump` check.
 
-## Phase C: memory and the Swift heap
+## Phase J: compositor
 
-**C1. Boot memory info.** In `boot.c`, add Limine **memmap** and **HHDM**
-requests. HHDM is the higher-half direct map: physical memory at
-`hhdm_offset + phys`.
+- The compositor owns the screen: a screen-sized back buffer, an ordered
+  layer list (bottom to top), and a **damage list** of `Rect`s. This is
+  the G4 "damaged rectangles" leftover.
+- `composite()` merges overlapping damage rects (or falls back to their
+  bounding box past ~16 rects). For each rect it paints the layers that
+  intersect it, bottom to top, into the back buffer, then copies just that
+  rect to the framebuffer.
+- Layers, bottom to top:
+  1. Desktop background (a solid colour or simple pattern, drawn
+     procedurally, no image decoder).
+  2. Windows.
+  3. Status bar / taskbar.
+  4. Mouse cursor. It's now just the top layer, so the
+     `repaintCursorRows` hack and direct framebuffer drawing go away.
+- Moving the cursor damages its old and new rects only.
+- Opaque windows only. Skip alpha blending. If you add shadows later, use
+  a fixed 50% darken.
+- Keep a `compositor.stats` counter (rects and pixels copied per frame) for
+  the status bar. It makes performance regressions obvious.
 
-**C2. Physical frame allocator.**
+**Done when:** an off-screen selftest stacks three overlapping layers,
+damages a rect and checks that only it was repainted and that the pixels
+are right. On QEMU, the cursor moves smoothly over a static desktop.
 
-- Track 4 KiB frames from `LIMINE_MEMMAP_USABLE` entries with a bitmap
-  (store the bitmap inside the first usable region) or a free list.
-- Leave `BOOTLOADER_RECLAIMABLE` untouched while you still read Limine
-  responses.
-- Add a `mem` command that shows total, used, and free.
+## Phase K: window manager
 
-**C3. Paging: almost not yet.** Limine's page tables already map the kernel
-and HHDM. But Swift keeps tag bits in the top nibble of object and String
-literal pointers, so heap objects can't live at HHDM addresses
-(`0xffff8000…`), and literals/static objects in the kernel image
-(`0xffffffff8…`) break the same way. Two copied PML4 entries are enough:
-`PML4[0] = HHDM entry` (identity map: the heap hands out `virt == phys`)
-and `PML4[255] = PML4[511]` (the kernel image is also mapped at
-`H - 0xffff800000000000`). `build.sh` then rewrites String literal and
-static-object references in the IR to use that alias. Build your own PML4
-later, when you want guard pages, user space, or MMIO with custom caching.
+**K1. Windows.**
 
-**C4. Kernel heap.** Implement the Embedded Swift platform hooks (the
-contract is in the toolchain's `usr/include/swift/EmbeddedPlatform.h`):
+- `class Window` has a frame `Rect`, a title, a content `Surface`, an
+  owning `Task` (optional), and flags (focused, dirty, closable).
+- Methods subclasses override: `handle(_ event: Event)`, `draw()`, and
+  `close()`.
+- Decorations are drawn by the WM, not the app: a title bar with the
+  title and a close box, plus a 1–2 px border. Focused and unfocused windows
+  use different colours.
 
-```c
-void *_swift_allocate(size_t alignment, size_t size, swift_alloc_flags_t flags);
-void  _swift_deallocate(void *ptr, size_t alignment, size_t size, swift_dealloc_flags_t flags);
-```
+**K2. Focus and z-order.**
 
-- Start with a **bump allocator** (deallocate is a no-op) to get Swift
-  running.
-- Then switch to **size-class free lists**: power-of-two buckets
-  16 B–2 KiB, plus whole frames for large blocks.
-- `size` passed to deallocate may be `-1` (unknown), so keep a small
-  header recording each block's size class.
-- Return `NULL` on out-of-memory; Swift traps.
-- Wrap the allocator in `cli`/`sti` (save and restore the flags) so it's
-  safe even if something allocates with interrupts on.
+- Clicking a window raises it and gives it keyboard focus. This is the
+  other G4 leftover.
+- Keys go to the focused window, except for the WM's own shortcuts:
+  - Alt-Tab cycles focus.
+  - Alt-F4 closes the focused window.
+  - Super+Enter opens a terminal (or use Ctrl-Alt-T if Super is awkward
+    under QEMU).
+- **Hit testing**: title bar, close box, border (for resize), and content.
+  Mouse events in the content area go to the window under the cursor, in
+  window-local coordinates.
 
-**C5. Turn the heap on in the build.**
+**K3. Move and resize.**
 
-- Remove `-no-allocations`.
-- Implement three more hooks: `_swift_writeToStandardOutput` (send it to
-  serial for now; it becomes the console in Phase E), and
-  `_swift_lockStandardOutput`/`_swift_unlockStandardOutput` (no-ops or
-  `cli`/`sti`, since there's one CPU).
-- Update the `build.sh` check. `swift_retain` and `swift_release` are now
-  compiled into the kernel, so the right invariant is **"no undefined
-  symbols"**, not "no `swift_*` symbols". The binary still has no external
-  runtime.
+- Dragging the title bar moves the window. Damage the old and new frames.
+  Full repaint while dragging is fine at QEMU speeds. If it isn't, drag an
+  outline and move once on release.
+- Dragging the bottom-right corner resizes it. Allocate a new content
+  surface and send the window `.resize`. Enforce a minimum size.
+- Keep windows at least partly on screen, so the title bar is always
+  reachable.
 
-Already verified with this toolchain: classes, `Array`, `String`, string
-interpolation and `print()` link against exactly those five hooks, about
-9.5 KB of code, with no SSE instructions.
+**K4. Taskbar.** Grow the status bar into a taskbar:
 
-**Done when:** `print("free: \(pmm.freeFrames) frames")` works and a
-stress test (allocate and free 10k nodes in a loop) doesn't leak.
+- A button per window (click to focus or raise), plus the clock and
+  memory.
+- A **"+ Terminal"** button and a **"+ Editor"** button. These are the
+  launcher until there's anything fancier.
 
-## Phase D: enable SSE (optional, needed for `Dictionary`, `Set`, `Float`)
+**Done when:** the harness opens two windows, drags one with `mouse_move`
+plus button presses (the QEMU monitor's `mouse_button`), clicks to swap
+focus, closes one, and checks each step with `screendump`. Selftests cover
+hit-testing and focus order off-screen.
 
-`Dictionary` and `Set` use floating-point maths for capacity, so they fail
-to compile with SSE off. That is verified with this toolchain: "SSE register
-return with SSE disabled".
+## Phase L: terminal windows
 
-- At boot: set CR0.MP=1 and CR0.EM=0, set CR4.OSFXSR and CR4.OSXMMEXCPT,
-  then `fninit`.
-- Remove `-mno-sse -mno-mmx -msoft-float` from both Swift and C flags. Keep
-  `-mno-red-zone`.
-- Interrupt stubs must now preserve SSE state: `fxsave`/`fxrstor` into a
-  16-byte-aligned 512-byte area around the dispatcher call. Otherwise a
-  handler that uses SSE silently corrupts the interrupted code's registers.
-- Drop the `%xmm` check from `build.sh`.
-- String keys also need `_swift_generateRandomHashSeed`, libm `ceil`
-  (Dictionary capacity maths), and the toolchain's
-  `libswiftUnicodeDataTables.a` (normalization for `==` and hashing).
-- Run on a lower-half stack: Limine's is HHDM memory, and small-String `==`
-  wraps a stack copy of the bytes in a String (the C3 tag-bit problem).
+- `TerminalWindow: Window` owns a `Console` sized to its content area, a
+  `ConsoleView`, and a `Task` running `Shell<WindowTerminal>`.
+- `WindowTerminal: Terminal`:
+  - `read()` blocks the task until a key arrives in its inbox.
+  - `write()` feeds the window's `Console` and marks the window dirty.
+  - `columns` is the window's current width in cells.
+- On resize, re-create the `Console` grid at the new size, keeping what
+  fits. Reflow is optional.
+- `print()` and kernel log output still go to serial. They also go to a
+  "Log" window, or to the most recently focused terminal. Pick one and
+  document it. Exception reports bypass the compositor: they paint
+  directly on the framebuffer (and serial), because the kernel is dying.
+- Shell commands that talk to the WM: `open <app>`, `windows`,
+  `close <n>`, and `exit` (closes this terminal).
+- Boot straight into the desktop with one terminal open. Keep a
+  `nodesktop` kernel cmdline flag (from `limine.conf`) for the Part 2
+  full-screen shell, which is handy when the WM is broken.
 
-**Done when:** a `[String: Int]` works in the shell (e.g. a variables table
-for `set`/`get`).
+**Done when:** two terminals run side by side, each with its own history
+and variables. Typing in one doesn't echo in the other. `./run.sh --test`
+drives both through `sendkey` plus clicks.
 
-## Phase E: graphical text console
+## Phase M: RAM filesystem
 
-**E1. Font.**
+The editor needs files. Start in memory. Persistence is Phase O.
 
-- Embed an 8×16 bitmap font. PSF1/PSF2 are easy to parse. Spleen (BSD-2)
-  and Terminus (OFL) are good choices; `fonts/spleen-8x16.psfu` is PSF1
-  with a Unicode table.
-- Include it with `.incbin` in a small `font.S` (assembled like `cpu.S`).
-- Write `drawGlyph(cell, fg, bg)`.
+**M1. VFS.**
 
-**E2. Console model.**
+- `final class FSNode`: name, kind (file or directory), `[UInt8]`
+  contents, children `[String: FSNode]` (needs Phase D, which is done),
+  parent, and modification tick.
+- Path helpers: split on `/`, resolve `.` and `..`, absolute or relative to
+  a per-shell current directory.
+- API: `lookup`, `create`, `mkdir`, `read`, `write`, `remove`, `rename`,
+  `list`. Return errors as an enum (`notFound`, `exists`, `notADirectory`,
+  `notEmpty`), not traps.
 
-- Keep a text grid (`cols × rows` of character + colour) as the source of
-  truth, plus a cursor.
-- Implement `\n`, `\r`, backspace, tab, and scrolling by shifting the grid
-  and redrawing.
-- Support a few ANSI escapes (`ESC[2J`, `ESC[H`, SGR colours), so `clear`
-  and colour output from Part 1 keep working unchanged.
+**M2. Seed it at boot from a Limine module.**
 
-**E3. Double buffering.**
+- Add a Limine **module request** in `boot.c`. Pack a directory (e.g.
+  `rootfs/` with a README, a sample `.swift` file, and `motd`) into a
+  ustar `rootfs.tar` in `build.sh`, and list it in `limine.conf`.
+- Parse ustar in Swift (512-byte headers, octal sizes) into the RAM fs.
+- Module memory is `BOOTLOADER_RECLAIMABLE`/HHDM. Copy contents into heap
+  arrays and don't keep pointers into it.
 
-- Render into a heap-allocated back buffer, then copy dirty rows to the
-  framebuffer.
-- Reading from framebuffer memory is very slow on real hardware, so never
-  read it back when scrolling.
+**M3. Shell commands:** `ls`, `cd`, `pwd`, `cat`, `mkdir`, `rm`, `mv`,
+`touch`, `write <file> <text>`, and `df` (total bytes in the fs).
 
-**E4.** Point `_swift_writeToStandardOutput` at the console, and keep
-mirroring to serial for headless tests.
+**Done when:** `cat /README` shows the packed file after boot. A
+create/write/rename/remove selftest leaves the heap's live-block count
+where it started.
 
-**Done when:** `print` output and the boot log appear on the QEMU window,
-and scrolling works past the bottom of the screen.
+## Phase N: text editor
 
-## Phase F: input devices
+`EditorWindow: Window`, opened with `edit <path>` from a terminal or the
+taskbar button. The editing model is a plain struct that knows nothing
+about windows, so it can be tested with scripted keys like the shell.
 
-**F1. PS/2 keyboard (IRQ1).**
+**N1. Buffer model (`TextBuffer`).**
 
-- The handler reads port `0x60` and pushes the scancode into a fixed ring
-  buffer: single producer, single consumer.
-- The main loop decodes scancode set 1:
-  - Track Shift, Ctrl and Caps state.
-  - Ignore release codes (bit 7 set), except for the modifiers.
-  - Handle the `0xE0` prefix for arrows, Home/End and Delete.
-- Emit `KeyEvent`s.
+- Store an array of lines, `[[UInt8]]` (UTF-8 bytes per line). It's the
+  simplest structure that's fast enough for files of a few thousand lines.
+  A gap buffer or piece table is unnecessary at this size.
+- Cursor is `(line, column)` in bytes, kept on a scalar boundary. Keep a
+  "desired column" so moving up and down through short lines works the way
+  people expect.
+- Operations: insert char/newline, backspace, delete, join and split
+  lines, tab (insert spaces, width 4), and `load(bytes)` / `save() -> bytes`.
+  Keep `\n` line endings, and preserve whether the file ends with a newline.
+- A `dirty` flag, cleared on save.
 
-**F2. PS/2 mouse (IRQ12, optional).**
+**N2. View.**
 
-- Enable the aux device (`0x64 ← 0xA8`), then send `0xD4, 0xF4` to enable
-  reporting.
-- Unmask IRQ2 (the cascade) and IRQ12.
-- Parse 3-byte packets: buttons, dx, dy with sign bits. Re-sync on bit 3
-  of byte 0.
+- Draw into the window's surface with the PSF font: visible lines, a
+  line-number gutter, and a block cursor.
+- A status line at the bottom: path, `[+]` when modified, `Ln/Col`, and
+  messages ("saved 42 lines").
+- Vertical scrolling keeps the cursor in view. Horizontal scrolling for
+  long lines (no soft wrap at first).
+- Redraw only changed lines plus the old and new cursor lines, the same
+  dirty-row idea as `Console`.
 
-**Done when:** keys echo on the console, and a cursor sprite follows the
-mouse.
+**N3. Keys.**
 
-## Phase G: graphical shell
+| Key                         | Action                                    |
+|-----------------------------|-------------------------------------------|
+| arrows, Home/End            | move                                      |
+| PgUp/PgDn                   | move by a screenful                       |
+| Ctrl-Home / Ctrl-End        | start / end of file                       |
+| Ctrl-S                      | save (write the file through the VFS)     |
+| Ctrl-O                      | open: prompt for a path in the status line |
+| Ctrl-F                      | find: prompt, then jump to next match     |
+| Ctrl-Q or the close box     | quit; if dirty, ask "save? y/n/esc"       |
 
-**G1. Port the Part 1 shell.**
+- Mouse: click to place the cursor. Scroll wheel is a stretch, because it
+  needs IntelliMouse mode on the PS/2 mouse (the `200,100,80` sample-rate
+  knock, then 4-byte packets).
 
-- Hide I/O behind a generic `Terminal` protocol (`read() -> KeyEvent`,
-  `write(_:)`). Prefer generics over `any Terminal`, because existentials
-  are limited in Embedded Swift.
-- The same shell then runs on serial or on the console.
-- With a heap, the code gets simpler:
-  - Split lines into `[Substring]`.
-  - Use a command table of `(name: String, help: String, run: ([Substring]) -> Void)`.
-  - Error messages can use interpolation.
+**N4. Stretch.**
 
-**G2. Line editing.** Left/right cursor movement, Home/End, history with
-the up/down arrows (`[String]`), and tab completion over command names.
+- Undo/redo as a stack of inverse operations.
+- Selection (Shift+arrows and mouse drag) with cut/copy/paste through a
+  kernel clipboard, shared with terminal windows.
+- Syntax highlighting for `.swift` keywords: a per-line colour pass with
+  no state across lines, except block comments.
 
-**G3. Commands.**
+**Done when:** from a terminal, `edit /notes.txt` opens a window. You can
+type several lines, move around, fix a typo, Ctrl-S and Ctrl-Q, and then
+`cat /notes.txt` in the terminal shows the text. Selftests run the same
+key script against `TextBuffer` and check the saved bytes. The harness does
+it end-to-end with `sendkey` and a `screendump`.
 
-- Keep everything from Part 1.
-- Add `uptime`, `mem` (frame and heap stats), `fb`, `color <fg> <bg>`,
-  `fault <kind>`, and `set`/`get` (if Phase D is done).
+## Phase O (stretch): beyond the basics
 
-**G4. Graphical touches (stretch).**
+Pick and choose. Each is independent.
 
-- Status bar with uptime and memory, redrawn on timer ticks.
-- The shell in a bordered window with a title.
-- Mouse cursor, and click-to-focus between two shell windows.
-- A tiny compositor that redraws only damaged rectangles.
-
-**Done when:** the system boots straight into a coloured prompt on the
-QEMU window with history and completion, and a deliberate fault shows a
-readable report on screen.
+- **Persistence.** A virtio-blk driver needs PCI config-space enumeration
+  (port `0xCF8`/`0xCFC` is enough under QEMU) and a virtqueue. The simpler
+  option is ATA PIO on the q35 AHCI controller in IDE mode, or `-M pc`.
+  Then either mount a FAT image read/write, or write the RAM fs out as a
+  tar on Ctrl-S. That's crude but simple.
+- **A tiny widget kit.** Labels, buttons and a text field on top of
+  `Surface`, so dialogs ("save changes?") stop being status-line prompts.
+- **More apps** to prove the WM API: a clock, a system monitor (frames,
+  heap, tasks, compositor stats), and a file browser that opens the editor.
+- **Better input.** QEMU's `usb-tablet` gives absolute mouse coordinates
+  and no grab, but needs an xHCI driver, which is a big job. Keyboard
+  typematic repeat for held arrows can be done in software, from key-down
+  plus timer.
+- **Isolation.** Your own page tables (guard pages, then ring-3 apps via
+  the GDT user slots and TSS `rsp0` from Phase A), and preemptive
+  scheduling on the timer. This is where a "basic" WM turns into a real OS.
+  Defer it until the cooperative design actually hurts.
 
 ---
 
-## Cross-cutting: automated boot tests
+## Cross-cutting: testing the desktop
 
-Add a `./run.sh --test` mode that boots QEMU headless with
-`-device isa-debug-exit,iobase=0xf4,iosize=0x04` and serial on a file. A
-test kernel entry runs self-checks (allocator stress, fault recovery,
-console scroll) and writes the result to port `0xF4`. QEMU's exit code
-becomes `(value << 1) | 1`. Run it after every phase so regressions show up
-immediately.
+- **Off-screen first.** `Surface`, `Compositor`, `WindowManager`,
+  `TextBuffer` and `FSNode` take plain values and events, so most checks
+  live in `selftest.swift` and run in milliseconds.
+- **Harness additions** (`tests/serial_session.py`):
+  - A `click(x, y)` helper (`mouse_move` + `mouse_button 1` / `0`).
+  - A `drag(from:, to:)` helper.
+  - A `pixel_at(x, y)` check on `screendump`s.
+
+  Remember the monitor socket takes only one client, so share the existing
+  connection.
+- **Determinism.** Mouse movement in QEMU is relative and can be scaled.
+  Before clicking, read the kernel's idea of the pointer (the `mouse`
+  command), or add a `warp x y` debug command, rather than trusting
+  absolute moves.
+- Run `./run.sh --test` and `./run.sh --test --uefi` after every phase.
+  Expect merge hot spots in `build.sh`, `kernel.swift` init order, the
+  `selftest.swift` call list and the harness.
