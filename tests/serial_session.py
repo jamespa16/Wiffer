@@ -12,7 +12,10 @@ Each command is sent after the previous prompt ("> ") appears. Each
 boot in parallel with the main session. The main session also has a QEMU
 monitor socket: the framebuffer console is checked pixel-for-pixel with
 `screendump` against the serial transcript replayed through a tiny terminal
-emulator and the same PSF font. Exits non-zero if any expectation fails.
+emulator and the same PSF font (only the console's viewport: the status bar
+and window frame around it are checked separately). One more QEMU, without
+isa-debug-exit, stays up after `fault ud` so the on-screen report can be
+dumped. Exits non-zero if any expectation fails.
 Assumes ./build.sh has already been run.
 """
 import argparse, os, re, select, socket, struct, subprocess, sys, tempfile, time
@@ -26,7 +29,9 @@ if os.environ.get("WIFFER_UEFI"):
     FIRMWARE = ["-drive", f"if=pflash,format=raw,readonly=on,file={_prefix}/share/qemu/edk2-x86_64-code.fd"]
 
 PROMPT = b"> "
-PROMPT_RE = re.compile(rb"(?:\n|\x1b\[H)> ")
+# The prompt is coloured (Phase G): "> " wrapped in SGR escapes.
+SGR = rb"(?:\x1b\[[0-9;]*m)*"
+PROMPT_RE = re.compile(rb"(?:\n|\x1b\[H)" + SGR + rb"> " + SGR)
 
 # (input, substring expected in the output that follows it)
 CHECKS = [
@@ -54,6 +59,27 @@ CHECKS = [
     ("set bad x1", "usage: set"),
     ("vars", "answer = 43\r\nneg = -7\r\n(2 variables)"),
     ("help", "mouse           PS/2 mouse"),
+    # Phase G: line editing over serial with terminal escape sequences.
+    # ecXX, Left x2, "ho", End, Backspace x2, " hi" -> "echo hi".
+    ("ecXX\x1b[D\x1b[Dho\x1b[F\x7f\x7f hi", "\r\nhi\r\n"),
+    ("cho home\x1b[He\x1b[4~!", "\r\nhome!\r\n"),           # Home = ESC[H, End = ESC[4~
+    ("cho tilde\x1b[1~e", "\r\ntilde\r\n"),                  # Home = ESC[1~
+    ("echo abXc\x1b[D\x1b[D\x1b[3~", "\r\nabc\r\n"),         # Delete = ESC[3~
+    ("echo aXbc\x1bOD\x1bOD\x7f", "\r\nabc\r\n"),            # Left = ESC O D, backspace mid-line
+    ("cho ctrl\x01e\x05!", "\r\nctrl!\r\n"),                 # Ctrl-A, Ctrl-E
+    ("echo gone\x15echo kept", "\r\nkept\r\n"),              # Ctrl-U
+    ("echo first", "first"),
+    ("echo second", "second"),
+    ("\x1b[A\x1b[A", "\r\nfirst\r\n"),                       # history: Up x2
+    ("\x1b[A\x1b[A\x1b[B", "\r\nfirst\r\n"),                 # Up x2 (first, second), Down
+    ("typed\x1b[A\x1b[B", "unknown command: typed"),         # Down restores the typed line
+    ("upt\t", "uptime: "),                                   # tab completion, unique
+    ("h\t", "halt  help  history"),                          # ambiguous: candidates listed
+    ("history", "  echo first\r\n"),
+    ("help", "history         list the command history"),
+    ("color", "color: white (7) on black (0)"),
+    ("color pink 0", "color: unknown colour: pink"),
+    ("color 1", "usage: color <fg> <bg>"),
 ]
 
 MOUSE_RE = re.compile(r"mouse: x=(\d+) y=(\d+) buttons=(\d+)")
@@ -65,6 +91,10 @@ KEYBOARD_CHECKS = [
     (["e", "c", "h", "o", "spc", "h", "i", "ret"], "echo hi\r\nhi\r\n"),
     (["e", "c", "h", "o", "spc", "shift-h", "i", "shift-1", "spc", "x", "backspace", "y", "ret"],
      "\r\nHi! y\r\n"),
+    # Phase G: PS/2 arrows, End, Up (history), Tab.
+    (["e", "c", "h", "o", "spc", "b", "left", "a", "end", "c", "ret"], "\r\nabc\r\n"),
+    (["up", "ret"], "\r\nabc\r\n"),
+    (["u", "p", "t", "tab", "ret"], "uptime: "),
 ]
 
 UPTIME_RE = re.compile(r"uptime: (\d+\.\d\d) s \((\d+) ticks\)")
@@ -83,7 +113,7 @@ FAULT_CHECKS = [
 
 
 class Session:
-    def __init__(self, extra_args=(), monitor=False):
+    def __init__(self, extra_args=(), monitor=False, exit_device=True):
         self.monitor_path = None
         self.mon = None  # connected monitor socket, opened on first use
         self.cursor = None  # mouse sprite (x, y) on screen, if known
@@ -94,8 +124,9 @@ class Session:
             mon = f"unix:{self.monitor_path},server,nowait"
         args = ["qemu-system-x86_64", "-M", "q35", "-m", "256M", "-cdrom", ISO,
                 "-boot", "d", "-no-reboot", "-display", "none",
-                "-serial", "stdio", "-monitor", mon,
-                "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", *FIRMWARE, *extra_args]
+                "-serial", "stdio", "-monitor", mon, *FIRMWARE, *extra_args]
+        if exit_device:  # without it, a fault or selftest leaves QEMU running
+            args += ["-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"]
         self.p = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                   stderr=subprocess.STDOUT)
         self.out = b""
@@ -216,7 +247,15 @@ class Session:
 # ---- Screen check: replay the serial log, render it, compare pixels ----------
 
 FONT = os.path.join(ROOT, "fonts", "spleen-8x16.psfu")
-FG, BG = (0xAA, 0xAA, 0xAA), (0, 0, 0)  # console defaults: ANSI 7 on 0
+# The kernel's 16-colour palette (console.swift ansiColor). Console defaults:
+# ANSI 7 on 0. The status bar is black on cyan; an alert is white on red.
+PALETTE = [bytes(((c >> 16) & 255, (c >> 8) & 255, c & 255)) for c in [
+    0x000000, 0xAA0000, 0x00AA00, 0xAA5500, 0x0000AA, 0xAA00AA, 0x00AAAA, 0xAAAAAA,
+    0x555555, 0xFF5555, 0x55FF55, 0xFFFF55, 0x5555FF, 0xFF55FF, 0x55FFFF, 0xFFFFFF]]
+STATUS_BG, ALERT_BG = PALETTE[6], PALETTE[1]
+# Boot line giving the console's place on screen (inside the window frame,
+# under the status bar).
+LAYOUT_RE = re.compile(rb"console: (\d+)x(\d+) cells at row (\d+) col (\d+) of (\d+)x(\d+)")
 
 
 def load_psf1(path):
@@ -239,9 +278,15 @@ def load_psf1(path):
 
 
 def emulate(log: bytes, cols: int, rows: int):
-    """The subset of the kernel Console that the shell uses (ASCII, CR, LF,
-    BS, tab, deferred wrap, ESC[2J, ESC[H, ESC[K). Returns (grid, row, col)."""
-    grid = [[" "] * cols for _ in range(rows)]
+    """The subset of the kernel Console that the shell uses: text, CR, LF,
+    BS, tab, deferred wrap, ESC[J/H/K/A/B/C/D and SGR colours. Returns
+    (grid of (char, fg, bg), row, col)."""
+    fg, bg, bold = 7, 0, False
+
+    def blank():
+        return (" ", fg + 8 if bold and fg < 8 else fg, bg)
+
+    grid = [[blank()] * cols for _ in range(rows)]
     r = c = 0
 
     def line_feed():
@@ -249,28 +294,72 @@ def emulate(log: bytes, cols: int, rows: int):
         if r + 1 < rows:
             r += 1
         else:
-            grid = grid[1:] + [[" "] * cols]
+            grid = grid[1:] + [[blank()] * cols]
 
-    text = log.decode("ascii", errors="replace")
+    def clear(start, end):  # cell indices, end exclusive
+        for i in range(start, end):
+            grid[i // cols][i % cols] = blank()
+
+    def sgr(p):
+        nonlocal fg, bg, bold
+        if not p:
+            p = [0]
+        i = 0
+        while i < len(p):
+            v = p[i]
+            if v == 0:
+                fg, bg, bold = 7, 0, False
+            elif v == 1:
+                bold = True
+            elif v == 22:
+                bold = False
+            elif 30 <= v <= 37:
+                fg = v - 30
+            elif v == 39:
+                fg = 7
+            elif 40 <= v <= 47:
+                bg = v - 40
+            elif v == 49:
+                bg = 0
+            elif 90 <= v <= 97:
+                fg = v - 90 + 8
+            elif 100 <= v <= 107:
+                bg = v - 100 + 8
+            i += 1
+
+    text = log.decode("utf-8", errors="replace")
     i = 0
     while i < len(text):
         ch = text[i]
         i += 1
         if ch == "\x1b":
-            m = re.match(r"\[([0-9;]*)([A-Za-z])", text[i:])
+            m = re.match(r"\[([0-9;?]*)([@-~])", text[i:])
             if not m:
                 continue
             i += m.end()
-            args, op = m.group(1), m.group(2)
+            args, op = m.group(1).replace("?", ""), m.group(2)
             p = [int(x) if x else 0 for x in args.split(";")] if args else []
-            if op == "J":
-                grid = [[" "] * cols for _ in range(rows)]
-            elif op == "H":
+            n = (p[0] if p else 0) or 1
+            here = r * cols + min(c, cols - 1)
+            if op == "m":
+                sgr(p)
+            elif op == "J":
+                mode = p[0] if p else 0
+                clear(*{0: (here, rows * cols), 1: (0, here + 1)}.get(mode, (0, rows * cols)))
+            elif op in "Hf":
                 p += [0, 0]
                 r, c = min(p[0] or 1, rows) - 1, min(p[1] or 1, cols) - 1
             elif op == "K":
-                for x in range(min(c, cols - 1), cols):
-                    grid[r][x] = " "
+                mode, start = (p[0] if p else 0), r * cols
+                clear(*{0: (here, start + cols), 1: (start, here + 1)}.get(mode, (start, start + cols)))
+            elif op == "A":
+                r, c = max(r - n, 0), min(c, cols - 1)
+            elif op == "B":
+                r, c = min(r + n, rows - 1), min(c, cols - 1)
+            elif op == "C":
+                c = min(c + n, cols - 1)
+            elif op == "D":
+                c = max(min(c, cols - 1) - n, 0)
         elif ch == "\r":
             c = 0
         elif ch == "\n":
@@ -280,11 +369,11 @@ def emulate(log: bytes, cols: int, rows: int):
             c = max(c - 1, 0)
         elif ch == "\t":
             c = min((c // 8 + 1) * 8, cols - 1)
-        elif " " <= ch < "\x7f":
+        elif ch >= " " and ch != "\x7f":
             if c >= cols:
                 c = 0
                 line_feed()
-            grid[r][c] = ch
+            grid[r][c] = (ch, fg + 8 if bold and fg < 8 else fg, bg)
             c += 1
     return grid, r, min(c, cols - 1)
 
@@ -300,36 +389,56 @@ def read_ppm(path):
     return int(fields[1]), int(fields[2]), data[pos + 1:]
 
 
+def pixel(w, pix, x, y):
+    o = (y * w + x) * 3
+    return pix[o:o + 3]
+
+
+def layout(s: Session):
+    """(console cols, rows, origin row, origin col, screen cols, rows) from the boot log."""
+    m = LAYOUT_RE.search(s.log)
+    assert m, "no console layout line in the boot log"
+    return tuple(int(g) for g in m.groups())
+
+
 def check_screen(s: Session, path: str, timeout=5.0):
-    """Compare the display with the emulated transcript; None if it matches,
-    else the first wrong cell. Retries for a while: the kernel flushes only
-    once it waits for input, which is after it has sent the prompt."""
+    """Compare the console viewport with the emulated transcript; None if it
+    matches, else the first wrong cell. The status bar and window frame
+    around it aren't in the transcript and are checked separately. Retries
+    for a while: the kernel flushes only once it waits for input, which is
+    after it has sent the prompt."""
     glyphs, gh, cmap, fallback = load_psf1(FONT)
+    cols, rows, top, left, _, _ = layout(s)
     skip = set()  # cells under the mouse sprite (11x17 px) aren't text
     if s.cursor:
         x, y = s.cursor
-        skip = {(r, c) for r in range(y // gh, (y + 16) // gh + 1)
+        skip = {(r - top, c - left) for r in range(y // gh, (y + 16) // gh + 1)
                 for c in range(x // 8, (x + 10) // 8 + 1)}
-    fg, bg = bytes(FG), bytes(BG)
     deadline = time.time() + timeout
     while True:
+        while True:  # take in output still in flight (e.g. the prompt's SGR)
+            chunk = s._read(0.05)
+            if not chunk:
+                break
+            s.out += chunk
         s.screendump(path)
         w, h, pix = read_ppm(path)
-        cols, rows = w // 8, h // gh
         grid, cr, cc = emulate(s.log, cols, rows)
         bad = None
         for r in range(rows):
             for c in range(cols):
-                bits = glyphs[cmap.get(ord(grid[r][c]), fallback)]
+                ch, fgi, bgi = grid[r][c]
+                bits = glyphs[cmap.get(ord(ch), fallback)]
                 if (r, c) in skip:
                     continue
-                inv = (r, c) == (cr, cc)  # the cursor is drawn inverted
+                fg, bg = PALETTE[fgi], PALETTE[bgi]
+                if (r, c) == (cr, cc):  # the cursor is drawn inverted
+                    fg, bg = bg, fg
                 for y in range(gh):
-                    off = ((r * gh + y) * w + c * 8) * 3
-                    want = b"".join(fg if ((bits[y] >> (7 - x)) & 1) != inv else bg
-                                    for x in range(8))
+                    off = (((top + r) * gh + y) * w + (left + c) * 8) * 3
+                    want = b"".join(fg if (bits[y] >> (7 - x)) & 1 else bg for x in range(8))
                     if pix[off: off + 24] != want:
-                        bad = (r, c, grid[r][c])
+                        bad = (r, c, ch)
                         break
                 if bad:
                     break
@@ -350,6 +459,7 @@ def main():
     # Each fault halts its machine, so every kind gets its own QEMU, booted now
     # so they run alongside the main session.
     faults = [] if opts.command else [(kind, want, Session()) for kind, want in FAULT_CHECKS]
+    fault_screen = None if opts.command else Session(monitor=True, exit_device=False)
     s = Session(monitor=True)
     try:
         boot = s.read_prompt(opts.timeout)
@@ -399,6 +509,28 @@ def main():
             print(f"{'PASS' if ok else 'FAIL'}: fault {kind}" + ("" if ok else
                   f"\n  exit status {status} (want {EXCEPTION_STATUS}), missing {missing}\n  got {got!r}"))
 
+        # The fault report on screen: QEMU stays up (no isa-debug-exit), so
+        # the display can be dumped. A white-on-red header and footer in the
+        # console, and the status bar turned red.
+        if fault_screen:
+            fs = fault_screen
+            fs.read_prompt(opts.timeout)
+            fs.send("fault ud")
+            got = fs.read_until(b"System halted", opts.timeout).decode(errors="replace")
+            dump = os.path.join(ROOT, "build", "fault.ppm")
+            time.sleep(0.3)
+            fs.screendump(dump)
+            w, h, pix = read_ppm(dump)
+            cols, rows, top, left, _, _ = layout(fs)
+            red_rows = set()
+            for y in range(top * 16, (top + rows) * 16, 4):
+                if pixel(w, pix, left * 8 + 1, y) == ALERT_BG:
+                    red_rows.add(y // 16)
+            ok = ("System halted" in got and pixel(w, pix, w - 4, 8) == ALERT_BG
+                  and len(red_rows) == 2)
+            failures += not ok
+            print(f"{'PASS' if ok else 'FAIL'}: fault report on screen (red rows {sorted(red_rows)}), see {dump}")
+
         # PS/2 keyboard: keys typed through the monitor reach the shell.
         for keys, want in KEYBOARD_CHECKS:
             s.sendkeys(keys)
@@ -441,10 +573,53 @@ def main():
             failures += not ok
             print(f"{'PASS' if ok else 'FAIL'}: mouse sprite drawn at {s.cursor}")
 
+        # Phase G: `color` changes the console's default colours on screen.
+        cols, rows, top, left, scols, srows = layout(s)
+        dump = os.path.join(ROOT, "build", "color.ppm")
+        # The bottom-right console cell: blank (prompt lines are short).
+        bx, by = (left + cols - 1) * 8 + 4, (top + rows - 1) * 16 + 8
+        for cmd, want, colour in [("color yellow blue", "color: yellow on blue", 4),
+                                  ("color white black", "color: white on black", 0)]:
+            s.send(cmd)
+            got = s.read_prompt(opts.timeout).decode(errors="replace")
+            deadline, px = time.time() + 5, None
+            while time.time() < deadline:
+                s.screendump(dump)
+                w, h, pix = read_ppm(dump)
+                px = pixel(w, pix, bx, by)
+                if px == PALETTE[colour]:
+                    break
+                time.sleep(0.25)
+            ok = want in got and px == PALETTE[colour]
+            failures += not ok
+            print(f"{'PASS' if ok else 'FAIL'}: {cmd} (background pixel {px.hex() if px else None})"
+                  + ("" if ok else f"\n  got {got!r}"))
+
+        # Phase G4: status bar on the top row (black on cyan, the clock
+        # ticking) and a window frame around the console.
+        dump = os.path.join(ROOT, "build", "status.ppm")
+        s.screendump(dump)
+        w, h, before = read_ppm(dump)
+        time.sleep(1.2)
+        s.screendump(dump)
+        w, h, after = read_ppm(dump)
+        band = slice(0, w * 16 * 3)
+        corner = [pixel(w, after, x, (top - 1) * 16 + y) for x in range(8) for y in range(16)]
+        border = [pixel(w, after, x, (top + 3) * 16 + y) for x in range(8) for y in range(16)]
+        ok = (pixel(w, after, w - 4, 8) == STATUS_BG and before[band] != after[band]
+              and PALETTE[6] in corner and PALETTE[6] in border
+              and top == 2 and left == 1 and cols == scols - 2 and rows == srows - 3)
+        failures += not ok
+        print(f"{'PASS' if ok else 'FAIL'}: status bar updates, window frame drawn"
+              f" (console {cols}x{rows} at row {top} col {left} of {scols}x{srows})")
+
         # Framebuffer console: the screen must show exactly what serial got,
-        # first after a clear, then after scrolling well past the bottom.
+        # first after a clear, then after line editing (cursor moves, erases,
+        # completion lists, colours), then after scrolling well past the bottom.
         dump = os.path.join(ROOT, "build", "screen.ppm")
         for label, cmds in [("after clear", ["clear", "echo screen check"]),
+                            ("after editing", ["ecXX\x1b[D\x1b[Dho\x1b[F\x7f\x7f hi", "h\t",
+                                               "\x1b[A", "abc\x1b[D\x1b[D\x1b[3~\x01x"]),
                             ("after scrolling", ["help"] * 5 + ["echo bottom line"])]:
             for cmd in cmds:
                 s.send(cmd)
@@ -466,6 +641,8 @@ def main():
         s.close()
         for _, _, fs in faults:
             fs.close()
+        if fault_screen:
+            fault_screen.close()
 
 
 def wait_exit(s: Session, timeout: float):

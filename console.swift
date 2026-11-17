@@ -70,6 +70,9 @@ final class Console {
     /// a line of exactly `cols` characters followed by CR LF has no blank line.
     var row = 0
     var col = 0
+    /// What SGR 0/39/49 return to (the `color` command changes them).
+    var defaultFG = consoleDefaultFG
+    var defaultBG = consoleDefaultBG
     /// SGR state.
     var fg = consoleDefaultFG
     var bg = consoleDefaultBG
@@ -226,9 +229,9 @@ final class Console {
             case 1: bold = true
             case 22: bold = false
             case 30...37: fg = UInt8(p - 30)
-            case 39: fg = consoleDefaultFG
+            case 39: fg = defaultFG
             case 40...47: bg = UInt8(p - 40)
-            case 49: bg = consoleDefaultBG
+            case 49: bg = defaultBG
             case 90...97: fg = UInt8(p - 90 + 8)
             case 100...107: bg = UInt8(p - 100 + 8)
             case 38, 48: // 38;5;n / 38;2;r;g;b: only n < 16 is honoured
@@ -247,9 +250,23 @@ final class Console {
     }
 
     func resetAttributes() {
-        fg = consoleDefaultFG
-        bg = consoleDefaultBG
+        fg = defaultFG
+        bg = defaultBG
         bold = false
+    }
+
+    /// Change the default colours. Cells (and the current attributes) still
+    /// in the old defaults take the new ones, so the screen recolours.
+    func setDefaultColors(fg newFG: UInt8, bg newBG: UInt8) {
+        for i in 0..<cells.count {
+            if cells[i].fg == defaultFG { cells[i].fg = newFG }
+            if cells[i].bg == defaultBG { cells[i].bg = newBG }
+        }
+        if fg == defaultFG { fg = newFG }
+        if bg == defaultBG { bg = newBG }
+        defaultFG = newFG
+        defaultBG = newBG
+        for r in 0..<rows { dirty[r] = true }
     }
 
     func clear(from: Int, to: Int) {
@@ -356,6 +373,18 @@ final class Display {
     var showCursor = true
     var flushes = 0
 
+    /// Layout (G4): where the console's grid sits on screen, in cells, and
+    /// the "chrome" around it: a screen-sized grid for the status bar and the
+    /// window frame. Chrome cells under the console viewport are unused.
+    var originRow = 0
+    var originCol = 0
+    var viewRows = 0
+    var viewCols = 0
+    /// Screen row of the status bar, or -1.
+    var statusRow = -1
+    var chrome: [Cell]
+    var chromeDirty: [Bool]
+
     /// Needs a 32-bpp RGB framebuffer with <= 8-bit channels; else nil.
     init?(_ f: limine_framebuffer, font: PSFFont) {
         guard let address = f.address, f.bpp == 32,
@@ -369,6 +398,12 @@ final class Display {
         width = Int(f.width)
         height = Int(f.height)
         self.font = font
+        let screenCols = width / font.width, screenRows = height / font.height
+        chrome = Array(repeating: Cell(ch: 0x20, fg: consoleDefaultFG, bg: consoleDefaultBG),
+                       count: screenCols * screenRows)
+        chromeDirty = Array(repeating: false, count: screenRows)
+        viewRows = screenRows
+        viewCols = screenCols
         back = UnsafeMutablePointer<UInt32>.allocate(capacity: width * height)
         func channel(_ v: UInt32, _ size: UInt8, _ shift: UInt8) -> UInt32 {
             ((v & 0xFF) >> UInt32(8 - size)) << UInt32(shift)
@@ -417,23 +452,120 @@ final class Display {
         }
     }
 
-    /// Render the console's dirty rows (and the cursor's old and new rows)
-    /// into the back buffer, then copy those rows to the framebuffer.
+    // MARK: Layout
+
+    /// Reserve the top row for a status bar (if `statusBar`) and, if `title`
+    /// is given, frame the rest as a window with that title. Returns the
+    /// console size that fits in the remaining viewport. Call before drawing.
+    func setLayout(statusBar: Bool, title: String?) -> (cols: Int, rows: Int) {
+        var top = 0
+        if statusBar && rows >= 2 {
+            statusRow = 0
+            top = 1
+            for col in 0..<cols { chrome[col] = Cell(ch: 0x20, fg: statusFG, bg: statusBG) }
+            chromeDirty[0] = true
+        }
+        originRow = top
+        originCol = 0
+        viewRows = rows - top
+        viewCols = cols
+        if let title, cols >= 8, rows - top >= 4 {
+            let right = cols - 1, bottom = rows - 1
+            func frame(_ r: Int, _ c: Int, _ ch: UInt32) {
+                chrome[r * cols + c] = Cell(ch: ch, fg: frameFG, bg: consoleDefaultBG)
+            }
+            frame(top, 0, 0x250C); frame(top, right, 0x2510) // corners
+            frame(bottom, 0, 0x2514); frame(bottom, right, 0x2518)
+            for c in 1..<right { frame(top, c, 0x2500); frame(bottom, c, 0x2500) }
+            for r in (top + 1)..<bottom { frame(r, 0, 0x2502); frame(r, right, 0x2502) }
+            var col = 2
+            for s in " \(title) ".unicodeScalars where col < right - 1 {
+                chrome[top * cols + col] = Cell(ch: s.value, fg: titleFG, bg: consoleDefaultBG)
+                col += 1
+            }
+            for r in top...bottom { chromeDirty[r] = true }
+            originRow = top + 1
+            originCol = 1
+            viewRows = rows - top - 2
+            viewCols = cols - 2
+        }
+        return (viewCols, viewRows)
+    }
+
+    let statusFG: UInt8 = 0, statusBG: UInt8 = 6 // black on cyan
+    let alertFG: UInt8 = 15, alertBG: UInt8 = 1 // white on red
+    let frameFG: UInt8 = 6, titleFG: UInt8 = 15
+
+    /// Put `text` in the status bar (padded with blanks). Marks the row dirty
+    /// only if something changed.
+    func setStatus(_ text: String) {
+        guard statusRow >= 0 else { return }
+        let base = statusRow * cols
+        var col = 0
+        var changed = false
+        for s in text.unicodeScalars where col < cols {
+            let cell = Cell(ch: s.value, fg: statusFG, bg: statusBG)
+            if chrome[base + col] != cell { chrome[base + col] = cell; changed = true }
+            col += 1
+        }
+        while col < cols {
+            let cell = Cell(ch: 0x20, fg: statusFG, bg: statusBG)
+            if chrome[base + col] != cell { chrome[base + col] = cell; changed = true }
+            col += 1
+        }
+        if changed { chromeDirty[statusRow] = true }
+    }
+
+    /// Status bar alert in white on red. ASCII only; never allocates, so an
+    /// exception report can use it.
+    func setStatusAlert(_ text: StaticString) {
+        guard statusRow >= 0 else { return }
+        let base = statusRow * cols
+        text.withUTF8Buffer { buf in
+            for col in 0..<cols {
+                let ch: UInt32 = col < buf.count ? UInt32(buf[col]) : 0x20
+                chrome[base + col] = Cell(ch: ch, fg: alertFG, bg: alertBG)
+            }
+        }
+        chromeDirty[statusRow] = true
+    }
+
+    func inViewport(_ r: Int, _ c: Int) -> Bool {
+        r >= originRow && r < originRow + viewRows && c >= originCol && c < originCol + viewCols
+    }
+
+    /// Render the chrome's and the console's dirty rows (and the cursor's old
+    /// and new rows) into the back buffer, then copy those rows to the
+    /// framebuffer. Never allocates.
     func flush(_ c: Console) {
         let cr = min(c.row, c.rows - 1), cc = min(c.col, c.cols - 1)
         if cr != cursorRow || cc != cursorCol {
             if cursorRow >= 0 && cursorRow < c.rows { c.dirty[cursorRow] = true }
             c.dirty[cr] = true
         }
-        let visibleRows = min(c.rows, rows), visibleCols = min(c.cols, cols)
+        let visibleRows = min(c.rows, viewRows), visibleCols = min(c.cols, viewCols)
+        for r in 0..<rows where chromeDirty[r] {
+            for col in 0..<cols where !inViewport(r, col) {
+                let cell = chrome[r * cols + col]
+                drawGlyph(col: col, row: r, glyph: font.glyph(cell.ch),
+                          fg: palette[Int(cell.fg & 15)], bg: palette[Int(cell.bg & 15)])
+            }
+            chromeDirty[r] = false
+            let consoleRow = r - originRow
+            if consoleRow >= 0 && consoleRow < visibleRows {
+                c.dirty[consoleRow] = true // copied to the framebuffer below
+            } else {
+                copyRows(r * font.height, font.height)
+            }
+        }
         for r in 0..<visibleRows where c.dirty[r] {
             for col in 0..<visibleCols {
                 let cell = c.cells[r * c.cols + col]
                 var fg = palette[Int(cell.fg & 15)], bg = palette[Int(cell.bg & 15)]
                 if showCursor && r == cr && col == cc { swap(&fg, &bg) }
-                drawGlyph(col: col, row: r, glyph: font.glyph(cell.ch), fg: fg, bg: bg)
+                drawGlyph(col: originCol + col, row: originRow + r, glyph: font.glyph(cell.ch), fg: fg, bg: bg)
             }
-            copyRows(r * font.height, font.height)
+            copyRows((originRow + r) * font.height, font.height)
             c.dirty[r] = false
         }
         cursorRow = cr
@@ -482,10 +614,36 @@ func consoleInit() {
         puts("console: unsupported framebuffer (need 32 bpp RGB), serial only\n")
         return
     }
-    let c = Console(cols: d.cols, rows: d.rows)
+    // G4: a status bar on the top row, and the console in a titled window.
+    let size = d.setLayout(statusBar: true, title: "Wiffer shell")
+    let c = Console(cols: size.cols, rows: size.rows)
     for i in 0..<earlyLogCount { c.write(earlyLog[i]) }
     display = d
     console = c
-    print("console: \(c.cols)x\(c.rows) cells on a \(d.width)x\(d.height) framebuffer")
+    print("console: \(c.cols)x\(c.rows) cells at row \(d.originRow) col \(d.originCol) of \(d.cols)x\(d.rows), status bar on row \(d.statusRow), on a \(d.width)x\(d.height) framebuffer")
+    statusBarRefresh()
     consoleFlush()
+}
+
+// MARK: Status bar
+
+var statusNextTick: UInt64 = 0
+
+/// Redraw the status bar text (uptime, memory) at most every half second.
+/// Called from the main loop (readKey's idle wait), never from an IRQ
+/// handler: it allocates.
+func statusBarRefresh() {
+    guard let d = display, d.statusRow >= 0, ticks >= statusNextTick else { return }
+    let t = ticks
+    statusNextTick = t + timerHz / 2
+    let s = t / timerHz
+    let m = s / 60 % 60, sec = s % 60
+    let clock = "\(s / 3600):\(m < 10 ? "0" : "")\(m):\(sec < 10 ? "0" : "")\(sec)"
+    let free = (pmm.freeFrames * frameSize) >> 20, total = (pmm.totalFrames * frameSize) >> 20
+    d.setStatus(" Wiffer  \u{2502}  up \(clock)  \u{2502}  free \(free) of \(total) MiB (\(pmm.freeFrames) frames)  \u{2502}  heap \(heap.bytesInUse / 1024) KiB in \(heap.liveCount) blocks")
+}
+
+/// Show an alert in the status bar now. Never allocates.
+func statusBarAlert(_ text: StaticString) {
+    display?.setStatusAlert(text)
 }

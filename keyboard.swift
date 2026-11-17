@@ -128,16 +128,34 @@ func pollKeyboard() -> KeyEvent? {
     return nil
 }
 
-/// Wait for the next key from either input: a COM1 byte (returned as
-/// `.char`, unchanged, so scripted serial sessions behave as before) or a
-/// PS/2 key. Mouse packets are processed (and the cursor moved) while
-/// waiting. The CPU sleeps in hlt between checks; the timer IRQ bounds the
-/// wake-up latency for the (polled) UART.
+/// Serial input goes through an escape-sequence decoder (terminal.swift),
+/// so arrows, Home/End and Delete work over serial as well as on PS/2.
+var serialKeys = EscapeDecoder()
+/// Tick of the last serial byte, to time out a lone ESC.
+var serialLastByte: UInt64 = 0
+/// A lone ESC becomes the Escape key after this many quiet ticks (200 ms).
+let escapeTimeoutTicks: UInt64 = 20
+
+/// Wait for the next key from either input: COM1 bytes (decoded by
+/// serialKeys) or a PS/2 key. Mouse packets are processed (and the cursor
+/// moved) and the status bar refreshed while waiting. The CPU sleeps in hlt
+/// between checks; the timer IRQ bounds the wake-up latency for the
+/// (polled) UART.
 func readKey() -> KeyEvent {
     while true {
-        if inb(com1 + 5) & 0x01 != 0 { return .char(inb(com1)) }
+        if let event = serialKeys.pop() { return event }
+        if inb(com1 + 5) & 0x01 != 0 {
+            serialKeys.feed(inb(com1))
+            serialLastByte = ticks
+            continue
+        }
+        if serialKeys.pending && ticks &- serialLastByte >= escapeTimeoutTicks {
+            serialKeys.timeout()
+            continue
+        }
         pollMouse()
         if let event = pollKeyboard() { return event }
+        statusBarRefresh()
         consoleFlush() // about to sleep: show pending output (and echo) now
         if interruptsEnabled { hlt() } // hlt with IF=0 would never wake
     }

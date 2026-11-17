@@ -32,6 +32,10 @@ swiftc \
 #    maps the image again at H - 0xffff800000000000 (PML4[255] = PML4[511]):
 #    - String literals: "(address - 32) | flags" becomes
 #      "(address - (32 + 0xffff800000000000)) | flags" (as a signed i64).
+#      Inside statically initialised objects (e.g. an array literal of
+#      structs holding Strings, like the shell's command table) the flag bit
+#      is folded in: "address + (2^63 - 32)" becomes
+#      "address + (2^63 - 32 - 0xffff800000000000)" (mod 2^64, signed).
 #    - Static objects (empty-array/box singletons, statically initialised
 #      objects "...Tv_", "...Tv_r"): every use, but not the definition, goes
 #      through inttoptr(ptrtoint + 0x800000000000), which LLVM can't see through.
@@ -39,8 +43,14 @@ ALIAS='inttoptr (i64 add (i64 ptrtoint (ptr \1 to i64), i64 140737488355328) to 
 STATIC_OBJ='@"(\$es[0-9]+_swiftEmpty[^"]*|\$es[0-9]+_empty[A-Za-z]*Storage[^"]*|[^"]*Tv_r?)"'
 sed -E -e '/^@llvm\.used = /d' \
   -e 's/sub \(i64 ptrtoint \(ptr (@\.str[^ ]*|@"\.str[^"]*") to i64\), i64 32\)/sub (i64 ptrtoint (ptr \1 to i64), i64 -140737488355296)/g' \
+  -e 's/add \(i64 ptrtoint \(ptr (@\.str[^ ]*|@"\.str[^"]*") to i64\), i64 9223372036854775776\)/add (i64 ptrtoint (ptr \1 to i64), i64 -9223231299366420512)/g' \
   -e "s/ ($STATIC_OBJ)/ $ALIAS/g" \
   build/kernel.raw.ll > build/kernel.ll
+#    Any String literal reference left in another form would point into the
+#    high kernel image and crash at run time, so refuse to build.
+if grep -qE 'ptrtoint \(ptr (@\.str[^ ]*|@"\.str[^"]*") to i64\), i64 (32|9223372036854775776)\)' build/kernel.ll; then
+  echo "error: String literal reference not rewritten to the lower-half alias" >&2; exit 1
+fi
 
 # 3. IR / C -> LTO bitcode objects. Codegen is deferred to the linker so unused
 #    runtime functions (e.g. swift_intToFloat32, which can't codegen without SSE)

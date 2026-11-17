@@ -20,13 +20,8 @@ func runSelfTests() -> Never {
     puts("selftest:\n")
 
     // Part 1: formatting and parsing helpers.
-    var shell = Shell()
-    ("0xFfA0" as StaticString).withUTF8Buffer { buf in
-        for i in 0..<buf.count { shell.line[i] = buf[i] }
-        shell.len = buf.count
-    }
-    t.check("parseHex 0xFfA0", shell.parseHex(Span(start: 0, end: 6)) == 0xFFA0)
-    t.check("parseHex rejects empty", shell.parseHex(Span(start: 0, end: 0)) == nil)
+    t.check("parseHex 0xFfA0", parseHex("0xFfA0") == 0xFFA0)
+    t.check("parseHex rejects empty", parseHex("") == nil && parseHex("0x") == nil)
     t.check("framebuffer present", (framebuffer_request.response?.pointee.framebuffer_count ?? 0) > 0)
     t.check("memory map present", (memmap_request.response?.pointee.entry_count ?? 0) > 0)
 
@@ -63,6 +58,9 @@ func runSelfTests() -> Never {
 
     // Phase D: SSE, Float, Dictionary, Set, String ==.
     sseTests(&t)
+
+    // Phase G: terminal, line editor, command table.
+    shellTests(&t)
 
     puts("selftest: "); printDec(UInt64(t.passed)); puts(" passed, ")
     printDec(UInt64(t.failed)); puts(" failed\n")

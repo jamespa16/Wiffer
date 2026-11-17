@@ -46,8 +46,14 @@ func exceptionName(_ vector: UInt64) -> StaticString {
     }
 }
 
+/// Never allocates (puts/printHex and the console's write and flush don't):
+/// the heap may be what faulted. On screen: a white-on-red header and
+/// footer, and the status bar turns red.
 func exceptionReport(_ f: interrupt_frame) -> Never {
-    puts("\n*** EXCEPTION "); printDec(f.vector); puts(": "); puts(exceptionName(f.vector))
+    statusBarAlert(" *** EXCEPTION: system halted (see the report below) ***")
+    // Reset attributes first: the fault may have hit mid-way through output.
+    puts("\u{1B}[0m\n\u{1B}[1;97;41m*** EXCEPTION "); printDec(f.vector); puts(": ")
+    puts(exceptionName(f.vector)); puts(" ***\u{1B}[0m")
     puts("\n    error  "); printHex(f.error_code)
     puts("\n    rip    "); printHex(f.rip)
     puts("\n    rsp    "); printHex(f.rsp)
@@ -55,7 +61,7 @@ func exceptionReport(_ f: interrupt_frame) -> Never {
     if f.vector == 14 {
         puts("\n    cr2    "); printHex(read_cr2())
     }
-    puts("\n*** System halted.\n")
+    puts("\n\u{1B}[1;97;41m*** System halted. ***\u{1B}[0m\n")
     consoleFlush()
     outb(0xF4, exceptionExitCode)
     hcf()

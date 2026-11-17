@@ -125,7 +125,20 @@ func consoleTests(_ t: inout SelfTest) {
 
     // The live display: a full redraw, and the back buffer matches the model.
     if let con = console, let d = display {
-        t.check("display: grid covers the framebuffer", con.cols == d.cols && con.rows == d.rows)
+        t.check("display: console fills the viewport", con.cols == d.viewCols && con.rows == d.viewRows
+                && d.originCol + con.cols <= d.cols && d.originRow + con.rows <= d.rows)
+        t.check("display: status bar on row 0, frame around the console",
+                d.statusRow == 0 && d.originRow == 2 && d.originCol == 1
+                && d.chrome[d.cols].ch == 0x250C && d.chrome[(d.rows - 1) * d.cols + d.cols - 1].ch == 0x2518
+                && d.chrome[3 * d.cols].ch == 0x2502 && d.chrome[0].bg == d.statusBG)
+        statusNextTick = 0
+        statusBarRefresh()
+        var status: [UInt8] = []
+        for col in 0..<d.cols { status.append(UInt8(truncatingIfNeeded: d.chrome[col].ch)) }
+        let free = Array(" free \((pmm.freeFrames * frameSize) >> 20) of \((pmm.totalFrames * frameSize) >> 20) MiB".utf8)
+        var found = false
+        for i in 0..<max(status.count - free.count, 0) where status[i..<(i + free.count)].elementsEqual(free) { found = true }
+        t.check("display: status bar shows free memory", found && d.chrome[0].bg == d.statusBG)
         for r in 0..<con.rows { con.dirty[r] = true }
         let start = ticks
         d.flush(con)
@@ -145,7 +158,7 @@ func consoleTests(_ t: inout SelfTest) {
         for y in 0..<16 {
             for x in 0..<8 {
                 let on = bits[y] & (0x80 >> UInt8(x)) != 0
-                let px = d.back[y * d.width + x]
+                let px = d.back[(d.originRow * 16 + y) * d.width + d.originCol * 8 + x]
                 let inverted = con.row == 0 && min(con.col, con.cols - 1) == 0
                 if px != d.palette[Int(on != inverted ? cell.fg : cell.bg)] { match = false }
             }
