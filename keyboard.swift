@@ -1,5 +1,6 @@
-// Phase F1: scancode set 1 decoding (US layout) into KeyEvents, and the
-// unified input wait used by the shell (serial bytes or PS/2 keys).
+// Phase F1: scancode set 1 decoding (US layout) into KeyEvents.
+// Phase H2: Alt / AltGr, Super and F1-F12, with the modifiers carried in a
+// `Key` (events.swift). The input wait (readKey) is in events.swift.
 
 /// One keypress. ASCII (and control codes: Enter = \r, Backspace = 0x08,
 /// Tab = 0x09, Esc = 0x1B, Ctrl-letter = 0x01...0x1A) arrives as `.char`;
@@ -9,6 +10,11 @@ enum KeyEvent: Equatable {
     case up, down, left, right
     case home, end, pageUp, pageDown
     case insert, delete
+    /// F1...F12 (payload 1...12).
+    case function(UInt8)
+    /// The Windows / Super key itself (sent once per press; while it is
+    /// held, other keys arrive with `Key.meta` set).
+    case superKey
 }
 
 /// Scancode set 1 (what the 8042 delivers with translation on) -> ASCII,
@@ -23,6 +29,10 @@ let scancodeKeypad: StaticString = "789-456+1230."
 struct ScancodeDecoder {
     var leftShift = false, rightShift = false
     var leftCtrl = false, rightCtrl = false
+    /// Left Alt (38) and right Alt / AltGr (E0 38).
+    var leftAlt = false, rightAlt = false
+    /// Windows / Super keys (E0 5B, E0 5C).
+    var leftSuper = false, rightSuper = false
     var capsLock = false, numLock = false
     /// Caps/Num Lock keys held: typematic repeat must not toggle again.
     var capsHeld = false, numHeld = false
@@ -33,9 +43,21 @@ struct ScancodeDecoder {
 
     var shift: Bool { leftShift || rightShift }
     var ctrl: Bool { leftCtrl || rightCtrl }
+    var alt: Bool { leftAlt || rightAlt }
+    var altGr: Bool { rightAlt }
+    var meta: Bool { leftSuper || rightSuper }
 
-    /// Feed one scancode byte; returns an event when a key press completes.
-    mutating func feed(_ code: UInt8) -> KeyEvent? {
+    /// Feed one scancode byte; returns the key when a key press completes.
+    mutating func feed(_ code: UInt8) -> KeyEvent? { feedKey(code)?.code }
+
+    /// Feed one scancode byte; returns the key, with the modifiers held at
+    /// the time, when a key press completes.
+    mutating func feedKey(_ code: UInt8) -> Key? {
+        guard let event = decode(code) else { return nil }
+        return Key(event, ctrl: ctrl, alt: alt, shift: shift, meta: meta)
+    }
+
+    mutating func decode(_ code: UInt8) -> KeyEvent? {
         if skip > 0 { skip -= 1; return nil }
         if code == 0xE0 { extended = true; return nil }
         if code == 0xE1 { skip = 5; return nil } // E1 1D 45 E1 9D C5
@@ -51,7 +73,12 @@ struct ScancodeDecoder {
         case (true, 0x2A), (true, 0x36): return nil // fake shifts around nav keys
         case (false, 0x1D): leftCtrl = !release; return nil
         case (true, 0x1D): rightCtrl = !release; return nil
-        case (_, 0x38): return nil // Alt / AltGr: not used yet
+        case (false, 0x38): leftAlt = !release; return nil
+        case (true, 0x38): rightAlt = !release; return nil // AltGr
+        case (true, 0x5B), (true, 0x5C):
+            let held = leftSuper || rightSuper
+            if make == 0x5B { leftSuper = !release } else { rightSuper = !release }
+            return !release && !held ? .superKey : nil // not on typematic repeat
         case (false, 0x3A):
             if !release && !capsHeld { capsLock.toggle() }
             capsHeld = !release
@@ -71,6 +98,8 @@ struct ScancodeDecoder {
             default: return navigation(make)
             }
         }
+        if (0x3B...0x44).contains(make) { return .function(make - 0x3A) } // F1-F10
+        if make == 0x57 || make == 0x58 { return .function(make - 0x4C) } // F11, F12
         if (0x47...0x53).contains(make) {
             if numLock && make != 0x4A && make != 0x4E {
                 return .char(byte(scancodeKeypad, Int(make) - 0x47))
@@ -119,44 +148,3 @@ struct ScancodeDecoder {
 }
 
 var keyboardDecoder = ScancodeDecoder()
-
-/// Decode queued scancodes until one yields an event (or the queue is empty).
-func pollKeyboard() -> KeyEvent? {
-    while let code = keyboardRing.pop() {
-        if let event = keyboardDecoder.feed(code) { return event }
-    }
-    return nil
-}
-
-/// Serial input goes through an escape-sequence decoder (terminal.swift),
-/// so arrows, Home/End and Delete work over serial as well as on PS/2.
-var serialKeys = EscapeDecoder()
-/// Tick of the last serial byte, to time out a lone ESC.
-var serialLastByte: UInt64 = 0
-/// A lone ESC becomes the Escape key after this many quiet ticks (200 ms).
-let escapeTimeoutTicks: UInt64 = 20
-
-/// Wait for the next key from either input: COM1 bytes (decoded by
-/// serialKeys) or a PS/2 key. Mouse packets are processed (and the cursor
-/// moved) and the status bar refreshed while waiting. The CPU sleeps in hlt
-/// between checks; the timer IRQ bounds the wake-up latency for the
-/// (polled) UART.
-func readKey() -> KeyEvent {
-    while true {
-        if let event = serialKeys.pop() { return event }
-        if inb(com1 + 5) & 0x01 != 0 {
-            serialKeys.feed(inb(com1))
-            serialLastByte = ticks
-            continue
-        }
-        if serialKeys.pending && ticks &- serialLastByte >= escapeTimeoutTicks {
-            serialKeys.timeout()
-            continue
-        }
-        pollMouse()
-        if let event = pollKeyboard() { return event }
-        statusBarRefresh()
-        consoleFlush() // about to sleep: show pending output (and echo) now
-        if interruptsEnabled { hlt() } // hlt with IF=0 would never wake
-    }
-}
