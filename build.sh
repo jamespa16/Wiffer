@@ -36,10 +36,12 @@ clang -target x86_64-unknown-none-elf -flto -Wno-override-module \
 clang -target x86_64-unknown-none-elf -flto -ffreestanding -nostdlib -O2 \
   -Wall -Wextra "${KFLAGS[@]}" -fno-stack-protector -fno-pic \
   -c boot.c -o build/boot.o
+#    Interrupt stubs + GDT reload: plain assembly, so a real object (not LTO).
+clang -target x86_64-unknown-none-elf "${KFLAGS[@]}" -c cpu.S -o build/cpu.o
 
 # 4. Link. Only ENTRY(kernel_main), the Limine requests, and what they reach is kept.
 ld.lld -T linker.ld -nostdlib -static --gc-sections -z norelro -z max-page-size=0x1000 \
-  --build-id=none --lto-O2 build/kernel.o build/boot.o -o build/kernel.elf
+  --build-id=none --lto-O2 build/kernel.o build/boot.o build/cpu.o -o build/kernel.elf
 
 # 5. Verify: no undefined symbols, no Swift runtime symbols, no SSE.
 if [[ -n "$(llvm-nm -u build/kernel.elf)" ]]; then

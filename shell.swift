@@ -103,6 +103,8 @@ struct Shell {
             fb              framebuffer info
             mem             usable memory from the Limine memory map
             peek <hex>      read a 64-bit value at an address
+            uptime          time since boot (timer ticks at 100 Hz)
+            fault <kind>    raise an exception: ud, de, pf, gp, df
             halt            stop the CPU
             reboot          reset via the keyboard controller
             selftest        run kernel self-checks (exits QEMU under --test)
@@ -125,6 +127,25 @@ struct Shell {
             framebufferInfo()
         } else if equals(cmd, "mem") {
             memoryInfo()
+        } else if equals(cmd, "uptime") {
+            uptime()
+        } else if equals(cmd, "fault") {
+            let kind = word(from: args.start)
+            if equals(kind, "ud") {
+                fault_invalid_opcode()
+            } else if equals(kind, "de") {
+                fault_divide_by_zero()
+            } else if equals(kind, "pf") {
+                // User-half address: Limine maps nothing there. Store a nonzero
+                // value: for 0, -Osize emits `andq $0, (mem)`, which faults as a read.
+                UnsafeMutablePointer<UInt64>(bitPattern: 0x0000_7000_0000_0000)!.pointee = 0x5A5A
+            } else if equals(kind, "gp") {
+                // Non-canonical: bits 63:47 aren't all equal.
+                printHex(UnsafePointer<UInt64>(bitPattern: UInt(0xDEAD_0000_0000_0000))!.pointee)
+            } else if equals(kind, "df") {
+                fault_double()
+            }
+            puts("usage: fault <ud|de|pf|gp|df>\n")
         } else if equals(cmd, "peek") {
             guard let addr = parseHex(word(from: args.start)) else {
                 puts("usage: peek <hex addr>\n")
@@ -153,6 +174,14 @@ func reboot() -> Never {
     while inb(0x64) & 0x02 != 0 {}
     outb(0x64, 0xFE)
     hcf()
+}
+
+func uptime() {
+    let t = ticks
+    let hundredths = t % timerHz * 100 / timerHz
+    puts("uptime: "); printDec(t / timerHz); puts(".")
+    if hundredths < 10 { putc(0x30) }
+    printDec(hundredths); puts(" s ("); printDec(t); puts(" ticks)\n")
 }
 
 func framebufferInfo() {

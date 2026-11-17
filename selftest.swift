@@ -30,6 +30,28 @@ func runSelfTests() -> Never {
     t.check("framebuffer present", (framebuffer_request.response?.pointee.framebuffer_count ?? 0) > 0)
     t.check("memory map present", (memmap_request.response?.pointee.entry_count ?? 0) > 0)
 
+    // Phase A: descriptor tables.
+    let gdtr = read_gdtr()
+    t.check("GDT loaded", gdtr.base == address(of: &gdt) && Int(gdtr.limit) == gdt.count * 8 - 1)
+    t.check("CS/SS are kernel selectors", read_cs() == Selector.kernelCode && read_ss() == Selector.kernelData)
+    t.check("TSS loaded (TR)", read_tr() == Selector.tss)
+    t.check("TSS ist1 = top of #DF stack",
+            UInt64(tss[10]) << 32 | UInt64(tss[9]) == address(of: &doubleFaultStack) + UInt64(doubleFaultStack.count))
+    let idtr = read_idtr()
+    t.check("IDT loaded", idtr.base == address(of: &idt) && Int(idtr.limit) == idtVectors * 16 - 1)
+    t.check("#DF gate uses IST1", (idt[doubleFaultVector * 2] >> 32) & 7 == 1)
+    t.check("IRQ gates present", (idt[47 * 2] >> 47) & 1 == 1 && (idt[48 * 2] >> 47) & 1 == 0)
+
+    // Phase B: PIC, timer, idle.
+    t.check("PIC masks all but IRQ0", inb(PIC.masterData) == 0xFE && inb(PIC.slaveData) == 0xFF)
+    t.check("interrupts enabled", interruptsEnabled)
+    let start = ticks
+    for _ in 0..<5 { hlt() }
+    t.check("ticks advance across hlt", ticks > start)
+    let wait = ticks
+    while ticks < wait + 10 { hlt() }
+    t.check("timer keeps firing (EOI sent)", ticks >= wait + 10)
+
     puts("selftest: "); printDec(UInt64(t.passed)); puts(" passed, ")
     printDec(UInt64(t.failed)); puts(" failed\n")
     qemuExit(t.failed == 0 ? 0 : 1)

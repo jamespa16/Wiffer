@@ -25,6 +25,15 @@ public func kernelMain() -> Never {
     }
     puts("Hello from Embedded Swift!\n")
 
+    // Phase A/B: descriptor tables first, then the PIC (remapped before any
+    // IRQ can arrive), the timer, and finally interrupts on.
+    gdtInit()
+    idtInit()
+    picInit()
+    pitInit()
+    sti()
+    puts("GDT, IDT, PIC and PIT ready; interrupts on.\n")
+
     if let resp = framebuffer_request.response, resp.pointee.framebuffer_count > 0,
        let fb = resp.pointee.framebuffers[0] {
         drawGradient(fb)

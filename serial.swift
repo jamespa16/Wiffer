@@ -12,9 +12,12 @@ func serialInit() {
     outb(com1 + 4, 0x0B) // RTS/DSR
 }
 
-/// Spin until a byte is available (line status bit 0), then read it.
+/// Wait for a byte (line status bit 0), then read it. The UART stays polled:
+/// the CPU sleeps in `hlt` between checks and the timer IRQ wakes it.
 func getc() -> UInt8 {
-    while inb(com1 + 5) & 0x01 == 0 {}
+    while inb(com1 + 5) & 0x01 == 0 {
+        if interruptsEnabled { hlt() } // hlt with IF=0 would never wake
+    }
     return inb(com1)
 }
 
