@@ -56,6 +56,9 @@ func runSelfTests() -> Never {
     // Phase E: console model, font, display.
     consoleTests(&t)
 
+    // Phase I: surfaces, drawing primitives, ConsoleView.
+    surfaceTests(&t)
+
     // Phase D: SSE, Float, Dictionary, Set, String ==.
     sseTests(&t)
 

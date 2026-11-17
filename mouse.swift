@@ -121,49 +121,30 @@ XoX  XooX
 XX   XooX
       XX
 """
-let cursorWidth = 11
-let cursorHeight = 17
 
 var cursorShown = false
 var cursorX = 0
 var cursorY = 0
 
-/// Sprite pixel at (col, row) of the art: 0 transparent, 1 outline, 2 fill.
-/// Decoded once (by cursorDraw) so compositing never walks the string. A
-/// plain zeroed global rather than a closure initialiser, so no lazy-init.
-var cursorMask = InlineArray<187, UInt8>(repeating: 0)
-var cursorMaskReady = false
+/// The art as a masked 1-bit sprite (X = ink = black outline, o = paper =
+/// white fill), parsed once by cursorDraw so compositing never walks the
+/// string. A plain global rather than a lazy initialiser.
+var cursorSprite: Sprite? = nil
+var cursorWidth: Int { cursorSprite?.width ?? 0 }
+var cursorHeight: Int { cursorSprite?.height ?? 0 }
 
-func decodeCursorMask() {
-    cursorArt.withUTF8Buffer { art in
-        var row = 0, col = 0
-        for c in art {
-            if c == 0x0A { row += 1; col = 0; continue }
-            if row < cursorHeight && col < cursorWidth && c != 0x20 {
-                cursorMask[row * cursorWidth + col] = c == 0x58 ? 1 : 2
-            }
-            col += 1
-        }
-    }
-    cursorMaskReady = true
-}
-
-/// Composite the sprite over framebuffer line `y`, whose pixels have just
-/// been written from `source` (a full line of `width` pixels). Called by the
-/// console's Display.copyRows, so the cursor survives every console flush
-/// and the framebuffer is never read back.
-func cursorOverlay(line y: Int, fbLine: UnsafeMutablePointer<UInt32>, width: Int) {
-    guard cursorShown, y >= cursorY, y < cursorY + cursorHeight else { return }
-    let row = y - cursorY
-    for col in 0..<cursorWidth where cursorX + col < width {
-        let m = cursorMask[row * cursorWidth + col]
-        if m != 0 { fbLine[cursorX + col] = m == 1 ? 0x00_0000 : 0xFF_FFFF }
-    }
+/// Composite the sprite onto `s` (the framebuffer, clipped to the rect just
+/// copied there from the back buffer). Called by the console's Display.copy,
+/// so the cursor survives every console flush and the framebuffer is never
+/// read back.
+func cursorComposite(onto s: Surface) {
+    guard cursorShown, let sprite = cursorSprite else { return }
+    s.drawSprite(sprite, at: Point(cursorX, cursorY), ink: 0x00_0000, paper: 0xFF_FFFF)
 }
 
 /// Show the sprite at (x, y), with the hot spot at the top left (clipped).
 func cursorDraw(x: Int, y: Int) {
-    if !cursorMaskReady { decodeCursorMask() }
+    if cursorSprite == nil { cursorSprite = Sprite(art: cursorArt) }
     if cursorShown { cursorErase() }
     cursorX = x
     cursorY = y
@@ -178,18 +159,23 @@ func cursorErase() {
     repaintCursorRows()
 }
 
-/// Rewrite the framebuffer lines the sprite covers (at its current position).
-/// With the console, they come from its back buffer and copyRows composites
-/// the sprite. Without one (no usable framebuffer for text), there is nothing
-/// to restore from, so draw on the raw framebuffer and never erase.
+/// The raw framebuffer as a surface, when there is no console Display.
+var rawCursorSurface: Surface? = nil
+
+/// Rewrite the framebuffer pixels the sprite covers (at its current
+/// position). With the console, they come from its back buffer and
+/// Display.copy composites the sprite. Without one (no usable framebuffer
+/// for text), there is nothing to restore from, so draw on the raw
+/// framebuffer and never erase.
 func repaintCursorRows() {
+    let r = Rect(cursorX, cursorY, cursorWidth, cursorHeight)
     if let d = display {
-        let first = max(0, cursorY), last = min(d.height, cursorY + cursorHeight)
-        if first < last { d.copyRows(first, last - first) }
+        d.copy(r.intersection(d.back.bounds))
     } else if cursorShown, let fb = RawFramebuffer.primary {
-        for y in max(0, cursorY)..<min(fb.height, cursorY + cursorHeight) {
-            cursorOverlay(line: y, fbLine: fb.pixels + y * fb.stride, width: fb.width)
+        if rawCursorSurface == nil {
+            rawCursorSurface = Surface(wrapping: fb.pixels, width: fb.width, height: fb.height, stride: fb.stride)
         }
+        if let s = rawCursorSurface { cursorComposite(onto: s) }
     }
 }
 

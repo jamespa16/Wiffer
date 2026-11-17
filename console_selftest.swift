@@ -158,7 +158,7 @@ func consoleTests(_ t: inout SelfTest) {
         for y in 0..<16 {
             for x in 0..<8 {
                 let on = bits[y] & (0x80 >> UInt8(x)) != 0
-                let px = d.back[(d.originRow * 16 + y) * d.width + d.originCol * 8 + x]
+                let px = d.back.pixel(d.originCol * 8 + x, d.originRow * 16 + y)
                 let inverted = con.row == 0 && min(con.col, con.cols - 1) == 0
                 if px != d.palette[Int(on != inverted ? cell.fg : cell.bg)] { match = false }
             }

@@ -362,15 +362,20 @@ final class Display {
     let fbStride: Int
     let width: Int
     let height: Int
-    /// Heap back buffer, width * height pixels, rows packed.
-    let back: UnsafeMutablePointer<UInt32>
+    /// Heap back buffer, width x height pixels: the whole screen is one
+    /// surface. Everything is drawn here, then damaged rects are copied out.
+    let back: Surface
+    /// The framebuffer wrapped as a (write-only) surface, for copying out.
+    let front: Surface
     let font: PSFFont
+    /// Draws the console into `back`; holds the palette and text cursor.
+    let view: ConsoleView
     /// The ANSI palette in the framebuffer's pixel format.
-    var palette = InlineArray<16, UInt32>(repeating: 0)
-    /// Where the cursor was last drawn (an inverted cell).
-    var cursorRow = -1
-    var cursorCol = -1
-    var showCursor = true
+    var palette: InlineArray<16, UInt32> { view.palette }
+    var showCursor: Bool {
+        get { view.showCursor }
+        set { view.showCursor = newValue }
+    }
     var flushes = 0
 
     /// Layout (G4): where the console's grid sits on screen, in cells, and
@@ -404,18 +409,20 @@ final class Display {
         chromeDirty = Array(repeating: false, count: screenRows)
         viewRows = screenRows
         viewCols = screenCols
-        back = UnsafeMutablePointer<UInt32>.allocate(capacity: width * height)
         func channel(_ v: UInt32, _ size: UInt8, _ shift: UInt8) -> UInt32 {
             ((v & 0xFF) >> UInt32(8 - size)) << UInt32(shift)
         }
+        var palette = InlineArray<16, UInt32>(repeating: 0)
         for i in 0..<16 {
             let c = ansiColor(i)
             palette[i] = channel(c >> 16, f.red_mask_size, f.red_mask_shift)
                 | channel(c >> 8, f.green_mask_size, f.green_mask_shift)
                 | channel(c, f.blue_mask_size, f.blue_mask_shift)
         }
+        view = ConsoleView(font: font, palette: palette)
         // Clear everything once, including the margin no cell covers.
-        back.initialize(repeating: palette[Int(consoleDefaultBG)], count: width * height)
+        back = Surface(width: width, height: height, color: palette[Int(consoleDefaultBG)])
+        front = Surface(wrapping: fb, width: width, height: height, stride: fbStride)
         copyRows(0, height)
     }
 
@@ -424,32 +431,19 @@ final class Display {
 
     /// Draw glyph `glyph` into the back buffer at text cell (col, row).
     func drawGlyph(col: Int, row: Int, glyph: Int, fg: UInt32, bg: UInt32) {
-        var src = font.bitmap(glyph)
-        var dst = back + row * font.height * width + col * font.width
-        for _ in 0..<font.height {
-            let bits = src.pointee
-            dst[0] = bits & 0x80 != 0 ? fg : bg
-            dst[1] = bits & 0x40 != 0 ? fg : bg
-            dst[2] = bits & 0x20 != 0 ? fg : bg
-            dst[3] = bits & 0x10 != 0 ? fg : bg
-            dst[4] = bits & 0x08 != 0 ? fg : bg
-            dst[5] = bits & 0x04 != 0 ? fg : bg
-            dst[6] = bits & 0x02 != 0 ? fg : bg
-            dst[7] = bits & 0x01 != 0 ? fg : bg
-            src += 1
-            dst += width
-        }
+        back.drawGlyph(glyph, font: font, at: Point(col * font.width, row * font.height), fg: fg, bg: bg)
+    }
+
+    /// Copy `r` from the back buffer to the framebuffer, with the mouse
+    /// sprite composited on top, so the framebuffer is never read back.
+    func copy(_ r: Rect) {
+        front.blit(from: back, src: r, to: r.origin)
+        front.withClip(r) { cursorComposite(onto: front) }
     }
 
     /// Copy pixel rows [y, y + count) from the back buffer to the framebuffer.
     func copyRows(_ y: Int, _ count: Int) {
-        for line in y..<(y + count) {
-            let s = back + line * width
-            let d = fb + line * fbStride
-            var x = 0
-            while x < width { d[x] = s[x]; x += 1 }
-            cursorOverlay(line: line, fbLine: d, width: width) // mouse sprite
-        }
+        copy(Rect(0, y, width, count))
     }
 
     // MARK: Layout
@@ -535,41 +529,33 @@ final class Display {
     }
 
     /// Render the chrome's and the console's dirty rows (and the cursor's old
-    /// and new rows) into the back buffer, then copy those rows to the
-    /// framebuffer. Never allocates.
+    /// and new rows) into the back buffer, then copy them to the framebuffer.
+    /// Never allocates.
     func flush(_ c: Console) {
-        let cr = min(c.row, c.rows - 1), cc = min(c.col, c.cols - 1)
-        if cr != cursorRow || cc != cursorCol {
-            if cursorRow >= 0 && cursorRow < c.rows { c.dirty[cursorRow] = true }
-            c.dirty[cr] = true
-        }
-        let visibleRows = min(c.rows, viewRows), visibleCols = min(c.cols, viewCols)
+        let visibleRows = min(c.rows, viewRows)
         for r in 0..<rows where chromeDirty[r] {
             for col in 0..<cols where !inViewport(r, col) {
                 let cell = chrome[r * cols + col]
                 drawGlyph(col: col, row: r, glyph: font.glyph(cell.ch),
                           fg: palette[Int(cell.fg & 15)], bg: palette[Int(cell.bg & 15)])
             }
-            chromeDirty[r] = false
             let consoleRow = r - originRow
             if consoleRow >= 0 && consoleRow < visibleRows {
-                c.dirty[consoleRow] = true // copied to the framebuffer below
+                c.dirty[consoleRow] = true // copied (whole row) below, once rendered
             } else {
+                chromeDirty[r] = false
                 copyRows(r * font.height, font.height)
             }
         }
-        for r in 0..<visibleRows where c.dirty[r] {
-            for col in 0..<visibleCols {
-                let cell = c.cells[r * c.cols + col]
-                var fg = palette[Int(cell.fg & 15)], bg = palette[Int(cell.bg & 15)]
-                if showCursor && r == cr && col == cc { swap(&fg, &bg) }
-                drawGlyph(col: originCol + col, row: originRow + r, glyph: font.glyph(cell.ch), fg: fg, bg: bg)
-            }
-            copyRows((originRow + r) * font.height, font.height)
-            c.dirty[r] = false
+        let fw = font.width, fh = font.height
+        let viewport = Rect(originCol * fw, originRow * fh, viewCols * fw, viewRows * fh)
+        back.withClip(viewport) {
+            view.render(c, into: back, at: Point(originCol * fw, originRow * fh)) { copy($0) }
         }
-        cursorRow = cr
-        cursorCol = cc
+        for r in 0..<rows where chromeDirty[r] { // frame rows beside the console
+            chromeDirty[r] = false
+            copyRows(r * fh, fh)
+        }
         flushes += 1
     }
 }
