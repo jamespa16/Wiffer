@@ -168,10 +168,16 @@ requests. HHDM is the higher-half direct map: physical memory at
   responses.
 - Add a `mem` command that shows total, used, and free.
 
-**C3. Paging: not yet.** Limine's page tables already map the kernel and
-HHDM. A heap built from physical frames accessed through the HHDM needs no
-page-table changes. Build your own PML4 later, when you want guard pages,
-user space, or MMIO with custom caching.
+**C3. Paging: almost not yet.** Limine's page tables already map the kernel
+and HHDM. But Swift keeps tag bits in the top nibble of object and String
+literal pointers, so heap objects can't live at HHDM addresses
+(`0xffff8000…`), and literals/static objects in the kernel image
+(`0xffffffff8…`) break the same way. Two copied PML4 entries are enough:
+`PML4[0] = HHDM entry` (identity map: the heap hands out `virt == phys`)
+and `PML4[255] = PML4[511]` (the kernel image is also mapped at
+`H - 0xffff800000000000`). `build.sh` then rewrites String literal and
+static-object references in the IR to use that alias. Build your own PML4
+later, when you want guard pages, user space, or MMIO with custom caching.
 
 **C4. Kernel heap.** Implement the Embedded Swift platform hooks (the
 contract is in the toolchain's `usr/include/swift/EmbeddedPlatform.h`):

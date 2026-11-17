@@ -25,6 +25,14 @@ public func kernelMain() -> Never {
     }
     puts("Hello from Embedded Swift!\n")
 
+    // Frame allocator first: the Swift heap draws its memory from it, so no
+    // allocation (classes, Array, String, print) may happen before this.
+    guard pmm.initialize() else {
+        puts("pmm: no usable memory map / HHDM\n")
+        hcf()
+    }
+    print("free: \(pmm.freeFrames) frames")
+
     if let resp = framebuffer_request.response, resp.pointee.framebuffer_count > 0,
        let fb = resp.pointee.framebuffers[0] {
         drawGradient(fb)

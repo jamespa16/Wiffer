@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a freestanding, Swift-runtime-free x86-64 kernel and a bootable Limine ISO.
+# Build a freestanding x86-64 kernel (no external runtime) and a bootable Limine ISO.
 set -euo pipefail
 cd "$(dirname "$0")"
 mkdir -p build
@@ -11,7 +11,7 @@ KFLAGS=(-mno-red-zone -mno-sse -mno-mmx -msoft-float -mcmodel=kernel)
 XCC=(); for f in "${KFLAGS[@]}"; do XCC+=(-Xcc "$f"); done
 
 # 1. Swift -> LLVM IR.
-#    -no-allocations          : forbid heap use (no _swift_allocate etc.)
+#    (heap on: _swift_allocate etc. are implemented in heap.swift/platform.swift)
 #    -disable-stack-protector : no __stack_chk_guard/__stack_chk_fail
 #    -import-objc-header      : Limine structs + outb/inb/hcf from C
 swiftc \
@@ -19,14 +19,27 @@ swiftc \
   -enable-experimental-feature Embedded \
   -wmo -parse-as-library -Osize \
   -Xfrontend -disable-stack-protector \
-  -no-allocations \
   -import-objc-header bridge.h \
   "${XCC[@]}" \
   -emit-ir *.swift -o build/kernel.raw.ll
 
 # 2. Drop @llvm.used, which pins embedded runtime stubs
 #    (swift_isClassType, _swift_fatalError, ...) so they survive DCE.
-sed '/^@llvm\.used = /d' build/kernel.raw.ll > build/kernel.ll
+#    Then make Swift see kernel-image data at its lower-half alias. Swift keeps
+#    tag bits in the top nibble of String literal and object pointers, which
+#    0xffffffff8xxxxxxx addresses collide with. FrameAllocator.mapLowerHalf
+#    maps the image again at H - 0xffff800000000000 (PML4[255] = PML4[511]):
+#    - String literals: "(address - 32) | flags" becomes
+#      "(address - (32 + 0xffff800000000000)) | flags" (as a signed i64).
+#    - Static objects (empty-array/box singletons, statically initialised
+#      objects "...Tv_", "...Tv_r"): every use, but not the definition, goes
+#      through inttoptr(ptrtoint + 0x800000000000), which LLVM can't see through.
+ALIAS='inttoptr (i64 add (i64 ptrtoint (ptr \1 to i64), i64 140737488355328) to ptr)'
+STATIC_OBJ='@"(\$es[0-9]+_swiftEmpty[^"]*|\$es[0-9]+_empty[A-Za-z]*Storage[^"]*|[^"]*Tv_r?)"'
+sed -E -e '/^@llvm\.used = /d' \
+  -e 's/sub \(i64 ptrtoint \(ptr (@\.str[^ ]*|@"\.str[^"]*") to i64\), i64 32\)/sub (i64 ptrtoint (ptr \1 to i64), i64 -140737488355296)/g' \
+  -e "s/ ($STATIC_OBJ)/ $ALIAS/g" \
+  build/kernel.raw.ll > build/kernel.ll
 
 # 3. IR / C -> LTO bitcode objects. Codegen is deferred to the linker so unused
 #    runtime functions (e.g. swift_intToFloat32, which can't codegen without SSE)
@@ -41,13 +54,10 @@ clang -target x86_64-unknown-none-elf -flto -ffreestanding -nostdlib -O2 \
 ld.lld -T linker.ld -nostdlib -static --gc-sections -z norelro -z max-page-size=0x1000 \
   --build-id=none --lto-O2 build/kernel.o build/boot.o -o build/kernel.elf
 
-# 5. Verify: no undefined symbols, no Swift runtime symbols, no SSE.
+# 5. Verify: no undefined symbols (swift_retain etc. are compiled in, but
+#    there is no external runtime), no SSE.
 if [[ -n "$(llvm-nm -u build/kernel.elf)" ]]; then
   echo "error: undefined symbols:" >&2; llvm-nm -u build/kernel.elf >&2; exit 1
-fi
-if llvm-nm build/kernel.elf | grep -qE ' (_?swift_|\$es)'; then
-  echo "error: Swift runtime symbols present:" >&2
-  llvm-nm build/kernel.elf | grep -E ' (_?swift_|\$es)' >&2; exit 1
 fi
 if llvm-objdump -d build/kernel.elf | grep -qE '%[xy]mm'; then
   echo "error: SSE instructions present" >&2; exit 1
