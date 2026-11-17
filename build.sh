@@ -22,7 +22,7 @@ swiftc \
   -no-allocations \
   -import-objc-header bridge.h \
   "${XCC[@]}" \
-  -emit-ir kernel.swift -o build/kernel.raw.ll
+  -emit-ir *.swift -o build/kernel.raw.ll
 
 # 2. Drop @llvm.used, which pins embedded runtime stubs
 #    (swift_isClassType, _swift_fatalError, ...) so they survive DCE.

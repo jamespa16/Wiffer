@@ -1,26 +1,5 @@
 // Embedded Swift kernel entry point, booted by Limine in 64-bit long mode.
 
-let com1: UInt16 = 0x3F8
-
-func serialInit() {
-    outb(com1 + 1, 0x00) // disable interrupts
-    outb(com1 + 3, 0x80) // enable DLAB
-    outb(com1 + 0, 0x03) // divisor 3 -> 38400 baud
-    outb(com1 + 1, 0x00)
-    outb(com1 + 3, 0x03) // 8N1
-    outb(com1 + 2, 0xC7) // enable FIFO
-    outb(com1 + 4, 0x0B) // RTS/DSR
-}
-
-func serialWrite(_ s: StaticString) {
-    s.withUTF8Buffer { buf in
-        for byte in buf {
-            while inb(com1 + 5) & 0x20 == 0 {} // wait for transmit empty
-            outb(com1, byte)
-        }
-    }
-}
-
 func drawGradient(_ fb: UnsafeMutablePointer<limine_framebuffer>) {
     let f = fb.pointee
     guard f.bpp == 32, let base = f.address else { return }
@@ -41,19 +20,19 @@ public func kernelMain() -> Never {
 
     // Limine zeroes the third word if it supports our base revision.
     guard limine_base_revision.2 == 0 else {
-        serialWrite("Limine base revision not supported\n")
+        puts("Limine base revision not supported\n")
         hcf()
     }
-    serialWrite("Hello from Embedded Swift!\n")
+    puts("Hello from Embedded Swift!\n")
 
     if let resp = framebuffer_request.response, resp.pointee.framebuffer_count > 0,
        let fb = resp.pointee.framebuffers[0] {
         drawGradient(fb)
-        serialWrite("Framebuffer drawn.\n")
+        puts("Framebuffer drawn.\n")
     } else {
-        serialWrite("No framebuffer.\n")
+        puts("No framebuffer.\n")
     }
 
-    serialWrite("Halting.\n")
-    hcf()
+    var shell = Shell()
+    shell.run()
 }
