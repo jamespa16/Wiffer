@@ -10,10 +10,11 @@ Each command is sent after the previous prompt ("> ") appears. Each
 boot in parallel with the main session. Exits non-zero
 if any expectation fails. Assumes ./build.sh has already been run.
 """
-import argparse, os, re, select, subprocess, sys, time
+import argparse, os, re, select, socket, subprocess, sys, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ISO = os.path.join(ROOT, "build", "wiffer.iso")
+MONITOR_SOCK = os.path.join(ROOT, "build", "mon.sock")
 
 PROMPT = b"> "
 PROMPT_RE = re.compile(rb"(?:\n|\x1b\[H)> ")
@@ -33,9 +34,20 @@ CHECKS = [
     ("clear", "\x1b[2J"),
     ("fault", "usage: fault"),
     ("help", "uptime"),
+    ("help", "mouse           PS/2 mouse"),
 ]
 
 UPTIME_RE = re.compile(r"uptime: (\d+\.\d\d) s \((\d+) ticks\)")
+MOUSE_RE = re.compile(r"mouse: x=(\d+) y=(\d+) buttons=(\d+)")
+
+# Typed on the PS/2 keyboard through the QEMU monitor (`sendkey`), so these
+# exercise IRQ1 + the scancode decoder end to end: (keys, expected output).
+# The shell echoes keystrokes over serial, then runs the line.
+KEYBOARD_CHECKS = [
+    (["e", "c", "h", "o", "spc", "h", "i", "ret"], "echo hi\r\nhi\r\n"),
+    (["e", "c", "h", "o", "spc", "shift-h", "i", "shift-1", "spc", "x", "backspace", "y", "ret"],
+     "\r\nHi! y\r\n"),
+]
 
 # fault <kind> -> strings the exception report must contain. After the report
 # the kernel writes 2 to isa-debug-exit, so QEMU exits with (2 << 1) | 1.
@@ -51,14 +63,60 @@ FAULT_CHECKS = [
 
 
 class Session:
-    def __init__(self, extra_args=()):
+    def __init__(self, extra_args=(), monitor=False):
+        mon = ["-monitor", "none"]
+        if monitor:
+            if os.path.exists(MONITOR_SOCK):
+                os.unlink(MONITOR_SOCK)
+            mon = ["-monitor", f"unix:{MONITOR_SOCK},server,nowait"]
         args = ["qemu-system-x86_64", "-M", "q35", "-m", "256M", "-cdrom", ISO,
                 "-boot", "d", "-no-reboot", "-display", "none",
-                "-serial", "stdio", "-monitor", "none",
+                "-serial", "stdio", *mon,
                 "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", *extra_args]
         self.p = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                   stderr=subprocess.STDOUT)
         self.out = b""
+        self.mon = None
+
+    def monitor(self, cmd: str, timeout=5.0) -> str:
+        """Run a QEMU monitor (HMP) command and return its output."""
+        if self.mon is None:
+            deadline = time.time() + timeout
+            while True:
+                try:
+                    self.mon = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    self.mon.connect(MONITOR_SOCK)
+                    break
+                except OSError:
+                    self.mon.close()
+                    self.mon = None
+                    if time.time() > deadline:
+                        raise
+                    time.sleep(0.05)
+            self._monitor_read(timeout)  # banner + first prompt
+        self.mon.sendall(cmd.encode() + b"\n")
+        return self._monitor_read(timeout)
+
+    def _monitor_read(self, timeout) -> str:
+        buf = b""
+        deadline = time.time() + timeout
+        while not buf.endswith(b"(qemu) "):
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                break
+            r, _, _ = select.select([self.mon], [], [], remaining)
+            if not r:
+                break
+            chunk = self.mon.recv(4096)
+            if not chunk:
+                break
+            buf += chunk
+        return buf.decode(errors="replace")
+
+    def sendkeys(self, keys):
+        for k in keys:
+            self.monitor(f"sendkey {k}")
+            time.sleep(0.02)
 
     def read_until(self, needle: bytes, timeout=10.0) -> bytes:
         if needle == PROMPT:
@@ -108,6 +166,8 @@ class Session:
             time.sleep(0.005)  # don't overrun the 16-byte UART FIFO
 
     def close(self):
+        if self.mon is not None:
+            self.mon.close()
         self.p.kill()
         self.p.wait()
 
@@ -121,7 +181,7 @@ def main():
     # Each fault halts its machine, so every kind gets its own QEMU, booted now
     # so they run alongside the main session.
     faults = [] if opts.command else [(kind, want, Session()) for kind, want in FAULT_CHECKS]
-    s = Session()
+    s = Session(monitor=not opts.command)
     try:
         boot = s.read_prompt(opts.timeout)
         if not PROMPT_RE.search(boot):
@@ -154,6 +214,31 @@ def main():
         ok = None not in samples and samples[1] > samples[0]
         failures += not ok
         print(f"{'PASS' if ok else 'FAIL'}: uptime advances (ticks {samples})")
+
+        # PS/2 keyboard: keys typed through the monitor reach the shell.
+        for keys, want in KEYBOARD_CHECKS:
+            s.sendkeys(keys)
+            got = s.read_prompt(opts.timeout).decode(errors="replace")
+            ok = want in got
+            failures += not ok
+            print(f"{'PASS' if ok else 'FAIL'}: keyboard {' '.join(keys)}" + ("" if ok else
+                  f"\n  wanted {want!r}\n  got {got!r}"))
+
+        # PS/2 mouse: relative moves and a button press through the monitor.
+        def mouse_state():
+            s.send("mouse")
+            m = MOUSE_RE.search(s.read_prompt(opts.timeout).decode(errors="replace"))
+            return tuple(int(g) for g in m.groups()) if m else None
+        before = mouse_state()
+        s.monitor("mouse_move 40 30")
+        s.monitor("mouse_button 1")
+        time.sleep(0.2)
+        after = mouse_state()
+        s.monitor("mouse_button 0")
+        ok = (before is not None and after is not None and after[0] > before[0]
+              and after[1] > before[1] and after[2] == 1)
+        failures += not ok
+        print(f"{'PASS' if ok else 'FAIL'}: mouse moves right/down, left button ({before} -> {after})")
 
         # fault <kind>: a report, then QEMU exits via isa-debug-exit.
         for kind, want, fs in faults:

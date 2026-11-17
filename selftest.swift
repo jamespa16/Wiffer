@@ -43,7 +43,7 @@ func runSelfTests() -> Never {
     t.check("IRQ gates present", (idt[47 * 2] >> 47) & 1 == 1 && (idt[48 * 2] >> 47) & 1 == 0)
 
     // Phase B: PIC, timer, idle.
-    t.check("PIC masks all but IRQ0", inb(PIC.masterData) == 0xFE && inb(PIC.slaveData) == 0xFF)
+    t.check("PIC unmasks IRQ0/1/2/12 only", inb(PIC.masterData) == 0xF8 && inb(PIC.slaveData) == 0xEF)
     t.check("interrupts enabled", interruptsEnabled)
     let start = ticks
     for _ in 0..<5 { hlt() }
@@ -54,6 +54,9 @@ func runSelfTests() -> Never {
 
     // Phase C: frame allocator and heap.
     memoryTests(&t)
+
+    // Phase F: PS/2 input.
+    inputTests(&t)
 
     puts("selftest: "); printDec(UInt64(t.passed)); puts(" passed, ")
     printDec(UInt64(t.failed)); puts(" failed\n")
@@ -223,4 +226,84 @@ func enumStaticArray() -> Bool {
 func enumLiteralString() -> Bool {
     guard case .text(let s) = makePayload(2) else { return false }
     return s.utf8.count == 35 && s.utf8.first == 0x61
+}
+
+// MARK: Phase F
+
+func decode(_ codes: [UInt8]) -> [KeyEvent] {
+    var d = ScancodeDecoder()
+    var events: [KeyEvent] = []
+    for c in codes { if let e = d.feed(c) { events.append(e) } }
+    return events
+}
+
+func chars(_ s: StaticString) -> [KeyEvent] {
+    s.withUTF8Buffer { buf in buf.map { KeyEvent.char($0) } }
+}
+
+func parsePackets(_ bytes: [UInt8]) -> [MousePacket] {
+    var p = MousePacketParser()
+    var packets: [MousePacket] = []
+    for b in bytes { if let pk = p.feed(b) { packets.append(pk) } }
+    return packets
+}
+
+func inputTests(_ t: inout SelfTest) {
+    t.check("8042 keyboard and mouse found", ps2.controller && ps2.keyboard && ps2.mouse)
+    t.check("8042 IRQs + translation on", ps2.config & 0x43 == 0x43)
+    t.check("scancode tables cover 0x00-0x39",
+            scancodeBase.utf8CodeUnitCount == 0x3A && scancodeShift.utf8CodeUnitCount == 0x3A)
+
+    // Scancode set 1 decoding.
+    t.check("a, z, 1, space", decode([0x1E, 0x9E, 0x2C, 0x02, 0x39]) == chars("az1 "))
+    t.check("shift+a -> A", decode([0x2A, 0x1E]) == chars("A"))
+    t.check("shift release -> a", decode([0x2A, 0x1E, 0x9E, 0xAA, 0x1E]) == chars("Aa"))
+    t.check("right shift + 1 -> !", decode([0x36, 0x02, 0xB6, 0x02]) == chars("!1"))
+    t.check("caps+a -> A, caps+1 -> 1", decode([0x3A, 0xBA, 0x1E, 0x02]) == chars("A1"))
+    t.check("caps+shift+a -> a", decode([0x3A, 0xBA, 0x2A, 0x1E]) == chars("a"))
+    t.check("caps repeat toggles once", decode([0x3A, 0x3A, 0x3A, 0xBA, 0x1E]) == chars("A"))
+    t.check("ctrl+c -> 0x03", decode([0x1D, 0x2E, 0x9D, 0x2E]) == [.char(0x03), .char(0x63)])
+    t.check("right ctrl (E0 1D) + a -> 0x01", decode([0xE0, 0x1D, 0x1E]) == [.char(0x01)])
+    t.check("enter, backspace, tab, esc",
+            decode([0x1C, 0x0E, 0x0F, 0x01]) == [.char(0x0D), .char(0x08), .char(0x09), .char(0x1B)])
+    t.check("E0 48 -> up, release ignored", decode([0xE0, 0x48, 0xE0, 0xC8]) == [.up])
+    t.check("E0 arrows/home/end/delete/pgup/pgdn",
+            decode([0xE0, 0x50, 0xE0, 0x4B, 0xE0, 0x4D, 0xE0, 0x47, 0xE0, 0x4F,
+                    0xE0, 0x53, 0xE0, 0x49, 0xE0, 0x51])
+            == [.down, .left, .right, .home, .end, .delete, .pageUp, .pageDown])
+    t.check("E0 fake shift ignored", decode([0xE0, 0x2A, 0xE0, 0x47, 0xE0, 0xAA, 0x1E]) == [.home, .char(0x61)])
+    t.check("keypad enter (E0 1C) -> \\r", decode([0xE0, 0x1C]) == [.char(0x0D)])
+    t.check("keypad 8: up, then 8 with num lock", decode([0x48, 0x45, 0xC5, 0x48]) == [.up, .char(0x38)])
+    t.check("pause (E1 ...) swallowed", decode([0xE1, 0x1D, 0x45, 0xE1, 0x9D, 0xC5, 0x1E]) == chars("a"))
+    t.check("releases alone emit nothing", decode([0x9E, 0xAA, 0x81]).isEmpty)
+
+    // Ring buffer: FIFO order, drop when full.
+    var ring = ByteRing()
+    for i in 0..<200 { ring.push(UInt8(truncatingIfNeeded: i)) }
+    var popped: [UInt8] = []
+    while let b = ring.pop() { popped.append(b) }
+    t.check("ring keeps capacity-1 bytes in order",
+            popped.count == ByteRing.capacity - 1 && popped.first == 0 && popped.last == 126
+            && ring.dropped == 200 - (ByteRing.capacity - 1))
+
+    // Mouse packets.
+    t.check("mouse packet +dx +dy", parsePackets([0x08, 5, 3]) == [MousePacket(dx: 5, dy: 3, buttons: 0)])
+    t.check("mouse packet -dx (sign bit), left button",
+            parsePackets([0x19, 0xFB, 0x00]) == [MousePacket(dx: -5, dy: 0, buttons: 1)])
+    t.check("mouse packet -dy, right+middle",
+            parsePackets([0x2E, 0x00, 0xFE]) == [MousePacket(dx: 0, dy: -2, buttons: 6)])
+    t.check("mouse re-sync after bad first byte",
+            parsePackets([0x01, 0x08, 1, 2, 0x08, 3, 4]) == [MousePacket(dx: 1, dy: 2, buttons: 0),
+                                                            MousePacket(dx: 3, dy: 4, buttons: 0)])
+    t.check("mouse overflow packet discarded",
+            parsePackets([0x48, 1, 1, 0x08, 7, 0]) == [MousePacket(dx: 7, dy: 0, buttons: 0)])
+
+    var m = MouseState()
+    m.width = 100; m.height = 50; m.x = 10; m.y = 10
+    m.apply(MousePacket(dx: 5, dy: 3, buttons: 1))
+    t.check("mouse apply: y is screen-down", m.x == 15 && m.y == 7 && m.buttons == 1)
+    m.apply(MousePacket(dx: -200, dy: -200, buttons: 0))
+    t.check("mouse clamps low/high", m.x == 0 && m.y == 49)
+    m.apply(MousePacket(dx: 255, dy: 255, buttons: 0))
+    t.check("mouse clamps high/low", m.x == 99 && m.y == 0)
 }

@@ -274,7 +274,7 @@ and scrolling works past the bottom of the screen.
   buffer: single producer, single consumer.
 - The main loop decodes scancode set 1:
   - Track Shift, Ctrl and Caps state.
-  - Ignore release codes (bit 7 set).
+  - Ignore release codes (bit 7 set), except for the modifiers.
   - Handle the `0xE0` prefix for arrows, Home/End and Delete.
 - Emit `KeyEvent`s.
 

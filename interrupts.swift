@@ -66,7 +66,8 @@ enum PIC {
     static let slaveCommand: UInt16 = 0xA0, slaveData: UInt16 = 0xA1
     static let vectorBase: UInt8 = 0x20
     static let eoi: UInt8 = 0x20
-    /// Mask bits: everything off except IRQ0 (timer).
+    /// Mask bits at init: everything off except IRQ0 (timer). ps2Init
+    /// unmasks IRQ1 (keyboard), IRQ2 (cascade) and IRQ12 (mouse).
     static let masterMask: UInt8 = 0xFE
     static let slaveMask: UInt8 = 0xFF
 }
@@ -83,6 +84,11 @@ func picInit() {
     outb(PIC.slaveData, 0x01); io_wait()
     outb(PIC.masterData, PIC.masterMask)
     outb(PIC.slaveData, PIC.slaveMask)
+}
+
+func picUnmask(_ irq: UInt8) {
+    let port = irq < 8 ? PIC.masterData : PIC.slaveData
+    outb(port, inb(port) & ~(1 << (irq & 7)))
 }
 
 func picEOI(_ irq: UInt8) {
@@ -104,8 +110,13 @@ func handleIRQ(_ irq: UInt8) {
         outb(PIC.masterCommand, PIC.eoi)
         return
     }
-    if irq == 0 { ticks &+= 1 }
-    picEOI(irq)
+    switch irq {
+    case 0: ticks &+= 1
+    case 1: keyboardIRQ()
+    case 12: mouseIRQ()
+    default: break
+    }
+    picEOI(irq) // IRQ8-15: slave, then master
 }
 
 // MARK: PIT timer

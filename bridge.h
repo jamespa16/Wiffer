@@ -100,6 +100,9 @@ static inline uint64_t read_rflags(void) {
 static inline void sti(void) { __asm__ volatile ("sti" : : : "memory"); }
 static inline void cli(void) { __asm__ volatile ("cli" : : : "memory"); }
 static inline void hlt(void) { __asm__ volatile ("hlt" : : : "memory"); }
+// Compiler-only fence (no instruction): orders ring-buffer accesses against
+// an interrupt handler on the same CPU.
+static inline void compiler_barrier(void) { __asm__ volatile ("" : : : "memory"); }
 
 // A short delay for the 8259 PIC: a write to the unused POST port 0x80.
 static inline void io_wait(void) { outb(0x80, 0); }

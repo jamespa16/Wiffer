@@ -40,12 +40,14 @@ public func kernelMain() -> Never {
     // PIC is remapped before any IRQ can arrive, then the timer, then sti.
     picInit()
     pitInit()
+    ps2Init() // unmasks IRQ1/IRQ2/IRQ12 if the devices answer
     sti()
-    puts("GDT, IDT, PIC and PIT ready; interrupts on.\n")
+    puts("GDT, IDT, PIC, PIT and PS/2 ready; interrupts on.\n")
 
     if let resp = framebuffer_request.response, resp.pointee.framebuffer_count > 0,
        let fb = resp.pointee.framebuffers[0] {
         drawGradient(fb)
+        if ps2.mouse { cursorDraw(x: mouse.x, y: mouse.y) }
         puts("Framebuffer drawn.\n")
     } else {
         puts("No framebuffer.\n")

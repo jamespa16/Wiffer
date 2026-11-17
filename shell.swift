@@ -16,7 +16,8 @@ struct Shell {
         puts("Type 'help' for commands.\n")
         prompt()
         while true {
-            let byte = getc()
+            // Serial bytes or PS/2 keys. Arrows etc. wait for Phase G2.
+            guard case .char(let byte) = readKey() else { continue }
             switch byte {
             case 0x0D, 0x0A: // Enter
                 newline()
@@ -104,6 +105,7 @@ struct Shell {
             mem             memory map, frame and heap stats
             peek <hex>      read a 64-bit value at an address
             uptime          time since boot (timer ticks at 100 Hz)
+            mouse           PS/2 mouse position and buttons
             fault <kind>    raise an exception: ud, de, pf, gp, df
             halt            stop the CPU
             reboot          reset via the keyboard controller
@@ -129,6 +131,8 @@ struct Shell {
             memoryInfo()
         } else if equals(cmd, "uptime") {
             uptime()
+        } else if equals(cmd, "mouse") {
+            mouseInfo()
         } else if equals(cmd, "fault") {
             let kind = word(from: args.start)
             if equals(kind, "ud") {
@@ -174,6 +178,12 @@ func reboot() -> Never {
     while inb(0x64) & 0x02 != 0 {}
     outb(0x64, 0xFE)
     hcf()
+}
+
+func mouseInfo() {
+    guard ps2.mouse else { puts("mouse: none\n"); return }
+    pollMouse()
+    print("mouse: x=\(mouse.x) y=\(mouse.y) buttons=\(mouse.buttons) packets=\(mouse.packets) (screen \(mouse.width)x\(mouse.height), resyncs \(mouseParser.resyncs), overflows \(mouseParser.overflows))")
 }
 
 func uptime() {
