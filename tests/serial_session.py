@@ -5,7 +5,9 @@ Usage:
     tests/serial_session.py                 run shell checks, then `selftest`
     tests/serial_session.py -c 'help' -c 'mem'   just print a transcript
 
-Each command is sent after the previous prompt ("> ") appears. Exits non-zero
+Each command is sent after the previous prompt ("> ") appears. Each
+`fault <kind>` check boots its own QEMU (a fault halts the machine); those
+boot in parallel with the main session. Exits non-zero
 if any expectation fails. Assumes ./build.sh has already been run.
 """
 import argparse, os, re, select, subprocess, sys, time
@@ -28,6 +30,22 @@ CHECKS = [
     ("peek 0", "peek: address must be non-null"),
     ("peek zz", "usage: peek"),
     ("clear", "\x1b[2J"),
+    ("fault", "usage: fault"),
+    ("help", "uptime"),
+]
+
+UPTIME_RE = re.compile(r"uptime: (\d+\.\d\d) s \((\d+) ticks\)")
+
+# fault <kind> -> strings the exception report must contain. After the report
+# the kernel writes 2 to isa-debug-exit, so QEMU exits with (2 << 1) | 1.
+EXCEPTION_STATUS = 5
+FAULT_CHECKS = [
+    ("ud", ["*** EXCEPTION 6: #UD invalid opcode", "rip    0xffffffff8"]),
+    ("de", ["*** EXCEPTION 0: #DE divide error", "rip    0xffffffff8"]),
+    ("pf", ["*** EXCEPTION 14: #PF page fault", "error  0x0000000000000002",
+            "cr2    0x0000700000000000"]),
+    ("gp", ["*** EXCEPTION 13: #GP general protection fault", "rip    0xffffffff8"]),
+    ("df", ["*** EXCEPTION 8: #DF double fault", "rsp    0x0000700000000000"]),
 ]
 
 
@@ -99,6 +117,9 @@ def main():
     ap.add_argument("--timeout", type=float, default=10.0)
     opts = ap.parse_args()
 
+    # Each fault halts its machine, so every kind gets its own QEMU, booted now
+    # so they run alongside the main session.
+    faults = [] if opts.command else [(kind, want, Session()) for kind, want in FAULT_CHECKS]
     s = Session()
     try:
         boot = s.read_prompt(opts.timeout)
@@ -122,20 +143,53 @@ def main():
             print(f"{'PASS' if ok else 'FAIL'}: {cmd!r}" + ("" if ok else f"\n  wanted {want!r}\n  got {got!r}"))
         print(f"{len(CHECKS) - failures}/{len(CHECKS)} shell checks passed")
 
+        # uptime: the tick count must grow between two calls.
+        samples = []
+        for _ in range(2):
+            s.send("uptime")
+            m = UPTIME_RE.search(s.read_prompt(opts.timeout).decode(errors="replace"))
+            samples.append(int(m.group(2)) if m else None)
+            time.sleep(0.3)
+        ok = None not in samples and samples[1] > samples[0]
+        failures += not ok
+        print(f"{'PASS' if ok else 'FAIL'}: uptime advances (ticks {samples})")
+
+        # fault <kind>: a report, then QEMU exits via isa-debug-exit.
+        for kind, want, fs in faults:
+            got = fs.read_prompt(opts.timeout)
+            fs.send(f"fault {kind}")
+            status, rest = wait_exit(fs, opts.timeout)
+            got = (got + rest).decode(errors="replace")
+            missing = [w for w in want if w not in got]
+            ok = status == EXCEPTION_STATUS and not missing
+            failures += not ok
+            print(f"{'PASS' if ok else 'FAIL'}: fault {kind}" + ("" if ok else
+                  f"\n  exit status {status} (want {EXCEPTION_STATUS}), missing {missing}\n  got {got!r}"))
+
         # In-kernel self-tests: QEMU exits with (code << 1) | 1.
         s.send("selftest")
-        try:
-            status = s.p.wait(timeout=opts.timeout)
-        except subprocess.TimeoutExpired:
-            status = None
-        s.out += s.p.stdout.read() or b""
-        sys.stdout.write(s.out.decode(errors="replace"))
+        status, rest = wait_exit(s, opts.timeout)
+        sys.stdout.write(rest.decode(errors="replace"))
         if status != 1:
             print(f"FAIL: selftest exit status {status} (want 1)")
             return 1
         return 1 if failures else 0
     finally:
         s.close()
+        for _, _, fs in faults:
+            fs.close()
+
+
+def wait_exit(s: Session, timeout: float):
+    """Wait for QEMU to exit, returning (status or None, remaining output)."""
+    try:
+        status = s.p.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        status = None
+        s.p.kill()
+    s.out += s.p.stdout.read() or b""
+    out, s.out = s.out, b""
+    return status, out
 
 
 if __name__ == "__main__":
