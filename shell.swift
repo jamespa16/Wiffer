@@ -46,12 +46,14 @@ struct Shell<T: Terminal> {
     init(terminal: T) {
         term = terminal
         commands = Shell.builtins() + Shell.fileCommands() + Shell.desktopCommands()
-            + Shell.editorCommands()
+            + Shell.editorCommands() + Shell.terminalCommands()
     }
 
-    mutating func run() -> Never {
+    /// Until the terminal says the session is over (Phase L: `exit`, or the
+    /// terminal window closed); forever on the boot shell.
+    mutating func run() {
         say("Type 'help' for commands.")
-        while true { step() }
+        while !term.finished { step() }
     }
 
     /// Read one line, remember it, run it. Returns the line.

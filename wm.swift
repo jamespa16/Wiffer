@@ -27,8 +27,9 @@
 // becomes the first window (ConsoleWindow, still fed by putc and still read
 // by the same shell task), the main loop's router hands every event to
 // windowManager.route, and Display.flush composites through render(). Phase L
-// boots straight into it by calling startDesktop() unless `nodesktop` is on
-// the kernel command line, and replaces the `openTerminal` hook.
+// (terminal_window.swift) boots straight into a desktop without the console
+// window (runDesktop) unless `nodesktop` is on the kernel command line, and
+// sets the `openTerminal` hook to open TerminalWindows.
 
 /// The live WM (nil until `desktop`).
 var windowManager: WindowManager? = nil
@@ -44,7 +45,16 @@ final class WindowManager {
     private(set) var windows: [Window] = []
     private(set) var focused: Window?
     /// Gets keys that arrive over serial (nil: the focused window).
-    var serialTarget: Window?
+    var serialTarget: Window? {
+        didSet {
+            oldValue?.isSerialTarget = false
+            serialTarget?.isSerialTarget = true
+        }
+    }
+    /// Phase L (the desktop at boot): the serial line follows focus to the
+    /// most recently focused window that acceptsSerial (a terminal), and a
+    /// serial key with no such window opens a terminal.
+    var serialFollowsFocus = false
     /// Print "wm: ..." lines (the harness waits for them).
     var log = false
     private(set) var nextID = 1
@@ -165,6 +175,13 @@ final class WindowManager {
         layoutTaskbar()
         say("close #\(w.id)")
         if wasFocused, let top = windows.last { focus(top) }
+        if serialFollowsFocus && serialTarget == nil {
+            var i = windows.count - 1
+            while i >= 0 && serialTarget == nil {
+                if windows[i].acceptsSerial { serialTarget = windows[i] }
+                i -= 1
+            }
+        }
     }
 
     /// The user asked to close `w` (close box, Alt-F4, `close`): removed if
@@ -199,6 +216,7 @@ final class WindowManager {
             damageChrome(w)
             w.handle(.focus(true))
             say("focus #\(w.id)")
+            if serialFollowsFocus && w.acceptsSerial { serialTarget = w }
         }
     }
 
@@ -279,6 +297,10 @@ final class WindowManager {
     }
 
     func key(_ k: Key) {
+        if k.serial && serialFollowsFocus && serialTarget == nil {
+            openTerminal(self) // a serial console with nothing on the other end
+            return
+        }
         if k.serial, let t = serialTarget {
             t.handle(.key(k))
             return
@@ -526,6 +548,7 @@ func startDesktop(task: Task?) -> String {
     cw.view.showCursor = d.showCursor
     windowManager = wm
     wm.log = true
+    wm.openTerminal = openTerminalWindow // Phase L
     wm.add(cw, at: Point((wm.workArea.w - cw.frame.w) / 2, wm.workArea.y))
     wm.serialTarget = cw
     statusNextTick = 0
@@ -557,12 +580,13 @@ extension Shell {
                     }
                 }
             },
-            Command(name: "open", args: "<app>", help: "open a window: terminal, editor") { sh, args in
+            Command(name: "open", args: "<app>", help: "open a window: terminal, editor, log") { sh, args in
                 guard let wm = windowManager else { sh.say("open: no desktop (try 'desktop')"); return }
                 switch args.first ?? "" {
                 case "terminal": wm.openTerminal(wm)
                 case "editor": wm.openEditor(wm)
-                default: sh.say("usage: open terminal|editor")
+                case "log": sh.say(openLogWindow(wm)) // Phase L: the kernel log
+                default: sh.say("usage: open terminal|editor|log")
                 }
             },
             Command(name: "close", args: "<n>", help: "close window #n") { sh, args in

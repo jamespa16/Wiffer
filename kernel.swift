@@ -73,5 +73,11 @@ func kernelMain() -> Never {
 
     fsInit() // RAM filesystem from the rootfs.tar module (Phase M)
 
-    runShellTask() // Phase H: the shell in a task, the event loop as task 0
+    // Phase L: the desktop with a terminal, unless the cmdline says
+    // `nodesktop` (limine.conf entry 2): then Part 2's full-screen shell.
+    // Either way the event loop is task 0 and each shell is a task (Phase H).
+    let cmdline = kernelCmdline()
+    print("cmdline: '\(String(decoding: cmdline, as: UTF8.self))'")
+    if kernelCmdlineHas("nodesktop") { runShellTask() }
+    runDesktop()
 }

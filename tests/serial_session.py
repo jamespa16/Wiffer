@@ -21,7 +21,8 @@ Assumes ./build.sh has already been run.
 import argparse, os, re, select, socket, struct, subprocess, sys, tempfile, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ISO = os.path.join(ROOT, "build", "wiffer.iso")
+ISO = os.path.join(ROOT, "build", "wiffer.iso")  # boots into the desktop
+NODESKTOP_ISO = os.path.join(ROOT, "build", "wiffer-nodesktop.iso")  # cmdline `nodesktop`
 # WIFFER_UEFI=1 boots through OVMF (Homebrew qemu's edk2) instead of SeaBIOS.
 FIRMWARE = []
 if os.environ.get("WIFFER_UEFI"):
@@ -139,7 +140,7 @@ FAULT_CHECKS = [
 
 
 class Session:
-    def __init__(self, extra_args=(), monitor=False, exit_device=True):
+    def __init__(self, extra_args=(), monitor=False, exit_device=True, iso=ISO):
         self.monitor_path = None
         self.mon = None  # connected monitor socket, opened on first use
         self.cursor = None  # mouse sprite (x, y) on screen, if known
@@ -148,7 +149,7 @@ class Session:
             self.mondir = tempfile.mkdtemp(prefix="wiffer")
             self.monitor_path = os.path.join(self.mondir, "mon.sock")
             mon = f"unix:{self.monitor_path},server,nowait"
-        args = ["qemu-system-x86_64", "-M", "q35", "-m", "256M", "-cdrom", ISO,
+        args = ["qemu-system-x86_64", "-M", "q35", "-m", "256M", "-cdrom", iso,
                 "-boot", "d", "-no-reboot", "-display", "none",
                 "-serial", "stdio", "-monitor", mon, *FIRMWARE, *extra_args]
         if exit_device:  # without it, a fault or selftest leaves QEMU running
@@ -545,17 +546,23 @@ def main():
     ap.add_argument("-c", "--command", action="append", help="command to send (repeatable)")
     ap.add_argument("--timeout", type=float, default=10.0)
     ap.add_argument("--screendump", metavar="PPM", help="with -c: dump the display at the end")
+    ap.add_argument("--nodesktop", action="store_true", help="with -c: boot the full-screen shell")
     opts = ap.parse_args()
 
     # Each fault halts its machine, so every kind gets its own QEMU, booted now
     # so they run alongside the main session.
     faults = [] if opts.command else [(kind, want, Session()) for kind, want in FAULT_CHECKS]
+    # (Faults and the fault screen boot the default ISO: the desktop, with
+    # the shell in a terminal window; the report bypasses the compositor.)
     fault_screen = None if opts.command else Session(monitor=True, exit_device=False)
-    s = Session(monitor=True)
-    # Phase K runs on its own machine: `desktop` changes the screen layout
-    # the main session's screen checks and selftests expect.
-    desk = None if opts.command else Session(monitor=True)
-    ed = None if opts.command else Session(monitor=True)  # Phase N, also in the desktop
+    # The Part 2 checks (full-screen shell, screen vs serial, selftest) boot
+    # the `nodesktop` entry (Phase L).
+    s = Session(monitor=True, iso=NODESKTOP_ISO if opts.nodesktop or not opts.command else ISO)
+    # Phase K runs on its own machine: `desktop` switches the full-screen
+    # shell to the WM (the console becomes window #1).
+    desk = None if opts.command else Session(monitor=True, iso=NODESKTOP_ISO)
+    ed = None if opts.command else Session(monitor=True)  # Phase N, in the boot desktop
+    term = None if opts.command else Session(monitor=True)  # Phase L, in the boot desktop
     try:
         boot = s.read_prompt(opts.timeout)
         if not PROMPT_RE.search(boot):
@@ -728,6 +735,8 @@ def main():
             failures += desktop_checks(desk, opts.timeout)
         if ed:
             failures += editor_checks(ed, opts.timeout)
+        if term:
+            failures += terminal_checks(term, opts.timeout)
 
         # In-kernel self-tests: QEMU exits with (code << 1) | 1.
         s.send("selftest")
@@ -747,6 +756,8 @@ def main():
             desk.close()
         if ed:
             ed.close()
+        if term:
+            term.close()
 
 
 def desktop_checks(s: Session, timeout: float) -> int:
@@ -870,6 +881,8 @@ def enter_desktop(s: Session, timeout: float):
     boot = s.read_prompt(timeout)
     if not PROMPT_RE.search(boot):
         return None
+    if b"desktop: on" in s.log:  # booted into it: serial is terminal #1's
+        return boot.decode(errors="replace")
     got = s.command("desktop")
     return got if "desktop: on" in got else None
 
@@ -884,7 +897,7 @@ def editor_checks(s: Session, timeout: float) -> int:
     """Phase N end to end: `edit /notes.txt` over serial opens a focused
     editor window; text typed on the PS/2 keyboard (sendkey) goes into it,
     a typo is fixed with arrows and Backspace, Ctrl-S saves (`cat` over
-    serial, which still reaches the console's shell, shows the file), the
+    serial, which still reaches terminal #1's shell, shows the file), the
     window is checked in a screendump, a dirty close is refused until "n",
     and Ctrl-Q closes."""
     failures = 0
@@ -945,6 +958,153 @@ def editor_checks(s: Session, timeout: float) -> int:
         s.sendkeys(["ctrl-q"])
         want = f"wm: close #{new[0]}".encode()
         check(want in s.read_until(want, timeout), "Ctrl-Q closes a clean editor")
+    return failures
+
+
+def ocr_window(path: str, win):
+    """The text in terminal window `win` = (x, y, w, h, ...) of a screendump,
+    read cell by cell: each 8x16 cell's pixels that differ from its most
+    common colour are matched against the PSF font's ASCII glyphs (so
+    colours and the inverted cursor don't matter). Rows, right-stripped."""
+    glyphs, gh, cmap, _ = load_psf1(FONT)
+    lookup = {}
+    for c in range(0x7E, 0x1F, -1):
+        if c in cmap:
+            lookup[glyphs[cmap[c]]] = chr(c)
+    w, h, pix = read_ppm(path)
+    x0, y0 = win[0] + 2, win[1] + 2 + 20
+    cols, rows = (win[2] - 4) // 8, (win[3] - 24) // gh
+    lines = []
+    for r in range(rows):
+        line = ""
+        for c in range(cols):
+            px = [[pixel(w, pix, x0 + c * 8 + x, y0 + r * gh + y) for x in range(8)] for y in range(gh)]
+            flat = [p for row in px for p in row]
+            bg = max(set(flat), key=flat.count)
+            bits = bytes(sum(0x80 >> x for x in range(8) if row[x] != bg) for row in px)
+            line += lookup.get(bits, " " if not any(bits) else "?")
+        lines.append(line.rstrip())
+    return lines
+
+
+def terminal_checks(s: Session, timeout: float) -> int:
+    """Phase L end to end, on the default boot (straight into the desktop
+    with terminal #1): a second terminal (Ctrl-Alt-T) opens beside the
+    first; each has its own variables and history; keys typed with sendkey
+    reach only the focused one (read back from screendumps by matching the
+    font's glyphs); serial follows the focused terminal; resize; and every
+    way to close one (exit, close <n>, the close box, Alt-F4), then a serial
+    key with no terminal left opens a new one."""
+    failures = 0
+    dump = os.path.join(ROOT, "build", "terminals.ppm")
+
+    def check(ok, label, detail=""):
+        nonlocal failures
+        failures += not ok
+        print(f"{'PASS' if ok else 'FAIL'}: terminal: {label}" + ("" if ok or not detail else f"\n  {detail}"))
+        return ok
+
+    def wait_for(text: str):
+        return text.encode() in s.read_until(text.encode(), timeout)
+
+    def has(lines, text):
+        return any(text in l for l in lines)
+
+    boot = s.read_prompt(timeout)
+    if not check(PROMPT_RE.search(boot) and b"desktop: on" in s.log and b"cmdline: ''" in s.log,
+                 "boots into the desktop with a prompt", repr(boot[-200:])):
+        return failures
+    wins, _ = s.windows()
+    w1 = wins.get(1)
+    if not check(list(wins) == [1] and w1[4] and w1[5] == "Terminal 1", "one focused terminal", str(wins)):
+        return failures
+    s.command("set a 1")
+    check("\r\n1\r\n" in s.command("get a"), "set/get in terminal #1")
+
+    # A second terminal, beside the first; serial follows it.
+    s.sendkeys(["ctrl-alt-t"])
+    check(wait_for("wm: focus #2"), "Ctrl-Alt-T opens terminal #2")
+    s.read_prompt(timeout)  # #2's first prompt, now on serial
+    wins, _ = s.windows()
+    w1, w2 = wins.get(1), wins.get(2)
+    if not check(w1 and w2 and w2[4] and w2[5] == "Terminal 2" and w2[0] >= w1[0] + w1[2] and w2[1] == w1[1],
+                 "#2 focused, side by side with #1", str(wins)):
+        return failures
+    check("get: not set: a" in s.command("get a"), "#2 has its own variables")
+    s.command("set a 2")
+    check("\r\n2\r\n" in s.command("get a"), "set/get in #2")
+    s.sendkeys(key_names("echo two\n"))
+    check("\r\ntwo\r\n" in s.read_prompt(timeout).decode(errors="replace"), "keyboard types into #2")
+
+    # Click #1: focus and serial move to it.
+    s.click(w1[0] + w1[2] // 2, w1[1] + w1[3] // 2)
+    check(wait_for("wm: focus #1"), "click focuses #1")
+    check("\r\n1\r\n" in s.command("get a"), "#1 kept its variable")
+    got = s.command("history")
+    check("set a 1" in got and "set a 2" not in got and "echo two" not in got, "#1's history is its own", repr(got))
+    s.sendkeys(key_names("echo one\n"))
+    check("\r\none\r\n" in s.read_prompt(timeout).decode(errors="replace"), "keyboard types into #1")
+
+    # The screen: each window shows only its own typing.
+    s.warp(640, 600)  # pointer off the text
+    time.sleep(0.3)
+    s.screendump(dump)
+    t1, t2 = ocr_window(dump, w1), ocr_window(dump, w2)
+    check(has(t1, "> echo one") and has(t1, "> get a") and not has(t1, "echo two"),
+          "screen: #1 shows its session only", "\n  ".join(t1))
+    check(has(t2, "> echo two") and has(t2, "get: not set: a") and not has(t2, "echo one"),
+          "screen: #2 shows its session only", "\n  ".join(t2))
+    w, h, pix = read_ppm(dump)
+    check(pixel(w, pix, w1[0] + 4, w1[1] + 12) == TITLE_FOCUSED and pixel(w, pix, w2[0] + 4, w2[1] + 12) == TITLE_UNFOCUSED,
+          "screen: #1's title bar focused, #2's not")
+
+    # Resize #2 smaller from its grip (focuses it); the shell carries on.
+    grip = (w2[0] + w2[2] - 3, w2[1] + w2[3] - 3)
+    s.drag(grip, (-160, -120))
+    check(wait_for("wm: resize #2"), "grip drag resizes #2")
+    wins, _ = s.windows()
+    r2 = wins.get(2)
+    check(r2 and r2[2] < w2[2] and r2[3] < w2[3] and r2[4], "#2 smaller and focused", str(wins))
+    check("\r\nsmall\r\n" in s.command("echo small"), "#2's shell works after the resize")
+    s.warp(640, 600)
+    time.sleep(0.3)
+    s.screendump(dump)
+    t2 = ocr_window(dump, r2)
+    check(has(t2, "> echo small") and has(t2, "warp: x=640 y=600"),
+          "screen: #2 redrawn at its new size", "\n  ".join(t2))
+
+    # Closing: exit, close <n> on itself, the close box, Alt-F4.
+    s.send("exit")
+    check(wait_for("wm: close #2"), "exit closes #2")
+    check(wait_for("wm: focus #1"), "focus back to #1")
+    wins, _ = s.windows()
+    check(list(wins) == [1] and wins[1][4], "only #1 left", str(wins))
+    s.send("open terminal")
+    check(wait_for("wm: focus #3"), "open terminal opens #3")
+    s.read_prompt(timeout)  # #1's prompt
+    s.read_prompt(timeout)  # #3's first prompt
+    s.send("close 3")
+    check(wait_for("wm: close #3"), "close 3 from #3 closes it")
+    _, buttons = s.windows()
+    plus = buttons[0]
+    s.click(plus[0] + plus[2] // 2, plus[1] + plus[3] // 2)
+    check(wait_for("wm: focus #4"), "+ Terminal opens #4")
+    s.read_prompt(timeout)
+    wins, _ = s.windows()
+    w4 = wins.get(4)
+    if w4:
+        s.click(w4[0] + w4[2] - 12, w4[1] + 12)
+        check(wait_for("wm: close #4"), "the close box closes #4")
+    s.sendkeys(["alt-f4"])
+    check(wait_for("wm: close #1"), "Alt-F4 closes #1, the last terminal")
+    s.send("")
+    check(wait_for("wm: focus #5"), "a serial key with no terminal opens one")
+    s.read_prompt(timeout)
+    wins, _ = s.windows()
+    check(list(wins) == [5] and wins[5][4], "terminal #5 is the only window", str(wins))
+    got = s.command("open log")
+    wins, _ = s.windows()
+    check("open log: #6" in got and wins.get(6, (0,) * 6)[5] == "Log", "open log shows the kernel log", repr(got))
     return failures
 
 

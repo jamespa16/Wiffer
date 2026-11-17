@@ -236,6 +236,29 @@ hit-testing and focus order off-screen.
 
 ## Phase L: terminal windows
 
+**Done** (`terminal_window.swift`, `terminal_window_selftest.swift`). Boot
+goes straight to the desktop with one terminal; limine.conf entry 2 passes
+`cmdline: nodesktop` (read through a Limine executable-cmdline request) for
+the Part 2 full-screen shell. `build.sh` also makes
+`build/wiffer-nodesktop.iso` (same files, `default_entry: 2`):
+`./run.sh --nodesktop`. Each `TerminalWindow` runs `Shell<WindowTerminal>`
+in its own task; `Shell.run()` now returns once `Terminal.finished` (set by
+`exit`, or when `read()` gets `.close`, which it turns into Ctrl-C so the
+half-typed line is dropped). Closing by any route ends the task: the WM
+dropping the window's task posts `.close`. Resize re-creates the `Console`
+keeping the cursor's rows. **Routing:** serial follows focus: the WM's
+`serialTarget` is the most recently focused window that `acceptsSerial`
+(terminals; `WindowManager.serialFollowsFocus`), serial keys go to it
+whatever has focus, and its output is mirrored to COM1 while it is the
+target; a serial key with no terminal open opens one. `print()` and all
+kernel output go to serial and the (now off-screen) kernel console, shown by
+`open log`. Exception and task-panic reports skip the WM and compositor:
+`panicFlush` paints the kernel console and red status bar straight onto the
+framebuffer. Harness: Part 2 checks, K's `desktop` checks and the selftest
+boot the `nodesktop` ISO; faults, the editor and `terminal_checks` boot the
+desktop (`terminal_checks` reads window text back from screendumps by
+matching font glyphs).
+
 - `TerminalWindow: Window` owns a `Console` sized to its content area, a
   `ConsoleView`, and a `Task` running `Shell<WindowTerminal>`.
 - `WindowTerminal: Terminal`:
@@ -300,8 +323,9 @@ rows and the status line, without allocating (the window's single
 the window through an `unowned(unsafe)` reference to its WM (set by
 `openEditorWindow`). `edit [path]` (relative to the shell's cwd) needs the
 desktop; the taskbar's "+ Editor" and `open editor` open an untitled editor.
-The harness (`editor_checks`, using `enter_desktop()`) types into the editor
-with `sendkey` while serial still drives the console's shell.
+The harness (`editor_checks`, using `enter_desktop()`) boots into the
+desktop (Phase L) and types into the editor with `sendkey` while serial
+drives terminal #1's shell.
 
 `EditorWindow: Window`, opened with `edit <path>` from a terminal or the
 taskbar button. The editing model is a plain struct that knows nothing

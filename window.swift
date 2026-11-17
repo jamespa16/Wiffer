@@ -128,6 +128,12 @@ class Window: Layer {
     var dirty = true
     var closable = true
     var resizable = true
+    /// Phase L: with WindowManager.serialFollowsFocus, focusing this window
+    /// attaches the serial line to it (terminals).
+    var acceptsSerial = false
+    /// Is the WM's serialTarget (set by the WM): a terminal mirrors its
+    /// output to COM1 while it is.
+    var isSerialTarget = false
     /// Smallest content size a resize may make.
     var minContentWidth = 96
     var minContentHeight = 32

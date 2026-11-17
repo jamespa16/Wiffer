@@ -83,6 +83,9 @@ func runSelfTests() -> Never {
     // Phase N: the editor window.
     editorWindowTests(&t)
 
+    // Phase L: terminal windows.
+    terminalWindowTests(&t)
+
     puts("selftest: "); printDec(UInt64(t.passed)); puts(" passed, ")
     printDec(UInt64(t.failed)); puts(" failed\n")
     qemuExit(t.failed == 0 ? 0 : 1)

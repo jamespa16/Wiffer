@@ -32,6 +32,13 @@ volatile struct limine_module_request module_request = {
     .revision = 0,
 };
 
+// Phase L: the kernel command line (limine.conf `cmdline:`), e.g. `nodesktop`.
+__attribute__((used, section(".limine_requests")))
+volatile struct limine_executable_cmdline_request cmdline_request = {
+    .id = LIMINE_EXECUTABLE_CMDLINE_REQUEST_ID,
+    .revision = 0,
+};
+
 __attribute__((used, section(".limine_requests_end")))
 static volatile uint64_t limine_requests_end_marker[] = LIMINE_REQUESTS_END_MARKER;
 

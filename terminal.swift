@@ -11,6 +11,17 @@ protocol Terminal {
     mutating func write(_ text: String)
     /// Width in columns: the line editor keeps a line on one row.
     var columns: Int { get }
+    /// Phase L: the session is over (its window closed, or `exit`), so
+    /// Shell.run returns. Default: never.
+    var finished: Bool { get }
+    /// The shell's `exit`: end the session after this command. False if this
+    /// terminal can't end (the boot shell). Default: can't.
+    mutating func requestExit() -> Bool
+}
+
+extension Terminal {
+    var finished: Bool { false }
+    mutating func requestExit() -> Bool { false }
 }
 
 /// The machine's own terminal: output to COM1 and the framebuffer console,

@@ -101,19 +101,26 @@ echo "OK: build/kernel.elf"
 COPYFILE_DISABLE=1 bsdtar --format ustar --no-mac-metadata --no-xattrs --no-fflags \
   --uid 0 --gid 0 --uname root --gname root -cf build/rootfs.tar -C rootfs .
 
-# 7. Bootable hybrid BIOS/UEFI ISO.
+# 7. Bootable hybrid BIOS/UEFI ISOs. wiffer.iso boots limine.conf's first
+#    entry (the desktop); wiffer-nodesktop.iso is the same plus
+#    `default_entry: 2`: the `nodesktop` cmdline, the Part 2 full-screen shell.
 LIMINE_SHARE="$(brew --prefix limine)/share/limine"
-ISO_ROOT=build/iso_root
-rm -rf "$ISO_ROOT"
-mkdir -p "$ISO_ROOT/boot/limine" "$ISO_ROOT/EFI/BOOT"
-cp build/kernel.elf build/rootfs.tar "$ISO_ROOT/boot/"
-cp limine.conf "$LIMINE_SHARE"/limine-bios.sys "$LIMINE_SHARE"/limine-bios-cd.bin \
-   "$LIMINE_SHARE"/limine-uefi-cd.bin "$ISO_ROOT/boot/limine/"
-cp "$LIMINE_SHARE"/BOOTX64.EFI "$LIMINE_SHARE"/BOOTIA32.EFI "$ISO_ROOT/EFI/BOOT/"
-xorriso -as mkisofs -R -r -J -b boot/limine/limine-bios-cd.bin \
-  -no-emul-boot -boot-load-size 4 -boot-info-table -hfsplus \
-  -apm-block-size 2048 --efi-boot boot/limine/limine-uefi-cd.bin \
-  -efi-boot-part --efi-boot-image --protective-msdos-label \
-  "$ISO_ROOT" -o build/wiffer.iso 2>/dev/null
-limine bios-install build/wiffer.iso 2>/dev/null
-echo "OK: build/wiffer.iso"
+make_iso() { # <iso path> <default entry>
+  local root=build/iso_root
+  rm -rf "$root"
+  mkdir -p "$root/boot/limine" "$root/EFI/BOOT"
+  cp build/kernel.elf build/rootfs.tar "$root/boot/"
+  { echo "default_entry: $2"; cat limine.conf; } > "$root/boot/limine/limine.conf"
+  cp "$LIMINE_SHARE"/limine-bios.sys "$LIMINE_SHARE"/limine-bios-cd.bin \
+     "$LIMINE_SHARE"/limine-uefi-cd.bin "$root/boot/limine/"
+  cp "$LIMINE_SHARE"/BOOTX64.EFI "$LIMINE_SHARE"/BOOTIA32.EFI "$root/EFI/BOOT/"
+  xorriso -as mkisofs -R -r -J -b boot/limine/limine-bios-cd.bin \
+    -no-emul-boot -boot-load-size 4 -boot-info-table -hfsplus \
+    -apm-block-size 2048 --efi-boot boot/limine/limine-uefi-cd.bin \
+    -efi-boot-part --efi-boot-image --protective-msdos-label \
+    "$root" -o "$1" 2>/dev/null
+  limine bios-install "$1" 2>/dev/null
+  echo "OK: $1"
+}
+make_iso build/wiffer.iso 1
+make_iso build/wiffer-nodesktop.iso 2

@@ -254,6 +254,7 @@ func taskPanic(_ why: StaticString) -> Never {
     puts("\ntask panic: ")
     puts(why)
     newline()
+    panicFlush()
     qemuExit(1)
 }
 

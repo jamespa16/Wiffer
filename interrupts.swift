@@ -62,7 +62,7 @@ func exceptionReport(_ f: interrupt_frame) -> Never {
         puts("\n    cr2    "); printHex(read_cr2())
     }
     puts("\n\u{1B}[1;97;41m*** System halted. ***\u{1B}[0m\n")
-    consoleFlush()
+    panicFlush() // on the desktop: straight to the framebuffer (Phase L)
     outb(0xF4, exceptionExitCode)
     hcf()
 }
