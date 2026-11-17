@@ -55,6 +55,9 @@ func runSelfTests() -> Never {
     // Phase C: frame allocator and heap.
     memoryTests(&t)
 
+    // Phase D: SSE, Float, Dictionary, Set, String ==.
+    sseTests(&t)
+
     puts("selftest: "); printDec(UInt64(t.passed)); puts(" passed, ")
     printDec(UInt64(t.failed)); puts(" failed\n")
     qemuExit(t.failed == 0 ? 0 : 1)
@@ -107,8 +110,7 @@ func interpolation() -> Bool {
     // The literal segments are > 15 bytes, so they are pointer-backed
     // (not small strings) and go through the kernel's lower-half alias.
     let s = "first segment, long: x=\(n) y=\(m) \("and a long literal arg")"
-    // Compare bytes: String == needs the Unicode normalization tables
-    // (libswiftUnicodeDataTables), which the kernel doesn't link.
+    // Compare bytes (String == is tested separately, in sseTests).
     let want: StaticString = "first segment, long: x=42 y=-7 and a long literal arg"
     return want.withUTF8Buffer { s.utf8.elementsEqual($0) }
 }
@@ -223,4 +225,109 @@ func enumStaticArray() -> Bool {
 func enumLiteralString() -> Bool {
     guard case .text(let s) = makePayload(2) else { return false }
     return s.utf8.count == 35 && s.utf8.first == 0x61
+}
+
+// MARK: Phase D
+
+/// Opaque to the optimizer, so Float maths happens at run time.
+@inline(never)
+func opaque<T>(_ value: T) -> T { value }
+
+@inline(never)
+func floatArithmetic() -> Bool {
+    let a: Float = opaque(1.5), b: Float = opaque(2.0)
+    let d: Double = opaque(10.0)
+    return a * b == 3.0 && a + b == 3.5 && b / a > 1.333 && b / a < 1.334
+        && d / 4 == 2.5 && Int(a * 7) == 10 && Float(opaque(3)) * a == 4.5
+        && (d * d).squareRoot() == d && kernelCeil(opaque(2.25)) == 3
+        && kernelCeil(opaque(-2.75)) == -2 && kernelCeil(opaque(5.0)) == 5
+}
+
+@inline(never)
+func dictionaryBasics() -> Bool {
+    var d: [String: Int] = [:]
+    d["one"] = 1
+    d["two"] = 2
+    d["a key longer than fifteen bytes"] = 3
+    guard d.count == 3, d["one"] == 1, d["two"] == 2, d["a key longer than fifteen bytes"] == 3,
+          d["three"] == nil else { return false }
+    d["one"] = 11
+    guard d.removeValue(forKey: "two") == 2, d["two"] == nil, d.count == 2, d["one"] == 11 else {
+        return false
+    }
+    // Grow through several resizes, then remove everything.
+    for i in 0..<1000 { d["k\(i)"] = i }
+    guard d.count == 1002, d["k0"] == 0, d["k999"] == 999 else { return false }
+    for i in 0..<1000 where d.removeValue(forKey: "k\(i)") != i { return false }
+    return d.count == 2 && d["k500"] == nil
+}
+
+@inline(never)
+func setBasics() -> Bool {
+    var s: Set<String> = ["red", "green"]
+    let (inserted, _) = s.insert("blue")
+    let (again, _) = s.insert("red")
+    let primes: Set<Int> = [2, 3, 5, 7, 11]
+    let odds = Set((0..<12).filter { $0 % 2 == 1 })
+    return inserted && !again && s.count == 3 && s.contains("green") && !s.contains("pink")
+        && primes.intersection(odds) == [3, 5, 7, 11] && primes.union(odds).count == 7
+}
+
+@inline(never)
+func stringEquality() -> Bool {
+    let composed = opaque("caf\u{E9}")      // é as one scalar
+    let decomposed = opaque("cafe\u{301}")  // e + combining acute
+    var d: [String: Int] = [:]
+    d[composed] = 1
+    // Long (pointer-backed) strings take a different path from small ones.
+    let longComposed = opaque("a string longer than fifteen bytes: caf\u{E9}")
+    let longDecomposed = opaque("a string longer than fifteen bytes: cafe\u{301}")
+    // A, A + ring, angstrom sign: all canonically equivalent.
+    let ring = opaque("\u{C5}"), aRing = opaque("A\u{30A}"), angstrom = opaque("\u{212B}")
+    return composed == decomposed && !(composed < decomposed) && !(decomposed < composed)
+        && longComposed == longDecomposed && ring == aRing && aRing == angstrom
+        && opaque("abc") != opaque("abd") && opaque("abc") < opaque("abd")
+        && "\(opaque(4))2" == "42" && d[decomposed] == 1 && composed.count == 4
+        && decomposed.unicodeScalars.count == 5
+}
+
+/// The kernel runs on bootStack's lower-half alias (see enterBootStack).
+@inline(never)
+func stackInLowerHalf() -> Bool {
+    var local = 0
+    return withUnsafeMutablePointer(to: &local) { UInt(bitPattern: $0) < 1 << 47 }
+}
+
+/// Hold two values in xmm0/xmm15 across `n` timer ticks; true if unchanged.
+func xmmSurvivesTicks(_ n: UInt64) -> Bool {
+    let a: UInt64 = 0x0123_4567_89AB_CDEF, b: UInt64 = 0xFEDC_BA98_7654_3210
+    let out = UnsafeMutablePointer<UInt64>.allocate(capacity: 2)
+    defer { out.deallocate() }
+    let start = ticks
+    sse_hold_across_ticks(a, b, &ticks, n, out)
+    return ticks >= start + n && out[0] == a && out[1] == b
+}
+
+func sseTests(_ t: inout SelfTest) {
+    t.check("SSE enabled (CR0.MP, !EM, CR4.OSFXSR, OSXMMEXCPT)", sseEnabled)
+    t.check("Float/Double arithmetic (1.5 * 2.0 == 3.0)", floatArithmetic())
+
+    t.check("kernel stack in lower half", stackInLowerHalf())
+    let base = HeapUsage()
+    t.check("Dictionary insert/lookup/remove", dictionaryBasics())
+    t.check("Set insert/contains/algebra", setBasics())
+    t.check("String == (Unicode canonical equivalence)", stringEquality())
+    t.check("Dictionary/Set/String freed", HeapUsage() == base)
+
+    // Interrupts must not leak SSE state into the interrupted code.
+    let mxcsr = read_mxcsr()
+    t.check("xmm preserved across timer ticks", xmmSurvivesTicks(5))
+    sseClobberInIRQ = true
+    let survived = xmmSurvivesTicks(5)
+    let mxcsrAfter = read_mxcsr()
+    let floatsAfter = floatArithmetic()
+    sseClobberInIRQ = false
+    t.check("xmm preserved when the IRQ handler clobbers SSE", survived)
+    t.check("MXCSR preserved when the IRQ handler changes it", mxcsrAfter == mxcsr)
+    t.check("Float maths correct under SSE-clobbering IRQs", floatsAfter)
 }

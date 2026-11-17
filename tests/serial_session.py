@@ -33,6 +33,16 @@ CHECKS = [
     ("clear", "\x1b[2J"),
     ("fault", "usage: fault"),
     ("help", "uptime"),
+    # Phase D: [String: Int] shell variables.
+    ("help", "set <name> <n>"),
+    ("set answer 42", "> "),
+    ("set neg -7", "> "),
+    ("set answer 43", "> "),
+    ("get answer", "43"),
+    ("get neg", "-7"),
+    ("get missing", "get: not set: missing"),
+    ("set bad x1", "usage: set"),
+    ("vars", "answer = 43\r\nneg = -7\r\n(2 variables)"),
 ]
 
 UPTIME_RE = re.compile(r"uptime: (\d+\.\d\d) s \((\d+) ticks\)")

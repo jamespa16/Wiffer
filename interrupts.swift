@@ -6,6 +6,7 @@
 @_cdecl("interrupt_dispatch")
 public func interruptDispatch(_ frame: UnsafeMutablePointer<interrupt_frame>) {
     let vector = frame.pointee.vector
+    if sseClobberInIRQ && vector >= 32 { sse_clobber_all() } // SSE selftest
     if vector < 32 {
         exceptionReport(frame.pointee)
     } else if vector < 48 {

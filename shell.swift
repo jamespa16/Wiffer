@@ -86,6 +86,32 @@ struct Shell {
         return value
     }
 
+    /// Copy a span out of the line buffer as a String.
+    func string(_ span: Span) -> String {
+        var bytes: [UInt8] = []
+        var i = span.start
+        while i < span.end { bytes.append(line[i]); i += 1 }
+        return String(decoding: bytes, as: UTF8.self)
+    }
+
+    /// Parse a decimal Int with an optional leading `-`.
+    func parseInt(_ span: Span) -> Int? {
+        var i = span.start
+        let negative = i < span.end && line[i] == 0x2D
+        if negative { i += 1 }
+        guard i < span.end else { return nil }
+        var value = 0
+        while i < span.end {
+            guard line[i] >= 0x30 && line[i] <= 0x39 else { return nil }
+            let (m, o1) = value.multipliedReportingOverflow(by: 10)
+            let (a, o2) = m.addingReportingOverflow(Int(line[i] - 0x30))
+            guard !o1 && !o2 else { return nil }
+            value = a
+            i += 1
+        }
+        return negative ? -value : value
+    }
+
     // MARK: Dispatch
 
     func execute() {
@@ -108,6 +134,9 @@ struct Shell {
             halt            stop the CPU
             reboot          reset via the keyboard controller
             selftest        run kernel self-checks (exits QEMU under --test)
+            set <name> <n>  set a shell variable (an integer)
+            get <name>      print a shell variable
+            vars            list shell variables
 
             """)
         } else if equals(cmd, "echo") {
@@ -146,6 +175,31 @@ struct Shell {
                 fault_double()
             }
             puts("usage: fault <ud|de|pf|gp|df>\n")
+        } else if equals(cmd, "set") {
+            let name = word(from: args.start)
+            let valueWord = word(from: name.end)
+            guard !name.isEmpty, let value = parseInt(valueWord),
+                  word(from: valueWord.end).isEmpty else {
+                puts("usage: set <name> <integer>\n")
+                return
+            }
+            shellVars[string(name)] = value
+        } else if equals(cmd, "get") {
+            let name = word(from: args.start)
+            guard !name.isEmpty else {
+                puts("usage: get <name>\n")
+                return
+            }
+            if let value = shellVars[string(name)] {
+                print("\(value)")
+            } else {
+                puts("get: not set: "); write(name); newline()
+            }
+        } else if equals(cmd, "vars") {
+            for name in shellVars.keys.sorted() {
+                print("\(name) = \(shellVars[name]!)")
+            }
+            print("(\(shellVars.count) variables)")
         } else if equals(cmd, "peek") {
             guard let addr = parseHex(word(from: args.start)) else {
                 puts("usage: peek <hex addr>\n")
@@ -168,6 +222,9 @@ struct Shell {
 }
 
 // MARK: Commands
+
+/// Variables for `set`/`get`/`vars` (Phase D: Dictionary with String keys).
+var shellVars: [String: Int] = [:]
 
 func reboot() -> Never {
     // Wait for the keyboard controller input buffer to drain, then pulse reset.

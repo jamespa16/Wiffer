@@ -139,3 +139,89 @@ static inline uint64_t read_cr3(void) {
 static inline void write_cr3(uint64_t value) {
     __asm__ volatile ("mov %0, %%cr3" : : "r"(value) : "memory");
 }
+
+// ---- Phase D: SSE ---------------------------------------------------------
+// The CR0/CR4 setup itself is in Swift (sse.swift); these are just the
+// instructions Swift can't express.
+
+static inline uint64_t read_cr0(void) {
+    uint64_t value;
+    __asm__ volatile ("mov %%cr0, %0" : "=r"(value));
+    return value;
+}
+
+static inline void write_cr0(uint64_t value) {
+    __asm__ volatile ("mov %0, %%cr0" : : "r"(value) : "memory");
+}
+
+static inline uint64_t read_cr4(void) {
+    uint64_t value;
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(value));
+    return value;
+}
+
+static inline void write_cr4(uint64_t value) {
+    __asm__ volatile ("mov %0, %%cr4" : : "r"(value) : "memory");
+}
+
+static inline void fninit(void) { __asm__ volatile ("fninit" : : : "memory"); }
+
+// Move rsp to `top` (16-byte aligned) and call fn there; never returns.
+static inline __attribute__((noreturn)) void switch_stack(uint64_t top, void (*fn)(void)) {
+    __asm__ volatile ("movq %0, %%rsp\n\txorl %%ebp, %%ebp\n\tcall *%1\n\tud2"
+                      : : "r"(top), "r"(fn) : "memory");
+    __builtin_unreachable();
+}
+
+static inline uint64_t rdtsc(void) {
+    uint32_t lo, hi;
+    __asm__ volatile ("rdtsc" : "=a"(lo), "=d"(hi));
+    return (uint64_t)hi << 32 | lo;
+}
+
+static inline uint32_t read_mxcsr(void) {
+    uint32_t value;
+    __asm__ volatile ("stmxcsr %0" : "=m"(value));
+    return value;
+}
+
+// Selftest: hold `a` in xmm0 and `b` in xmm15 inside one asm block (so the
+// compiler can't touch them) while `*ticks` advances by `n` timer interrupts,
+// then return what the registers hold. Needs interrupts enabled.
+static inline void sse_hold_across_ticks(uint64_t a, uint64_t b, const volatile uint64_t *ticks,
+                                         uint64_t n, uint64_t out[2]) {
+    uint64_t target = *ticks + n;
+    __asm__ volatile (
+        "movq %[a], %%xmm0\n\t"
+        "movq %[b], %%xmm15\n\t"
+        "1: pause\n\t"
+        "cmpq (%[t]), %[target]\n\t"
+        "ja 1b\n\t"
+        "movq %%xmm0, %[a]\n\t"
+        "movq %%xmm15, %[b]"
+        : [a] "+r"(a), [b] "+r"(b)
+        : [t] "r"(ticks), [target] "r"(target)
+        : "xmm0", "xmm15", "memory", "cc");
+    out[0] = a;
+    out[1] = b;
+}
+
+// Selftest: what an SSE-using interrupt handler might do. Overwrite every
+// xmm register and change MXCSR (rounding mode: toward zero).
+static inline void sse_clobber_all(void) {
+    uint32_t mxcsr = 0x7F80;
+    __asm__ volatile (
+        "pcmpeqd %%xmm0, %%xmm0\n\t"
+        "movdqa %%xmm0, %%xmm1\n\t"  "movdqa %%xmm0, %%xmm2\n\t"
+        "movdqa %%xmm0, %%xmm3\n\t"  "movdqa %%xmm0, %%xmm4\n\t"
+        "movdqa %%xmm0, %%xmm5\n\t"  "movdqa %%xmm0, %%xmm6\n\t"
+        "movdqa %%xmm0, %%xmm7\n\t"  "movdqa %%xmm0, %%xmm8\n\t"
+        "movdqa %%xmm0, %%xmm9\n\t"  "movdqa %%xmm0, %%xmm10\n\t"
+        "movdqa %%xmm0, %%xmm11\n\t" "movdqa %%xmm0, %%xmm12\n\t"
+        "movdqa %%xmm0, %%xmm13\n\t" "movdqa %%xmm0, %%xmm14\n\t"
+        "movdqa %%xmm0, %%xmm15\n\t"
+        "ldmxcsr %0"
+        : : "m"(mxcsr)
+        : "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7",
+          "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15");
+}
