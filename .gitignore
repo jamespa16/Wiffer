@@ -3,3 +3,4 @@ build/
 /kernel.o
 .DS_Store
 .claude/worktrees/
+__pycache__/

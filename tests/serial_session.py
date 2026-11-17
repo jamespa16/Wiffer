@@ -5,12 +5,17 @@ Usage:
     tests/serial_session.py                 run shell checks, then `selftest`
     tests/serial_session.py -c 'help' -c 'mem'   just print a transcript
 
+    tests/serial_session.py -c 'help' --screendump build/screen.ppm
+
 Each command is sent after the previous prompt ("> ") appears. Each
 `fault <kind>` check boots its own QEMU (a fault halts the machine); those
-boot in parallel with the main session. Exits non-zero
-if any expectation fails. Assumes ./build.sh has already been run.
+boot in parallel with the main session. The main session also has a QEMU
+monitor socket: the framebuffer console is checked pixel-for-pixel with
+`screendump` against the serial transcript replayed through a tiny terminal
+emulator and the same PSF font. Exits non-zero if any expectation fails.
+Assumes ./build.sh has already been run.
 """
-import argparse, os, re, select, subprocess, sys, time
+import argparse, os, re, select, socket, struct, subprocess, sys, tempfile, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ISO = os.path.join(ROOT, "build", "wiffer.iso")
@@ -51,14 +56,30 @@ FAULT_CHECKS = [
 
 
 class Session:
-    def __init__(self, extra_args=()):
+    def __init__(self, extra_args=(), monitor=False):
+        self.monitor = None
+        mon = "none"
+        if monitor:  # a short path: unix socket paths are limited to ~104 bytes
+            self.mondir = tempfile.mkdtemp(prefix="wiffer")
+            self.monitor = os.path.join(self.mondir, "mon.sock")
+            mon = f"unix:{self.monitor},server,nowait"
         args = ["qemu-system-x86_64", "-M", "q35", "-m", "256M", "-cdrom", ISO,
                 "-boot", "d", "-no-reboot", "-display", "none",
-                "-serial", "stdio", "-monitor", "none",
+                "-serial", "stdio", "-monitor", mon,
                 "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", *extra_args]
         self.p = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                   stderr=subprocess.STDOUT)
         self.out = b""
+        self.log = b""  # everything received, for the screen emulator
+
+    def _read(self, remaining):
+        """Next chunk of output: None on timeout, b"" at EOF."""
+        r, _, _ = select.select([self.p.stdout], [], [], remaining)
+        if not r:
+            return None
+        chunk = os.read(self.p.stdout.fileno(), 4096)
+        self.log += chunk
+        return chunk
 
     def read_until(self, needle: bytes, timeout=10.0) -> bytes:
         if needle == PROMPT:
@@ -68,11 +89,10 @@ class Session:
             remaining = deadline - time.time()
             if remaining <= 0 or self.p.poll() is not None:
                 break
-            r, _, _ = select.select([self.p.stdout], [], [], remaining)
-            if r:
-                chunk = os.read(self.p.stdout.fileno(), 4096)
-                if not chunk:
-                    break
+            chunk = self._read(remaining)
+            if chunk == b"":
+                break
+            if chunk:
                 self.out += chunk
         idx = self.out.find(needle)
         if idx < 0:
@@ -93,12 +113,11 @@ class Session:
             if remaining <= 0 or self.p.poll() is not None:
                 got, self.out = self.out, b""
                 return got
-            r, _, _ = select.select([self.p.stdout], [], [], remaining)
-            if r:
-                chunk = os.read(self.p.stdout.fileno(), 4096)
-                if not chunk:
-                    got, self.out = self.out, b""
-                    return got
+            chunk = self._read(remaining)
+            if chunk == b"":
+                got, self.out = self.out, b""
+                return got
+            if chunk:
                 self.out += chunk
 
     def send(self, text: str):
@@ -107,21 +126,161 @@ class Session:
             self.p.stdin.flush()
             time.sleep(0.005)  # don't overrun the 16-byte UART FIFO
 
+    def screendump(self, path: str, timeout=10.0):
+        """Write the display to `path` (PPM) through the monitor socket."""
+        if os.path.exists(path):
+            os.unlink(path)
+        with socket.socket(socket.AF_UNIX) as m:
+            m.settimeout(timeout)
+            m.connect(self.monitor)
+            buf = b""
+            while b"(qemu)" not in buf:
+                buf += m.recv(4096)
+            m.sendall(f"screendump {path}\n".encode())
+            buf = b""
+            while b"(qemu)" not in buf:  # the prompt returns once it's written
+                buf += m.recv(4096)
+
     def close(self):
         self.p.kill()
         self.p.wait()
+        if self.monitor:
+            if os.path.exists(self.monitor):
+                os.unlink(self.monitor)
+            os.rmdir(self.mondir)
+
+
+# ---- Screen check: replay the serial log, render it, compare pixels ----------
+
+FONT = os.path.join(ROOT, "fonts", "spleen-8x16.psfu")
+FG, BG = (0xAA, 0xAA, 0xAA), (0, 0, 0)  # console defaults: ANSI 7 on 0
+
+
+def load_psf1(path):
+    """(glyph bitmaps, height, codepoint -> glyph, fallback glyph), like PSFFont."""
+    d = open(path, "rb").read()
+    assert d[:2] == b"\x36\x04", "not a PSF1 font"
+    count, h = (512 if d[2] & 1 else 256), d[3]
+    glyphs = [d[4 + g * h: 4 + (g + 1) * h] for g in range(count)]
+    cmap, i, g, seq = {}, 4 + count * h, 0, False
+    while d[2] & 2 and g < count and i + 1 < len(d):
+        v = struct.unpack_from("<H", d, i)[0]
+        i += 2
+        if v == 0xFFFF:
+            g, seq = g + 1, False
+        elif v == 0xFFFE:
+            seq = True
+        elif not seq:
+            cmap.setdefault(v, g)
+    return glyphs, h, cmap, cmap.get(0xFFFD, cmap.get(0x3F, 0))
+
+
+def emulate(log: bytes, cols: int, rows: int):
+    """The subset of the kernel Console that the shell uses (ASCII, CR, LF,
+    BS, tab, deferred wrap, ESC[2J, ESC[H, ESC[K). Returns (grid, row, col)."""
+    grid = [[" "] * cols for _ in range(rows)]
+    r = c = 0
+
+    def line_feed():
+        nonlocal grid, r
+        if r + 1 < rows:
+            r += 1
+        else:
+            grid = grid[1:] + [[" "] * cols]
+
+    text = log.decode("ascii", errors="replace")
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        i += 1
+        if ch == "\x1b":
+            m = re.match(r"\[([0-9;]*)([A-Za-z])", text[i:])
+            if not m:
+                continue
+            i += m.end()
+            args, op = m.group(1), m.group(2)
+            p = [int(x) if x else 0 for x in args.split(";")] if args else []
+            if op == "J":
+                grid = [[" "] * cols for _ in range(rows)]
+            elif op == "H":
+                p += [0, 0]
+                r, c = min(p[0] or 1, rows) - 1, min(p[1] or 1, cols) - 1
+            elif op == "K":
+                for x in range(min(c, cols - 1), cols):
+                    grid[r][x] = " "
+        elif ch == "\r":
+            c = 0
+        elif ch == "\n":
+            c = 0
+            line_feed()
+        elif ch == "\b":
+            c = max(c - 1, 0)
+        elif ch == "\t":
+            c = min((c // 8 + 1) * 8, cols - 1)
+        elif " " <= ch < "\x7f":
+            if c >= cols:
+                c = 0
+                line_feed()
+            grid[r][c] = ch
+            c += 1
+    return grid, r, min(c, cols - 1)
+
+
+def read_ppm(path):
+    data = open(path, "rb").read()
+    fields, pos = [], 0
+    while len(fields) < 4:  # magic, width, height, maxval
+        m = re.compile(rb"\s*(\S+)").match(data, pos)
+        fields.append(m.group(1))
+        pos = m.end()
+    assert fields[0] == b"P6" and fields[3] == b"255", fields
+    return int(fields[1]), int(fields[2]), data[pos + 1:]
+
+
+def check_screen(s: Session, path: str, timeout=5.0):
+    """Compare the display with the emulated transcript; None if it matches,
+    else the first wrong cell. Retries for a while: the kernel flushes only
+    once it waits for input, which is after it has sent the prompt."""
+    glyphs, gh, cmap, fallback = load_psf1(FONT)
+    fg, bg = bytes(FG), bytes(BG)
+    deadline = time.time() + timeout
+    while True:
+        s.screendump(path)
+        w, h, pix = read_ppm(path)
+        cols, rows = w // 8, h // gh
+        grid, cr, cc = emulate(s.log, cols, rows)
+        bad = None
+        for r in range(rows):
+            for c in range(cols):
+                bits = glyphs[cmap.get(ord(grid[r][c]), fallback)]
+                inv = (r, c) == (cr, cc)  # the cursor is drawn inverted
+                for y in range(gh):
+                    off = ((r * gh + y) * w + c * 8) * 3
+                    want = b"".join(fg if ((bits[y] >> (7 - x)) & 1) != inv else bg
+                                    for x in range(8))
+                    if pix[off: off + 24] != want:
+                        bad = (r, c, grid[r][c])
+                        break
+                if bad:
+                    break
+            if bad:
+                break
+        if not bad or time.time() > deadline:
+            return bad
+        time.sleep(0.25)
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("-c", "--command", action="append", help="command to send (repeatable)")
     ap.add_argument("--timeout", type=float, default=10.0)
+    ap.add_argument("--screendump", metavar="PPM", help="with -c: dump the display at the end")
     opts = ap.parse_args()
 
     # Each fault halts its machine, so every kind gets its own QEMU, booted now
     # so they run alongside the main session.
     faults = [] if opts.command else [(kind, want, Session()) for kind, want in FAULT_CHECKS]
-    s = Session()
+    s = Session(monitor=True)
     try:
         boot = s.read_prompt(opts.timeout)
         if not PROMPT_RE.search(boot):
@@ -134,6 +293,9 @@ def main():
                 s.send(cmd)
                 sys.stdout.write(s.read_prompt(opts.timeout).decode(errors="replace"))
             print()
+            if opts.screendump:
+                time.sleep(0.5)  # let the console flush
+                s.screendump(os.path.abspath(opts.screendump))
             return 0
         failures = 0
         for cmd, want in CHECKS:
@@ -166,6 +328,19 @@ def main():
             failures += not ok
             print(f"{'PASS' if ok else 'FAIL'}: fault {kind}" + ("" if ok else
                   f"\n  exit status {status} (want {EXCEPTION_STATUS}), missing {missing}\n  got {got!r}"))
+
+        # Framebuffer console: the screen must show exactly what serial got,
+        # first after a clear, then after scrolling well past the bottom.
+        dump = os.path.join(ROOT, "build", "screen.ppm")
+        for label, cmds in [("after clear", ["clear", "echo screen check"]),
+                            ("after scrolling", ["help"] * 5 + ["echo bottom line"])]:
+            for cmd in cmds:
+                s.send(cmd)
+                s.read_prompt(opts.timeout)
+            bad = check_screen(s, dump)
+            failures += bad is not None
+            print(f"{'PASS' if not bad else 'FAIL'}: screen matches serial {label}" + ("" if not bad else
+                  f"\n  first mismatch at row {bad[0]} col {bad[1]} (want {bad[2]!r}), see {dump}"))
 
         # In-kernel self-tests: QEMU exits with (code << 1) | 1.
         s.send("selftest")

@@ -55,6 +55,7 @@ func exceptionReport(_ f: interrupt_frame) -> Never {
         puts("\n    cr2    "); printHex(read_cr2())
     }
     puts("\n*** System halted.\n")
+    consoleFlush()
     outb(0xF4, exceptionExitCode)
     hcf()
 }

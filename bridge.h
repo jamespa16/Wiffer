@@ -129,6 +129,11 @@ static inline void irq_restore(uint64_t flags) {
     if (flags & (1ull << 9)) __asm__ volatile ("sti" : : : "memory");
 }
 
+// font.S: the embedded PSF console font and its size in bytes.
+extern const uint8_t font_psf[];
+extern const uint64_t font_psf_size;
+static inline const uint8_t *font_data(void) { return font_psf; }
+
 // Page-table root, for aliasing the HHDM into the lower half (see pmm.swift).
 static inline uint64_t read_cr3(void) {
     uint64_t value;
