@@ -115,6 +115,12 @@ KEYBOARD_CHECKS = [
     (["u", "p", "t", "tab", "ret"], "uptime: "),
 ]
 
+# Phase K: `windows` output and the WM's decoration colours (window.swift).
+WINDOW_RE = re.compile(r"window #(\d+) x=(-?\d+) y=(-?\d+) w=(\d+) h=(\d+)( focused)? '([^']*)'")
+BUTTON_RE = re.compile(r"button x=(\d+) y=(\d+) w=(\d+) h=(\d+) '([^']*)'")
+TITLE_FOCUSED, TITLE_UNFOCUSED = bytes.fromhex("1E5AA8"), bytes.fromhex("3C3C3C")
+TASKBAR_BG = bytes.fromhex("202830")
+
 UPTIME_RE = re.compile(r"uptime: (\d+\.\d\d) s \((\d+) ticks\)")
 
 # fault <kind> -> strings the exception report must contain. After the report
@@ -250,6 +256,71 @@ class Session:
         if os.path.exists(path):
             os.unlink(path)
         self.monitor(f"screendump {path}", timeout)
+
+    # ---- Phase K: driving the desktop ----
+
+    def command(self, cmd: str, timeout=10.0) -> str:
+        """Type a shell command over serial; its output up to the next prompt."""
+        self.send(cmd)
+        return self.read_prompt(timeout).decode(errors="replace")
+
+    def warp(self, x: int, y: int):
+        """Put the kernel's pointer at (x, y) (the `warp` command): QEMU's
+        mouse_move is relative and may be scaled, so absolute positions come
+        from the kernel."""
+        got = self.command(f"warp {x} {y}")
+        assert f"warp: x={x} y={y}" in got, got
+
+    def pointer(self):
+        """The kernel's idea of the pointer: (x, y, buttons)."""
+        m = MOUSE_RE.search(self.command("mouse"))
+        return tuple(int(g) for g in m.groups()) if m else None
+
+    def click(self, x: int, y: int):
+        """Left click at (x, y): warp there, then press and release through
+        the monitor (mouse_button sends a packet without movement)."""
+        self.warp(x, y)
+        self.monitor("mouse_button 1")
+        time.sleep(0.15)
+        self.monitor("mouse_button 0")
+        time.sleep(0.15)
+
+    def drag(self, frm, by):
+        """Press at `frm`, move by `by` with mouse_move (relative, maybe
+        scaled), release. Returns where the kernel says the pointer ended."""
+        self.warp(*frm)
+        self.monitor("mouse_button 1")
+        time.sleep(0.15)
+        self.monitor(f"mouse_move {by[0]} {by[1]}")
+        time.sleep(0.2)
+        end = self.pointer()
+        self.monitor("mouse_button 0")
+        time.sleep(0.15)
+        return end[:2] if end else None
+
+    def windows(self):
+        """`windows`: ({id: (x, y, w, h, focused, title)}, [(x, y, w, h, label)])."""
+        out = self.command("windows")
+        wins = {int(m[0]): (int(m[1]), int(m[2]), int(m[3]), int(m[4]), bool(m[5]), m[6])
+                for m in WINDOW_RE.findall(out)}
+        buttons = [(int(m[0]), int(m[1]), int(m[2]), int(m[3]), m[4]) for m in BUTTON_RE.findall(out)]
+        return wins, buttons
+
+    def pixel_at(self, x: int, y: int, path: str):
+        """The pixel at (x, y) of a fresh screendump (RGB bytes)."""
+        self.screendump(path)
+        w, h, pix = read_ppm(path)
+        return pixel(w, pix, x, y)
+
+    def wait_pixel(self, x: int, y: int, want, path: str, timeout=3.0, equal=True):
+        """Poll screendumps until the pixel at (x, y) is (or, with
+        equal=False, isn't) `want`; returns the last pixel seen."""
+        deadline = time.time() + timeout
+        while True:
+            px = self.pixel_at(x, y, path)
+            if (px == want) == equal or time.time() > deadline:
+                return px
+            time.sleep(0.2)
 
     def close(self):
         if self.mon is not None:
@@ -479,6 +550,9 @@ def main():
     faults = [] if opts.command else [(kind, want, Session()) for kind, want in FAULT_CHECKS]
     fault_screen = None if opts.command else Session(monitor=True, exit_device=False)
     s = Session(monitor=True)
+    # Phase K runs on its own machine: `desktop` changes the screen layout
+    # the main session's screen checks and selftests expect.
+    desk = None if opts.command else Session(monitor=True)
     try:
         boot = s.read_prompt(opts.timeout)
         if not PROMPT_RE.search(boot):
@@ -647,6 +721,9 @@ def main():
             print(f"{'PASS' if not bad else 'FAIL'}: screen matches serial {label}" + ("" if not bad else
                   f"\n  first mismatch at row {bad[0]} col {bad[1]} (want {bad[2]!r}), see {dump}"))
 
+        if desk:
+            failures += desktop_checks(desk, opts.timeout)
+
         # In-kernel self-tests: QEMU exits with (code << 1) | 1.
         s.send("selftest")
         status, rest = wait_exit(s, opts.timeout)
@@ -661,6 +738,122 @@ def main():
             fs.close()
         if fault_screen:
             fault_screen.close()
+        if desk:
+            desk.close()
+
+
+def desktop_checks(s: Session, timeout: float) -> int:
+    """Phase K end to end: switch to the desktop, open two windows (Ctrl-Alt-T
+    and the taskbar's + Terminal), drag one by its title bar, click to swap
+    focus, resize, close one with its close box and one with Alt-F4, Alt-Tab
+    in between, checking each step with `windows`, the WM's serial log and
+    screendumps."""
+    failures = 0
+    dump = os.path.join(ROOT, "build", "desktop.ppm")
+
+    def check(ok, label, detail=""):
+        nonlocal failures
+        failures += not ok
+        print(f"{'PASS' if ok else 'FAIL'}: desktop: {label}" + ("" if ok or not detail else f"\n  {detail}"))
+        return ok
+
+    def title_px(win):  # inside the title bar, left of the title text
+        return win[0] + 4, win[1] + 12
+
+    def title_px_right(win):  # inside the title bar, just left of the close box
+        return win[0] + win[2] - 24, win[1] + 12
+
+    boot = s.read_prompt(timeout)
+    got = s.command("desktop")
+    if not check("desktop: on" in got and PROMPT_RE.search(boot), "desktop command", repr(got)):
+        return failures
+    wins, buttons = s.windows()
+    check(list(wins) == [1] and wins[1][4] and wins[1][5] == "Wiffer shell"
+          and [b[4] for b in buttons] == ["+ Terminal", "+ Editor", "#1"],
+          "console is window #1, taskbar buttons", f"{wins} {buttons}")
+    tx, ty = buttons[0][0] + buttons[0][2] // 2, buttons[0][1] + buttons[0][3] // 2
+    check(s.wait_pixel(*title_px(wins[1]), TITLE_FOCUSED, dump) == TITLE_FOCUSED
+          and s.pixel_at(tx, ty, dump) != TASKBAR_BG and s.pixel_at(tx, buttons[0][1] - 1, dump) == TASKBAR_BG,
+          "console window decorated, taskbar drawn")
+
+    # Two windows: Ctrl-Alt-T on the PS/2 keyboard, then the + Terminal button.
+    s.sendkeys(["ctrl-alt-t"])
+    check(b"wm: open #2" in s.read_until(b"wm: focus #2", timeout), "Ctrl-Alt-T opens window #2")
+    s.click(tx, ty)
+    check(b"wm: open #3" in s.read_until(b"wm: focus #3", timeout), "+ Terminal opens window #3")
+    wins, _ = s.windows()
+    w2, w3 = wins.get(2), wins.get(3)
+    if not check(w2 and w3 and w3[4] and not w2[4], "two windows, the newer focused", str(wins)):
+        return failures
+    p2 = s.wait_pixel(*title_px(w2), TITLE_UNFOCUSED, dump)
+    p3 = s.pixel_at(*title_px(w3), dump)
+    check(p2 == TITLE_UNFOCUSED and p3 == TITLE_FOCUSED, "title bars: #3 focused, #2 not",
+          f"#2 {p2.hex()} #3 {p3.hex()}")
+
+    # Drag #3 by its title bar (mouse_move is relative: the kernel reports
+    # where the pointer really went).
+    start = (w3[0] + 150, w3[1] + 10)
+    end = s.drag(start, (200, 150))
+    moved = s.read_until(b"wm: move #3", timeout)
+    wins, _ = s.windows()
+    n3 = wins.get(3)
+    want = (w3[0] + end[0] - start[0], w3[1] + end[1] - start[1]) if end else None
+    check(b"wm: move #3" in moved and end and end != start and n3 and (n3[0], n3[1]) == want,
+          f"drag moves #3 by the pointer's travel ({start} -> {end})", f"{w3} -> {n3}, want {want}")
+    old = (w3[0] + w3[2] - 60, w3[1] + 5)  # #3's old title bar, now uncovered
+    pn = s.wait_pixel(*title_px(n3), TITLE_FOCUSED, dump)
+    po = s.pixel_at(*old, dump)
+    check(pn == TITLE_FOCUSED and po not in (TITLE_FOCUSED, TITLE_UNFOCUSED),
+          "screen: #3's title bar moved", f"new {pn.hex()} old {po.hex()}")
+
+    # Click #2's title bar: focus swaps.
+    s.click(w2[0] + 40, w2[1] + 10)
+    check(b"wm: focus #2" in s.read_until(b"wm: focus #2", timeout), "click focuses #2")
+    p2 = s.wait_pixel(*title_px(w2), TITLE_FOCUSED, dump)
+    p3 = s.pixel_at(*title_px_right(n3), dump)  # the part #2 doesn't cover
+    wins, _ = s.windows()
+    check(p2 == TITLE_FOCUSED and p3 == TITLE_UNFOCUSED and wins[2][4] and list(wins)[-1] == 2,
+          "focus colours swapped, #2 on top", f"#2 {p2.hex()} #3 {p3.hex()}")
+
+    # Resize #3 from its bottom-right grip.
+    grip = (n3[0] + n3[2] - 3, n3[1] + n3[3] - 3)
+    end = s.drag(grip, (60, 40))
+    s.read_until(b"wm: resize #3", timeout)
+    wins, _ = s.windows()
+    r3 = wins.get(3)
+    want = (n3[2] + end[0] - grip[0], n3[3] + end[1] - grip[1]) if end else None
+    check(r3 and (r3[2], r3[3]) == want and (r3[0], r3[1]) == (n3[0], n3[1]),
+          "grip drag resizes #3", f"{n3} -> {r3}, want size {want}")
+
+    # Close #2 with its close box.
+    s.click(w2[0] + w2[2] - 12, w2[1] + 12)
+    check(b"wm: close #2" in s.read_until(b"wm: close #2", timeout), "close box closes #2")
+    wins, _ = s.windows()
+    gone = s.wait_pixel(*title_px(w2), TITLE_FOCUSED, dump, equal=False)
+    check(2 not in wins and wins.get(3, (0,) * 5)[4] and gone not in (TITLE_FOCUSED, TITLE_UNFOCUSED),
+          "#2 gone from the screen, focus back to #3", f"{wins} pixel {gone.hex()}")
+
+    # Alt-Tab twice: the console, then #3 again. Alt-F4 closes #3.
+    s.sendkeys(["alt-tab"])
+    check(b"wm: focus #1" in s.read_until(b"wm: focus #1", timeout), "Alt-Tab focuses the console")
+    s.sendkeys(["alt-tab"])
+    check(b"wm: focus #3" in s.read_until(b"wm: focus #3", timeout), "Alt-Tab again focuses #3")
+    s.sendkeys(["alt-f4"])
+    check(b"wm: close #3" in s.read_until(b"wm: close #3", timeout), "Alt-F4 closes #3")
+    wins, _ = s.windows()
+    check(list(wins) == [1] and wins[1][4], "only the console is left, focused", str(wins))
+    s.sendkeys(["meta_l-ret"])
+    check(b"wm: open #4" in s.read_until(b"wm: focus #4", timeout), "Super+Enter opens a window")
+
+    # The taskbar clock ticks.
+    s.screendump(dump)
+    w, h, before = read_ppm(dump)
+    time.sleep(1.2)
+    s.screendump(dump)
+    w, h, after = read_ppm(dump)
+    band = slice((h - 20) * w * 3, h * w * 3)
+    check(before[band] != after[band], "taskbar clock updates")
+    return failures
 
 
 def wait_exit(s: Session, timeout: float):

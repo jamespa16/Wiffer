@@ -277,7 +277,11 @@ func runShellTask() -> Never {
         hcf()
     }
     runMainLoop { event in
-        if case .key = event { shell.post(event) }
+        if let wm = windowManager {
+            wm.route(event) // Phase K: after `desktop`, the WM routes everything
+        } else if case .key = event {
+            shell.post(event)
+        }
     }
 }
 
