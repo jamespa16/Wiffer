@@ -74,6 +74,9 @@ func runSelfTests() -> Never {
     // Phase M: RAM filesystem, ustar, file commands.
     fsTests(&t)
 
+    // Phase N: text buffer and editor key model.
+    editorTests(&t)
+
     puts("selftest: "); printDec(UInt64(t.passed)); puts(" passed, ")
     printDec(UInt64(t.failed)); puts(" failed\n")
     qemuExit(t.failed == 0 ? 0 : 1)
