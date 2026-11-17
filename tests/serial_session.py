@@ -19,6 +19,11 @@ import argparse, os, re, select, socket, struct, subprocess, sys, tempfile, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ISO = os.path.join(ROOT, "build", "wiffer.iso")
+# WIFFER_UEFI=1 boots through OVMF (Homebrew qemu's edk2) instead of SeaBIOS.
+FIRMWARE = []
+if os.environ.get("WIFFER_UEFI"):
+    _prefix = subprocess.run(["brew", "--prefix", "qemu"], capture_output=True, text=True).stdout.strip()
+    FIRMWARE = ["-drive", f"if=pflash,format=raw,readonly=on,file={_prefix}/share/qemu/edk2-x86_64-code.fd"]
 
 PROMPT = b"> "
 PROMPT_RE = re.compile(rb"(?:\n|\x1b\[H)> ")
@@ -38,6 +43,16 @@ CHECKS = [
     ("clear", "\x1b[2J"),
     ("fault", "usage: fault"),
     ("help", "uptime"),
+    # Phase D: [String: Int] shell variables.
+    ("help", "set <name> <n>"),
+    ("set answer 42", "> "),
+    ("set neg -7", "> "),
+    ("set answer 43", "> "),
+    ("get answer", "43"),
+    ("get neg", "-7"),
+    ("get missing", "get: not set: missing"),
+    ("set bad x1", "usage: set"),
+    ("vars", "answer = 43\r\nneg = -7\r\n(2 variables)"),
     ("help", "mouse           PS/2 mouse"),
 ]
 
@@ -80,7 +95,7 @@ class Session:
         args = ["qemu-system-x86_64", "-M", "q35", "-m", "256M", "-cdrom", ISO,
                 "-boot", "d", "-no-reboot", "-display", "none",
                 "-serial", "stdio", "-monitor", mon,
-                "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", *extra_args]
+                "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", *FIRMWARE, *extra_args]
         self.p = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                   stderr=subprocess.STDOUT)
         self.out = b""

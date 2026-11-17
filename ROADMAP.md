@@ -230,6 +230,11 @@ return with SSE disabled".
   16-byte-aligned 512-byte area around the dispatcher call. Otherwise a
   handler that uses SSE silently corrupts the interrupted code's registers.
 - Drop the `%xmm` check from `build.sh`.
+- String keys also need `_swift_generateRandomHashSeed`, libm `ceil`
+  (Dictionary capacity maths), and the toolchain's
+  `libswiftUnicodeDataTables.a` (normalization for `==` and hashing).
+- Run on a lower-half stack: Limine's is HHDM memory, and small-String `==`
+  wraps a stack copy of the bytes in a String (the C3 tag-bit problem).
 
 **Done when:** a `[String: Int]` works in the shell (e.g. a variables table
 for `set`/`get`).

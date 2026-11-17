@@ -5,9 +5,10 @@ cd "$(dirname "$0")"
 mkdir -p build
 
 # Kernel codegen flags shared by Swift (via -Xcc) and C:
-#   no red zone (interrupts clobber below %rsp), no SSE/MMX/FPU state,
-#   kernel code model (Limine loads us in the top 2 GiB).
-KFLAGS=(-mno-red-zone -mno-sse -mno-mmx -msoft-float -mcmodel=kernel)
+#   no red zone (interrupts clobber below %rsp), kernel code model (Limine
+#   loads us in the top 2 GiB). SSE is on (Phase D): kernel_main enables it
+#   before any other code runs, and the interrupt stubs fxsave/fxrstor it.
+KFLAGS=(-mno-red-zone -mcmodel=kernel)
 XCC=(); for f in "${KFLAGS[@]}"; do XCC+=(-Xcc "$f"); done
 
 # 1. Swift -> LLVM IR.
@@ -55,16 +56,26 @@ clang -target x86_64-unknown-none-elf "${KFLAGS[@]}" -c cpu.S -o build/cpu.o
 clang -target x86_64-unknown-none-elf "${KFLAGS[@]}" -c font.S -o build/font.o
 
 # 4. Link. Only ENTRY(kernel_main), the Limine requests, and what they reach is kept.
+#    libswiftUnicodeDataTables: the Unicode normalization/grapheme tables that
+#    String ==, < and hashing need (prebuilt for x86_64-unknown-none-elf). Its
+#    code uses only PC-relative relocations (fine in the top 2 GiB), no red zone.
+SWIFT_RESOURCES="$(swiftc -print-target-info -target x86_64-unknown-none-elf |
+  sed -n 's/.*"runtimeResourcePath": "\(.*\)".*/\1/p')"
+UNICODE_TABLES="$SWIFT_RESOURCES/embedded/x86_64-unknown-none-elf/libswiftUnicodeDataTables.a"
 ld.lld -T linker.ld -nostdlib -static --gc-sections -z norelro -z max-page-size=0x1000 \
-  --build-id=none --lto-O2 build/kernel.o build/boot.o build/cpu.o build/font.o -o build/kernel.elf
+  --build-id=none --lto-O2 build/kernel.o build/boot.o build/cpu.o build/font.o \
+  "$UNICODE_TABLES" -o build/kernel.elf
 
 # 5. Verify: no undefined symbols (swift_retain etc. are compiled in, but
-#    there is no external runtime), no SSE.
+#    there is no external runtime), and no SSE in the entry point, which runs
+#    before SSE is enabled: kernel_main (the @_cdecl thunk) and the Swift
+#    kernelEntry it calls (see kernel.swift).
 if [[ -n "$(llvm-nm -u build/kernel.elf)" ]]; then
   echo "error: undefined symbols:" >&2; llvm-nm -u build/kernel.elf >&2; exit 1
 fi
-if llvm-objdump -d build/kernel.elf | grep -qE '%[xy]mm'; then
-  echo "error: SSE instructions present" >&2; exit 1
+ENTRY_SYMS="kernel_main$(llvm-nm build/kernel.elf | awk '$3 ~ /kernelEntry/ { printf ",%s", $3 }')"
+if llvm-objdump -d --disassemble-symbols="$ENTRY_SYMS" build/kernel.elf | grep -qE '%[xy]mm'; then
+  echo "error: SSE instructions in $ENTRY_SYMS (runs before SSE is enabled)" >&2; exit 1
 fi
 echo "OK: build/kernel.elf"
 

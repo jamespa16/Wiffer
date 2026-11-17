@@ -43,11 +43,17 @@ isr_stub_\n:
     ISR_STUB \n
 .endr
 
-// Save the general-purpose registers, call the Swift dispatcher with a
-// pointer to the frame, restore, drop vector + error code, and iretq.
-// Stack alignment: the CPU aligns rsp to 16 before pushing its 5 words; with
-// error code + vector + 15 registers that's 22 words, so rsp is 16-aligned at
-// the call, as the SysV ABI requires.
+// Save the general-purpose registers and the SSE/x87 state, call the Swift
+// dispatcher with a pointer to the frame, restore, drop vector + error code,
+// and iretq.
+// SSE state: Swift code in the handler may use xmm registers (and MXCSR), so
+// fxsave it into a 512-byte area on the stack below the frame. fxsave needs
+// 16-byte alignment, and the SysV ABI needs rsp 16-aligned at the call (with
+// SSE on, a misaligned movaps faults). The CPU aligns rsp to 16 before pushing
+// its 5 words, and error code + vector + 15 registers make 22 words, so rsp is
+// already aligned here; the andq keeps it so if the frame layout ever changes.
+// rbx (already saved in the frame, callee-saved across the call) remembers
+// the frame address.
 isr_common:
     pushq %rax
     pushq %rbx
@@ -65,8 +71,14 @@ isr_common:
     pushq %r14
     pushq %r15
     cld
-    movq %rsp, %rdi
+    movq %rsp, %rbx             // rbx = frame
+    andq $-16, %rsp
+    subq $512, %rsp
+    fxsave (%rsp)
+    movq %rbx, %rdi
     call interrupt_dispatch
+    fxrstor (%rsp)
+    movq %rbx, %rsp
     popq %r15
     popq %r14
     popq %r13
