@@ -71,6 +71,8 @@ func kernelMain() -> Never {
 
     if ps2.mouse { cursorDraw(x: mouse.x, y: mouse.y) }
 
+    fsInit() // RAM filesystem from the rootfs.tar module (Phase M)
+
     var shell = Shell(terminal: LiveTerminal())
     shell.run()
 }

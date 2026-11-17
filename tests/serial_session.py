@@ -80,6 +80,22 @@ CHECKS = [
     ("color", "color: white (7) on black (0)"),
     ("color pink 0", "color: unknown colour: pink"),
     ("color 1", "usage: color <fg> <bg>"),
+    # Phase M: RAM filesystem seeded from the rootfs.tar Limine module.
+    ("cat /README", "Wiffer RAM filesystem\r\n\r\nThese files were packed into rootfs.tar"),
+    ("ls /", "  README\r\n"),
+    ("ls /src", "  hello.swift\r\n"),
+    ("cat /src/hello.swift", "struct Greeter {"),
+    ("mkdir /tmp", "> "),
+    ("cd /tmp", "> "),
+    ("write note hello  file", "> "),
+    ("pwd", "\r\n/tmp\r\n"),
+    ("cat note", "\r\nhello  file\r\n"),
+    ("mv note ../moved", "> "),
+    ("cd ..", "> "),
+    ("cat moved", "\r\nhello  file\r\n"),
+    ("rm moved tmp", "> "),
+    ("cat /moved", "cat: /moved: no such file or directory"),
+    ("df", "bytes in 3 files, 2 directories"),
 ]
 
 MOUSE_RE = re.compile(r"mouse: x=(\d+) y=(\d+) buttons=(\d+)")

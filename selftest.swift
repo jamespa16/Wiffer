@@ -62,6 +62,9 @@ func runSelfTests() -> Never {
     // Phase G: terminal, line editor, command table.
     shellTests(&t)
 
+    // Phase M: RAM filesystem, ustar, file commands.
+    fsTests(&t)
+
     puts("selftest: "); printDec(UInt64(t.passed)); puts(" passed, ")
     printDec(UInt64(t.failed)); puts(" failed\n")
     qemuExit(t.failed == 0 ? 0 : 1)
