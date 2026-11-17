@@ -233,3 +233,16 @@ static inline void sse_clobber_all(void) {
         : "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7",
           "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15");
 }
+
+// ---- Phase H: cooperative tasks (cpu.S) -----------------------------------
+
+// Push rbp, rbx, r12-r15, MXCSR and the x87 control word, store rsp in
+// *save_rsp, load load_rsp, pop the same from there and ret.
+void context_switch(uint64_t *save_rsp, uint64_t load_rsp);
+// Address of the first-run trampoline a new task's stack "returns" into.
+extern const uint64_t task_trampoline_address;
+// Selftest: load rbx, rbp, r12-r15 with seed+1...seed+6, MXCSR and the x87
+// control word with the given values, call fn, and return a bitmask of what
+// changed (bits 0-5 registers in that order, 6 MXCSR control bits, 7 FCW).
+// Restores the caller's MXCSR and control word.
+uint32_t check_callee_saved(void (*fn)(void), uint64_t seed, uint32_t mxcsr, uint32_t fcw);

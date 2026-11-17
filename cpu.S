@@ -97,6 +97,114 @@ isr_common:
     addq $16, %rsp              // vector + error code
     iretq
 
+
+// ---- Phase H: cooperative task switch ------------------------------------
+// void context_switch(uint64_t *save_rsp, uint64_t load_rsp)
+// The SysV callee-saved state: rbx, rbp, r12-r15, plus MXCSR's control bits
+// and the x87 control word. Everything else is caller-saved, so the Swift
+// caller has already spilled what it needs. Interrupts may arrive at any
+// point: rsp always points into a valid stack.
+    .globl context_switch
+    .type context_switch, @function
+context_switch:
+    pushq %rbp
+    pushq %rbx
+    pushq %r12
+    pushq %r13
+    pushq %r14
+    pushq %r15
+    subq $8, %rsp
+    stmxcsr (%rsp)
+    fnstcw 4(%rsp)
+    movq %rsp, (%rdi)
+    movq %rsi, %rsp
+    ldmxcsr (%rsp)
+    fldcw 4(%rsp)
+    addq $8, %rsp
+    popq %r15
+    popq %r14
+    popq %r13
+    popq %r12
+    popq %rbx
+    popq %rbp
+    ret
+    .size context_switch, . - context_switch
+
+// A new task's first context_switch returns here, with rsp at the 16-byte
+// aligned top of its stack (Task.buildInitialFrame). task_main never returns.
+    .type task_trampoline, @function
+task_trampoline:
+    xorl %ebp, %ebp
+    call task_main
+    ud2
+    .size task_trampoline, . - task_trampoline
+
+// uint32_t check_callee_saved(void (*fn)(void), uint64_t seed,
+//                             uint32_t mxcsr, uint32_t fcw)
+// Selftest only. Frame: 0 caller MXCSR, 4 caller FCW, 8 seed,
+// 16 test MXCSR, 20 test FCW, 24/28 scratch.
+    .globl check_callee_saved
+    .type check_callee_saved, @function
+check_callee_saved:
+    pushq %rbp
+    pushq %rbx
+    pushq %r12
+    pushq %r13
+    pushq %r14
+    pushq %r15
+    subq $40, %rsp              // 8 + 48 + 40: rsp 16-aligned for the call
+    stmxcsr 0(%rsp)
+    fnstcw 4(%rsp)
+    movq %rsi, 8(%rsp)
+    movl %edx, 16(%rsp)
+    movl %ecx, 20(%rsp)
+    ldmxcsr 16(%rsp)
+    fldcw 20(%rsp)
+    leaq 1(%rsi), %rbx
+    leaq 2(%rsi), %rbp
+    leaq 3(%rsi), %r12
+    leaq 4(%rsi), %r13
+    leaq 5(%rsi), %r14
+    leaq 6(%rsi), %r15
+    call *%rdi
+    xorl %eax, %eax
+    movq 8(%rsp), %rsi
+.macro CHECK_REG reg, k, bit
+    leaq \k(%rsi), %rdx
+    cmpq %rdx, \reg
+    je 1f
+    orl $\bit, %eax
+1:
+.endm
+    CHECK_REG %rbx, 1, 1
+    CHECK_REG %rbp, 2, 2
+    CHECK_REG %r12, 3, 4
+    CHECK_REG %r13, 4, 8
+    CHECK_REG %r14, 5, 16
+    CHECK_REG %r15, 6, 32
+    stmxcsr 24(%rsp)
+    movl 24(%rsp), %edx
+    xorl 16(%rsp), %edx
+    andl $0xFFC0, %edx          // control bits only; 0-5 are sticky flags
+    jz 2f
+    orl $64, %eax
+2:  fnstcw 28(%rsp)
+    movzwl 28(%rsp), %edx
+    xorw 20(%rsp), %dx
+    jz 3f
+    orl $128, %eax
+3:  ldmxcsr 0(%rsp)
+    fldcw 4(%rsp)
+    addq $40, %rsp
+    popq %r15
+    popq %r14
+    popq %r13
+    popq %r12
+    popq %rbx
+    popq %rbp
+    ret
+    .size check_callee_saved, . - check_callee_saved
+
     .section .rodata
     .p2align 3
     .globl isr_stub_table
@@ -104,5 +212,9 @@ isr_stub_table:
 .irp n, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47
     .quad isr_stub_\n
 .endr
+
+    .globl task_trampoline_address
+task_trampoline_address:
+    .quad task_trampoline
 
     .section .note.GNU-stack, "", @progbits

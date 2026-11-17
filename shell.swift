@@ -85,7 +85,7 @@ struct Shell<T: Terminal> {
             case .up: historyUp()
             case .down: historyDown()
             case .delete: delete()
-            case .insert, .pageUp, .pageDown: break
+            case .insert, .pageUp, .pageDown, .function, .superKey: break
             case .char(let c):
                 switch c {
                 case 0x0D, 0x0A: // Enter

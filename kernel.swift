@@ -71,6 +71,5 @@ func kernelMain() -> Never {
 
     if ps2.mouse { cursorDraw(x: mouse.x, y: mouse.y) }
 
-    var shell = Shell(terminal: LiveTerminal())
-    shell.run()
+    runShellTask() // Phase H: the shell in a task, the event loop as task 0
 }
