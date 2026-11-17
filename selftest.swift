@@ -58,6 +58,9 @@ func runSelfTests() -> Never {
     // Phase F: PS/2 input.
     inputTests(&t)
 
+    // Phase E: console model, font, display.
+    consoleTests(&t)
+
     puts("selftest: "); printDec(UInt64(t.passed)); puts(" passed, ")
     printDec(UInt64(t.failed)); puts(" failed\n")
     qemuExit(t.failed == 0 ? 0 : 1)
@@ -65,6 +68,7 @@ func runSelfTests() -> Never {
 
 /// Write to QEMU's isa-debug-exit device. Without that device, just halt.
 func qemuExit(_ code: UInt8) -> Never {
+    consoleFlush()
     outb(0xF4, code)
     hcf()
 }
@@ -150,8 +154,10 @@ func memoryTests(_ t: inout SelfTest) {
 
     // Large (frame-backed) allocation: freed back to the pmm, then reused.
     let framesBefore = pmm.freeFrames
+    let (largeBefore, largeFramesBefore) = (heap.largeBlocks, heap.largeFrames) // e.g. console buffers
     let big = UnsafeMutableRawPointer.allocate(byteCount: 10_000, alignment: 16)
-    t.check("large alloc is frame-backed", heap.largeBlocks == 1 && heap.largeFrames == 3
+    t.check("large alloc is frame-backed", heap.largeBlocks == largeBefore + 1
+            && heap.largeFrames == largeFramesBefore + 3
             && pmm.freeFrames == framesBefore - 3)
     let bytes = big.bindMemory(to: UInt8.self, capacity: 10_000)
     for i in 0..<10_000 { bytes[i] = UInt8(truncatingIfNeeded: i) }

@@ -51,10 +51,12 @@ clang -target x86_64-unknown-none-elf -flto -ffreestanding -nostdlib -O2 \
   -c boot.c -o build/boot.o
 #    Interrupt stubs + GDT reload: plain assembly, so a real object (not LTO).
 clang -target x86_64-unknown-none-elf "${KFLAGS[@]}" -c cpu.S -o build/cpu.o
+#    The console font (.incbin of fonts/spleen-8x16.psfu).
+clang -target x86_64-unknown-none-elf "${KFLAGS[@]}" -c font.S -o build/font.o
 
 # 4. Link. Only ENTRY(kernel_main), the Limine requests, and what they reach is kept.
 ld.lld -T linker.ld -nostdlib -static --gc-sections -z norelro -z max-page-size=0x1000 \
-  --build-id=none --lto-O2 build/kernel.o build/boot.o build/cpu.o -o build/kernel.elf
+  --build-id=none --lto-O2 build/kernel.o build/boot.o build/cpu.o build/font.o -o build/kernel.elf
 
 # 5. Verify: no undefined symbols (swift_retain etc. are compiled in, but
 #    there is no external runtime), no SSE.

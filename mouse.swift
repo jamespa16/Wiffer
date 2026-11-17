@@ -124,47 +124,73 @@ XX   XooX
 let cursorWidth = 11
 let cursorHeight = 17
 
-/// Pixels under the sprite while it's shown, row-major cursorWidth wide.
-var cursorSaved = InlineArray<187, UInt32>(repeating: 0)
 var cursorShown = false
 var cursorX = 0
 var cursorY = 0
 
-/// Save the pixels under the sprite at (x, y), then draw it (clipped).
-/// Reads the framebuffer: fine for 187 pixels, but once Phase E's back
-/// buffer exists, save/restore from that instead.
-func cursorDraw(x: Int, y: Int) {
-    guard let fb = RawFramebuffer.primary else { return }
-    if cursorShown { cursorErase() }
-    cursorX = x
-    cursorY = y
-    for row in 0..<cursorHeight where y + row < fb.height {
-        for col in 0..<cursorWidth where x + col < fb.width {
-            cursorSaved[row * cursorWidth + col] = fb.pixels[(y + row) * fb.stride + x + col]
-        }
-    }
+/// Sprite pixel at (col, row) of the art: 0 transparent, 1 outline, 2 fill.
+/// Decoded once (by cursorDraw) so compositing never walks the string. A
+/// plain zeroed global rather than a closure initialiser, so no lazy-init.
+var cursorMask = InlineArray<187, UInt8>(repeating: 0)
+var cursorMaskReady = false
+
+func decodeCursorMask() {
     cursorArt.withUTF8Buffer { art in
         var row = 0, col = 0
         for c in art {
             if c == 0x0A { row += 1; col = 0; continue }
-            if c != 0x20 && y + row < fb.height && x + col < fb.width {
-                fb.pixels[(y + row) * fb.stride + x + col] = c == 0x58 ? 0x00_0000 : 0xFF_FFFF
+            if row < cursorHeight && col < cursorWidth && c != 0x20 {
+                cursorMask[row * cursorWidth + col] = c == 0x58 ? 1 : 2
             }
             col += 1
         }
     }
-    cursorShown = true
+    cursorMaskReady = true
 }
 
-/// Restore the pixels saved by cursorDraw.
+/// Composite the sprite over framebuffer line `y`, whose pixels have just
+/// been written from `source` (a full line of `width` pixels). Called by the
+/// console's Display.copyRows, so the cursor survives every console flush
+/// and the framebuffer is never read back.
+func cursorOverlay(line y: Int, fbLine: UnsafeMutablePointer<UInt32>, width: Int) {
+    guard cursorShown, y >= cursorY, y < cursorY + cursorHeight else { return }
+    let row = y - cursorY
+    for col in 0..<cursorWidth where cursorX + col < width {
+        let m = cursorMask[row * cursorWidth + col]
+        if m != 0 { fbLine[cursorX + col] = m == 1 ? 0x00_0000 : 0xFF_FFFF }
+    }
+}
+
+/// Show the sprite at (x, y), with the hot spot at the top left (clipped).
+func cursorDraw(x: Int, y: Int) {
+    if !cursorMaskReady { decodeCursorMask() }
+    if cursorShown { cursorErase() }
+    cursorX = x
+    cursorY = y
+    cursorShown = true
+    repaintCursorRows()
+}
+
+/// Hide the sprite, restoring what is underneath.
 func cursorErase() {
-    guard cursorShown, let fb = RawFramebuffer.primary else { return }
-    for row in 0..<cursorHeight where cursorY + row < fb.height {
-        for col in 0..<cursorWidth where cursorX + col < fb.width {
-            fb.pixels[(cursorY + row) * fb.stride + cursorX + col] = cursorSaved[row * cursorWidth + col]
+    guard cursorShown else { return }
+    cursorShown = false
+    repaintCursorRows()
+}
+
+/// Rewrite the framebuffer lines the sprite covers (at its current position).
+/// With the console, they come from its back buffer and copyRows composites
+/// the sprite. Without one (no usable framebuffer for text), there is nothing
+/// to restore from, so draw on the raw framebuffer and never erase.
+func repaintCursorRows() {
+    if let d = display {
+        let first = max(0, cursorY), last = min(d.height, cursorY + cursorHeight)
+        if first < last { d.copyRows(first, last - first) }
+    } else if cursorShown, let fb = RawFramebuffer.primary {
+        for y in max(0, cursorY)..<min(fb.height, cursorY + cursorHeight) {
+            cursorOverlay(line: y, fbLine: fb.pixels + y * fb.stride, width: fb.width)
         }
     }
-    cursorShown = false
 }
 
 func cursorMove(x: Int, y: Int) {

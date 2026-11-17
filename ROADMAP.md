@@ -238,10 +238,10 @@ for `set`/`get`).
 
 **E1. Font.**
 
-- Embed an 8×16 bitmap font. PSF2 is easy to parse. Spleen (BSD-2) and
-  Terminus (OFL) are good choices.
-- Include it with `.incbin` in `cpu.S`, or convert it to a C array with
-  `xxd -i`.
+- Embed an 8×16 bitmap font. PSF1/PSF2 are easy to parse. Spleen (BSD-2)
+  and Terminus (OFL) are good choices; `fonts/spleen-8x16.psfu` is PSF1
+  with a Unicode table.
+- Include it with `.incbin` in a small `font.S` (assembled like `cpu.S`).
 - Write `drawGlyph(cell, fg, bg)`.
 
 **E2. Console model.**

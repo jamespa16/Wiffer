@@ -1,5 +1,5 @@
 // Embedded Swift standard-output hooks (EmbeddedPlatform.h): print() goes to
-// COM1 for now (the framebuffer console takes over in Phase E).
+// COM1 and, through putc, to the framebuffer console (console.swift).
 
 @_cdecl("_swift_writeToStandardOutput")
 public func swiftWriteToStandardOutput(_ chars: UnsafePointer<UInt8>?, _ count: UInt) -> UInt {

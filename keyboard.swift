@@ -138,6 +138,7 @@ func readKey() -> KeyEvent {
         if inb(com1 + 5) & 0x01 != 0 { return .char(inb(com1)) }
         pollMouse()
         if let event = pollKeyboard() { return event }
+        consoleFlush() // about to sleep: show pending output (and echo) now
         if interruptsEnabled { hlt() } // hlt with IF=0 would never wake
     }
 }

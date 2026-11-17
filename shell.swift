@@ -119,9 +119,11 @@ struct Shell {
             puts("\u{1B}[2J\u{1B}[H")
         } else if equals(cmd, "halt") {
             puts("Halted.\n")
+            consoleFlush()
             hcf()
         } else if equals(cmd, "reboot") {
             puts("Rebooting...\n")
+            consoleFlush()
             reboot()
         } else if equals(cmd, "selftest") {
             runSelfTests()

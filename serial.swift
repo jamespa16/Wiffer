@@ -14,15 +14,24 @@ func serialInit() {
 
 /// Wait for a byte (line status bit 0), then read it. The UART stays polled:
 /// the CPU sleeps in `hlt` between checks and the timer IRQ wakes it.
+/// Before waiting, pending console output (e.g. the echo of the last key)
+/// is drawn on the screen.
 func getc() -> UInt8 {
+    if inb(com1 + 5) & 0x01 == 0 { consoleFlush() }
     while inb(com1 + 5) & 0x01 == 0 {
         if interruptsEnabled { hlt() } // hlt with IF=0 would never wake
     }
     return inb(com1)
 }
 
-/// Spin until the transmit holding register is empty (bit 5), then write.
+/// Write a byte to COM1 and mirror it to the framebuffer console.
 func putc(_ byte: UInt8) {
+    serialPutc(byte)
+    consoleWrite(byte)
+}
+
+/// Spin until the transmit holding register is empty (bit 5), then write.
+func serialPutc(_ byte: UInt8) {
     while inb(com1 + 5) & 0x20 == 0 {}
     outb(com1, byte)
 }
