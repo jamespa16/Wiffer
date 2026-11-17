@@ -349,6 +349,9 @@ struct Shell<T: Terminal> {
             Command(name: "mouse", args: "", help: "PS/2 mouse position and buttons") { sh, _ in
                 sh.say(mouseInfo())
             },
+            Command(name: "gfx", args: "", help: "compositor layers and damage stats") { sh, _ in
+                sh.say(compositorInfo())
+            },
             Command(name: "fault", args: "<kind>", help: "raise an exception: ud, de, pf, gp, df") { sh, args in
                 if args.count == 1 { raiseFault(String(args[0])) }
                 sh.say("usage: fault <ud|de|pf|gp|df>")

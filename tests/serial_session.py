@@ -59,6 +59,8 @@ CHECKS = [
     ("set bad x1", "usage: set"),
     ("vars", "answer = 43\r\nneg = -7\r\n(2 variables)"),
     ("help", "mouse           PS/2 mouse"),
+    # Phase J: compositor stats.
+    ("gfx", " layers, last frame "),
     # Phase G: line editing over serial with terminal escape sequences.
     # ecXX, Left x2, "ho", End, Backspace x2, " hi" -> "echo hi".
     ("ecXX\x1b[D\x1b[Dho\x1b[F\x7f\x7f hi", "\r\nhi\r\n"),

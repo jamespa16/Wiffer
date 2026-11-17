@@ -242,8 +242,7 @@ final class Surface {
         } else {
             for r in 0..<d.h {
                 let dst = pixels + (d.y + r) * stride + d.x
-                let sp = from.pixels + (sy + r) * from.stride + sx
-                for i in 0..<d.w { dst[i] = sp[i] }
+                dst.update(from: from.pixels + (sy + r) * from.stride + sx, count: d.w)
             }
         }
     }

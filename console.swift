@@ -6,8 +6,9 @@
 //   off-screen on a tiny grid.
 // - PSFFont: the PSF1 font embedded by font.S, plus a Unicode -> glyph map
 //   built from the font's Unicode table.
-// - Display: renders the dirty rows of a Console into a heap back buffer and
-//   copies just those rows to the framebuffer. It never reads the framebuffer.
+// - Display: renders the dirty rows of a Console into a window layer of the
+//   compositor (compositor.swift), which copies just the damaged rects to the
+//   framebuffer. Nothing reads the framebuffer.
 //
 // Output path: putc (serial.swift) mirrors every byte to consoleWrite, which
 // only updates the grid and marks rows dirty. Pixels are drawn by
@@ -355,6 +356,12 @@ struct PSFFont {
 
 // MARK: Framebuffer display
 
+/// The boot console on the compositor (Phase J). Layers, bottom to top: the
+/// desktop pattern, a "window" holding the G4 frame and the console (rendered
+/// by ConsoleView into the window's own surface), the status bar, and (added
+/// by mouse.swift) the mouse cursor. Rendering only touches those surfaces
+/// and damages what changed; flush() composites, which is the only thing
+/// that writes the framebuffer.
 final class Display {
     /// Framebuffer (HHDM address), written only, never read.
     let fb: UnsafeMutablePointer<UInt32>
@@ -362,13 +369,18 @@ final class Display {
     let fbStride: Int
     let width: Int
     let height: Int
-    /// Heap back buffer, width x height pixels: the whole screen is one
-    /// surface. Everything is drawn here, then damaged rects are copied out.
-    let back: Surface
-    /// The framebuffer wrapped as a (write-only) surface, for copying out.
+    /// The framebuffer wrapped as a (write-only) surface: the compositor's front.
     let front: Surface
+    let compositor: Compositor
+    /// The compositor's screen-sized back buffer.
+    var back: Surface { compositor.back }
+    let desktop: PatternLayer
+    /// Chrome rows from `windowRow` down (the frame) and the console.
+    let window: SurfaceLayer
+    /// Chrome row `statusRow`; hidden without a status bar.
+    let status: SurfaceLayer
     let font: PSFFont
-    /// Draws the console into `back`; holds the palette and text cursor.
+    /// Draws the console into `window`; holds the palette and text cursor.
     let view: ConsoleView
     /// The ANSI palette in the framebuffer's pixel format.
     var palette: InlineArray<16, UInt32> { view.palette }
@@ -377,6 +389,8 @@ final class Display {
         set { view.showCursor = newValue }
     }
     var flushes = 0
+    /// Channel sizes and shifts (red, green, blue), for color(_:).
+    let channels: InlineArray<6, UInt8>
 
     /// Layout (G4): where the console's grid sits on screen, in cells, and
     /// the "chrome" around it: a screen-sized grid for the status bar and the
@@ -387,6 +401,8 @@ final class Display {
     var viewCols = 0
     /// Screen row of the status bar, or -1.
     var statusRow = -1
+    /// Screen row where the window layer starts.
+    var windowRow = 0
     var chrome: [Cell]
     var chromeDirty: [Bool]
 
@@ -403,47 +419,57 @@ final class Display {
         width = Int(f.width)
         height = Int(f.height)
         self.font = font
+        var ch = InlineArray<6, UInt8>(repeating: 0)
+        ch[0] = f.red_mask_size; ch[1] = f.red_mask_shift
+        ch[2] = f.green_mask_size; ch[3] = f.green_mask_shift
+        ch[4] = f.blue_mask_size; ch[5] = f.blue_mask_shift
+        channels = ch
         let screenCols = width / font.width, screenRows = height / font.height
         chrome = Array(repeating: Cell(ch: 0x20, fg: consoleDefaultFG, bg: consoleDefaultBG),
                        count: screenCols * screenRows)
         chromeDirty = Array(repeating: false, count: screenRows)
         viewRows = screenRows
         viewCols = screenCols
+        var palette = InlineArray<16, UInt32>(repeating: 0)
+        for i in 0..<16 { palette[i] = Display.convert(ansiColor(i), ch) }
+        view = ConsoleView(font: font, palette: palette)
+        front = Surface(wrapping: fb, width: width, height: height, stride: fbStride)
+        compositor = Compositor(front: front)
+        desktop = PatternLayer(frame: Rect(0, 0, width, height), color: Display.convert(desktopColor, ch),
+                               dotColor: Display.convert(desktopDotColor, ch))
+        let bg = palette[Int(consoleDefaultBG)]
+        window = SurfaceLayer(surface: Surface(width: screenCols * font.width, height: screenRows * font.height,
+                                               color: bg), at: .zero, band: .windows)
+        status = SurfaceLayer(surface: Surface(width: width, height: font.height, color: bg), at: .zero, band: .panel)
+        compositor.add(desktop)
+        compositor.add(window)
+        compositor.add(status)
+        compositor.setVisible(status, false)
+        compositor.composite()
+    }
+
+    /// 0xRRGGBB in a pixel format given as (size, shift) for red, green, blue.
+    static func convert(_ c: UInt32, _ ch: InlineArray<6, UInt8>) -> UInt32 {
         func channel(_ v: UInt32, _ size: UInt8, _ shift: UInt8) -> UInt32 {
             ((v & 0xFF) >> UInt32(8 - size)) << UInt32(shift)
         }
-        var palette = InlineArray<16, UInt32>(repeating: 0)
-        for i in 0..<16 {
-            let c = ansiColor(i)
-            palette[i] = channel(c >> 16, f.red_mask_size, f.red_mask_shift)
-                | channel(c >> 8, f.green_mask_size, f.green_mask_shift)
-                | channel(c, f.blue_mask_size, f.blue_mask_shift)
-        }
-        view = ConsoleView(font: font, palette: palette)
-        // Clear everything once, including the margin no cell covers.
-        back = Surface(width: width, height: height, color: palette[Int(consoleDefaultBG)])
-        front = Surface(wrapping: fb, width: width, height: height, stride: fbStride)
-        copyRows(0, height)
+        return channel(c >> 16, ch[0], ch[1]) | channel(c >> 8, ch[2], ch[3]) | channel(c, ch[4], ch[5])
     }
+
+    /// 0xRRGGBB in the framebuffer's pixel format.
+    func color(_ rgb: UInt32) -> UInt32 { Display.convert(rgb, channels) }
 
     var cols: Int { width / font.width }
     var rows: Int { height / font.height }
 
-    /// Draw glyph `glyph` into the back buffer at text cell (col, row).
-    func drawGlyph(col: Int, row: Int, glyph: Int, fg: UInt32, bg: UInt32) {
-        back.drawGlyph(glyph, font: font, at: Point(col * font.width, row * font.height), fg: fg, bg: bg)
-    }
-
-    /// Copy `r` from the back buffer to the framebuffer, with the mouse
-    /// sprite composited on top, so the framebuffer is never read back.
-    func copy(_ r: Rect) {
-        front.blit(from: back, src: r, to: r.origin)
-        front.withClip(r) { cursorComposite(onto: front) }
-    }
-
-    /// Copy pixel rows [y, y + count) from the back buffer to the framebuffer.
-    func copyRows(_ y: Int, _ count: Int) {
-        copy(Rect(0, y, width, count))
+    /// Draw chrome cell (col, row) (screen cells) into the layer holding that
+    /// row: the status bar or the window.
+    func drawChrome(col: Int, row: Int) {
+        let cell = chrome[row * cols + col]
+        let target = row == statusRow ? status.surface : window.surface
+        let y = row == statusRow ? 0 : (row - windowRow) * font.height
+        target.drawGlyph(font.glyph(cell.ch), font: font, at: Point(col * font.width, y),
+                         fg: palette[Int(cell.fg & 15)], bg: palette[Int(cell.bg & 15)])
     }
 
     // MARK: Layout
@@ -458,7 +484,14 @@ final class Display {
             top = 1
             for col in 0..<cols { chrome[col] = Cell(ch: 0x20, fg: statusFG, bg: statusBG) }
             chromeDirty[0] = true
+            // Past the last cell (a width that isn't a multiple of 8): bar colour.
+            status.surface.fill(palette[Int(statusBG)])
         }
+        compositor.setVisible(status, statusRow >= 0)
+        windowRow = top
+        compositor.setSurface(window, Surface(width: cols * font.width, height: (rows - top) * font.height,
+                                              color: palette[Int(consoleDefaultBG)]))
+        compositor.move(window, to: Point(0, top * font.height))
         originRow = top
         originCol = 0
         viewRows = rows - top
@@ -521,6 +554,7 @@ final class Display {
                 chrome[base + col] = Cell(ch: ch, fg: alertFG, bg: alertBG)
             }
         }
+        status.surface.fill(Rect(cols * font.width, 0, width, font.height), palette[Int(alertBG)])
         chromeDirty[statusRow] = true
     }
 
@@ -529,36 +563,28 @@ final class Display {
     }
 
     /// Render the chrome's and the console's dirty rows (and the cursor's old
-    /// and new rows) into the back buffer, then copy them to the framebuffer.
-    /// Never allocates.
+    /// and new rows) into their layers, damage them, and composite. Never
+    /// allocates.
     func flush(_ c: Console) {
-        let visibleRows = min(c.rows, viewRows)
-        for r in 0..<rows where chromeDirty[r] {
-            for col in 0..<cols where !inViewport(r, col) {
-                let cell = chrome[r * cols + col]
-                drawGlyph(col: col, row: r, glyph: font.glyph(cell.ch),
-                          fg: palette[Int(cell.fg & 15)], bg: palette[Int(cell.bg & 15)])
-            }
-            let consoleRow = r - originRow
-            if consoleRow >= 0 && consoleRow < visibleRows {
-                c.dirty[consoleRow] = true // copied (whole row) below, once rendered
-            } else {
-                chromeDirty[r] = false
-                copyRows(r * font.height, font.height)
-            }
-        }
         let fw = font.width, fh = font.height
-        let viewport = Rect(originCol * fw, originRow * fh, viewCols * fw, viewRows * fh)
-        back.withClip(viewport) {
-            view.render(c, into: back, at: Point(originCol * fw, originRow * fh)) { copy($0) }
-        }
-        for r in 0..<rows where chromeDirty[r] { // frame rows beside the console
+        for r in 0..<rows where chromeDirty[r] {
             chromeDirty[r] = false
-            copyRows(r * fh, fh)
+            for col in 0..<cols where !inViewport(r, col) { drawChrome(col: col, row: r) }
+            compositor.damage(Rect(0, r * fh, width, fh))
         }
+        let ws = window.surface
+        let viewport = Rect(originCol * fw, (originRow - windowRow) * fh, viewCols * fw, viewRows * fh)
+        ws.withClip(viewport) {
+            view.render(c, into: ws, at: viewport.origin) { compositor.damage(window, local: $0) }
+        }
+        compositor.composite()
         flushes += 1
     }
 }
+
+/// The desktop background: dark blue-grey with a lighter dot every 8 px.
+let desktopColor: UInt32 = 0x1C3A4A
+let desktopDotColor: UInt32 = 0x2E5A70
 
 // MARK: Kernel console
 
@@ -605,6 +631,7 @@ func consoleInit() {
     let c = Console(cols: size.cols, rows: size.rows)
     for i in 0..<earlyLogCount { c.write(earlyLog[i]) }
     display = d
+    compositor = d.compositor
     console = c
     print("console: \(c.cols)x\(c.rows) cells at row \(d.originRow) col \(d.originCol) of \(d.cols)x\(d.rows), status bar on row \(d.statusRow), on a \(d.width)x\(d.height) framebuffer")
     statusBarRefresh()

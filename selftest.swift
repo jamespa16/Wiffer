@@ -59,6 +59,9 @@ func runSelfTests() -> Never {
     // Phase I: surfaces, drawing primitives, ConsoleView.
     surfaceTests(&t)
 
+    // Phase J: compositor.
+    compositorTests(&t)
+
     // Phase D: SSE, Float, Dictionary, Set, String ==.
     sseTests(&t)
 

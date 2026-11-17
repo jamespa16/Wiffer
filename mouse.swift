@@ -1,5 +1,5 @@
-// Phase F2: PS/2 mouse packets, the pointer state, and a cursor sprite drawn
-// straight onto the Limine framebuffer.
+// Phase F2: PS/2 mouse packets, the pointer state, and the cursor sprite
+// (since Phase J, the top layer of the compositor).
 
 /// A decoded movement packet. dy is in PS/2 convention: positive = up.
 struct MousePacket: Equatable {
@@ -81,8 +81,8 @@ func pollMouse() {
 
 // MARK: Raw framebuffer
 
-/// The Limine framebuffer as 32-bit pixels. (Phase E's console has its own
-/// back buffer; the cursor only needs pixel get/put.)
+/// The Limine framebuffer as 32-bit pixels (the mouse clamps to its size;
+/// drawing goes through the compositor).
 struct RawFramebuffer {
     var pixels: UnsafeMutablePointer<UInt32>
     var stride: Int // in pixels
@@ -122,64 +122,32 @@ XX   XooX
       XX
 """
 
-var cursorShown = false
-var cursorX = 0
-var cursorY = 0
 
-/// The art as a masked 1-bit sprite (X = ink = black outline, o = paper =
-/// white fill), parsed once by cursorDraw so compositing never walks the
-/// string. A plain global rather than a lazy initialiser.
-var cursorSprite: Sprite? = nil
-var cursorWidth: Int { cursorSprite?.width ?? 0 }
-var cursorHeight: Int { cursorSprite?.height ?? 0 }
+/// The cursor: the compositor's top layer (Phase J), created by the first
+/// cursorDraw. Moving it damages only its old and new rects; the pixels reach
+/// the screen at the next composite (consoleFlush, from the idle loop).
+var cursorLayer: SpriteLayer? = nil
 
-/// Composite the sprite onto `s` (the framebuffer, clipped to the rect just
-/// copied there from the back buffer). Called by the console's Display.copy,
-/// so the cursor survives every console flush and the framebuffer is never
-/// read back.
-func cursorComposite(onto s: Surface) {
-    guard cursorShown, let sprite = cursorSprite else { return }
-    s.drawSprite(sprite, at: Point(cursorX, cursorY), ink: 0x00_0000, paper: 0xFF_FFFF)
-}
-
-/// Show the sprite at (x, y), with the hot spot at the top left (clipped).
+/// Show the sprite with its hot spot (top left) at (x, y). Without a
+/// compositor (no usable framebuffer) there is nowhere to draw it.
 func cursorDraw(x: Int, y: Int) {
-    if cursorSprite == nil { cursorSprite = Sprite(art: cursorArt) }
-    if cursorShown { cursorErase() }
-    cursorX = x
-    cursorY = y
-    cursorShown = true
-    repaintCursorRows()
-}
-
-/// Hide the sprite, restoring what is underneath.
-func cursorErase() {
-    guard cursorShown else { return }
-    cursorShown = false
-    repaintCursorRows()
-}
-
-/// The raw framebuffer as a surface, when there is no console Display.
-var rawCursorSurface: Surface? = nil
-
-/// Rewrite the framebuffer pixels the sprite covers (at its current
-/// position). With the console, they come from its back buffer and
-/// Display.copy composites the sprite. Without one (no usable framebuffer
-/// for text), there is nothing to restore from, so draw on the raw
-/// framebuffer and never erase.
-func repaintCursorRows() {
-    let r = Rect(cursorX, cursorY, cursorWidth, cursorHeight)
-    if let d = display {
-        d.copy(r.intersection(d.back.bounds))
-    } else if cursorShown, let fb = RawFramebuffer.primary {
-        if rawCursorSurface == nil {
-            rawCursorSurface = Surface(wrapping: fb.pixels, width: fb.width, height: fb.height, stride: fb.stride)
-        }
-        if let s = rawCursorSurface { cursorComposite(onto: s) }
+    guard let comp = compositor else { return }
+    if let layer = cursorLayer {
+        comp.move(layer, to: Point(x, y))
+        comp.setVisible(layer, true)
+    } else {
+        // X = ink = black outline, o = paper = white fill.
+        let layer = SpriteLayer(sprite: Sprite(art: cursorArt), at: Point(x, y), ink: 0x00_0000, paper: 0xFF_FFFF)
+        cursorLayer = layer
+        comp.add(layer)
     }
 }
 
+/// Hide the sprite (what's underneath is repainted from the layers below).
+func cursorErase() {
+    if let comp = compositor, let layer = cursorLayer { comp.setVisible(layer, false) }
+}
+
 func cursorMove(x: Int, y: Int) {
-    cursorErase()
     cursorDraw(x: x, y: y)
 }
