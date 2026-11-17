@@ -14,12 +14,18 @@ XCC=(); for f in "${KFLAGS[@]}"; do XCC+=(-Xcc "$f"); done
 # 1. Swift -> LLVM IR.
 #    (heap on: _swift_allocate etc. are implemented in heap.swift/platform.swift)
 #    -disable-stack-protector : no __stack_chk_guard/__stack_chk_fail
+#    -disable-swift-specific-llvm-optzns : Swift's LLVM ARC passes treat
+#      swift_retain as touching nothing but the refcount, and moved a copy's
+#      retain past Embedded Swift's inlined uniqueness check (an atomic load
+#      of that same refcount): `var b = a; b[i] = x` then wrote into `a`'s
+#      buffer too, breaking copy-on-write (fs_selftest copyOnWrite).
 #    -import-objc-header      : Limine structs + outb/inb/hcf from C
 swiftc \
   -target x86_64-unknown-none-elf \
   -enable-experimental-feature Embedded \
   -wmo -parse-as-library -Osize \
   -Xfrontend -disable-stack-protector \
+  -Xfrontend -disable-swift-specific-llvm-optzns \
   -import-objc-header bridge.h \
   "${XCC[@]}" \
   -emit-ir *.swift -o build/kernel.raw.ll
@@ -89,12 +95,18 @@ if llvm-objdump -d --disassemble-symbols="$ENTRY_SYMS" build/kernel.elf | grep -
 fi
 echo "OK: build/kernel.elf"
 
-# 6. Bootable hybrid BIOS/UEFI ISO.
+# 6. Root filesystem (Phase M): rootfs/ as a ustar archive, loaded by Limine as
+#    a module (limine.conf module_path) and unpacked into the RAM fs by
+#    ustar.swift. No macOS metadata (._ files, xattrs); owner root.
+COPYFILE_DISABLE=1 bsdtar --format ustar --no-mac-metadata --no-xattrs --no-fflags \
+  --uid 0 --gid 0 --uname root --gname root -cf build/rootfs.tar -C rootfs .
+
+# 7. Bootable hybrid BIOS/UEFI ISO.
 LIMINE_SHARE="$(brew --prefix limine)/share/limine"
 ISO_ROOT=build/iso_root
 rm -rf "$ISO_ROOT"
 mkdir -p "$ISO_ROOT/boot/limine" "$ISO_ROOT/EFI/BOOT"
-cp build/kernel.elf "$ISO_ROOT/boot/"
+cp build/kernel.elf build/rootfs.tar "$ISO_ROOT/boot/"
 cp limine.conf "$LIMINE_SHARE"/limine-bios.sys "$LIMINE_SHARE"/limine-bios-cd.bin \
    "$LIMINE_SHARE"/limine-uefi-cd.bin "$ISO_ROOT/boot/limine/"
 cp "$LIMINE_SHARE"/BOOTX64.EFI "$LIMINE_SHARE"/BOOTIA32.EFI "$ISO_ROOT/EFI/BOOT/"

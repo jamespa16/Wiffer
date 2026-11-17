@@ -71,5 +71,7 @@ func kernelMain() -> Never {
 
     if ps2.mouse { cursorDraw(x: mouse.x, y: mouse.y) }
 
+    fsInit() // RAM filesystem from the rootfs.tar module (Phase M)
+
     runShellTask() // Phase H: the shell in a task, the event loop as task 0
 }
