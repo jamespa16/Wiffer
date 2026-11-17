@@ -66,11 +66,14 @@ var mouseParser = MousePacketParser()
 var mouseMoved = false
 
 /// Apply queued mouse bytes, then move the cursor sprite if anything changed.
+/// Each packet is also posted as an event, so the main loop (the WM) misses
+/// nothing when a command reads the mouse directly.
 func pollMouse() {
     while let byte = mouseRing.pop() {
         if let packet = mouseParser.feed(byte) {
             mouse.apply(packet)
             mouseMoved = true
+            events.postMouse(x: mouse.x, y: mouse.y, buttons: mouse.buttons)
         }
     }
     if mouseMoved {

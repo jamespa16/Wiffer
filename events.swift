@@ -15,13 +15,18 @@ struct Key: Equatable {
     var shift: Bool
     /// The Windows / Super key is held.
     var meta: Bool
+    /// Came over serial (COM1) rather than the PS/2 keyboard. The WM sends
+    /// these to its serialTarget (Phase K).
+    var serial: Bool
 
-    init(_ code: KeyEvent, ctrl: Bool = false, alt: Bool = false, shift: Bool = false, meta: Bool = false) {
+    init(_ code: KeyEvent, ctrl: Bool = false, alt: Bool = false, shift: Bool = false, meta: Bool = false,
+         serial: Bool = false) {
         self.code = code
         self.ctrl = ctrl
         self.alt = alt
         self.shift = shift
         self.meta = meta
+        self.serial = serial
     }
 
     /// Ctrl plus `letter` (either case), e.g. `key.isCtrl("s")`, without
@@ -108,7 +113,7 @@ func pollEvents() {
         serialLastByte = ticks
     }
     if serialKeys.pending && ticks &- serialLastByte >= escapeTimeoutTicks { serialKeys.timeout() }
-    while let code = serialKeys.pop() { events.post(.key(Key(code))) }
+    while let code = serialKeys.pop() { events.post(.key(Key(code, serial: true))) }
 
     while let code = keyboardRing.pop() {
         if let key = keyboardDecoder.feedKey(code) { events.post(.key(key)) }

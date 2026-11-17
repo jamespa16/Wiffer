@@ -566,6 +566,13 @@ final class Display {
     /// and new rows) into their layers, damage them, and composite. Never
     /// allocates.
     func flush(_ c: Console) {
+        if let wm = windowManager, wm.compositor === compositor {
+            // Phase K: the console is a window; the WM draws it.
+            wm.render()
+            compositor.composite()
+            flushes += 1
+            return
+        }
         let fw = font.width, fh = font.height
         for r in 0..<rows where chromeDirty[r] {
             chromeDirty[r] = false
@@ -646,14 +653,26 @@ var statusNextTick: UInt64 = 0
 /// Called from the main loop (readKey's idle wait), never from an IRQ
 /// handler: it allocates.
 func statusBarRefresh() {
+    if let wm = windowManager {
+        guard ticks >= statusNextTick else { return }
+        statusNextTick = ticks + timerHz / 2
+        let free = (pmm.freeFrames * frameSize) >> 20
+        wm.refreshStatus("up \(uptimeClock())  free \(free) MiB  heap \(heap.bytesInUse / 1024) KiB")
+        return
+    }
     guard let d = display, d.statusRow >= 0, ticks >= statusNextTick else { return }
     let t = ticks
     statusNextTick = t + timerHz / 2
-    let s = t / timerHz
-    let m = s / 60 % 60, sec = s % 60
-    let clock = "\(s / 3600):\(m < 10 ? "0" : "")\(m):\(sec < 10 ? "0" : "")\(sec)"
+    let clock = uptimeClock()
     let free = (pmm.freeFrames * frameSize) >> 20, total = (pmm.totalFrames * frameSize) >> 20
     d.setStatus(" Wiffer  \u{2502}  up \(clock)  \u{2502}  free \(free) of \(total) MiB (\(pmm.freeFrames) frames)  \u{2502}  heap \(heap.bytesInUse / 1024) KiB in \(heap.liveCount) blocks")
+}
+
+/// Time since boot as H:MM:SS.
+func uptimeClock() -> String {
+    let s = ticks / timerHz
+    let m = s / 60 % 60, sec = s % 60
+    return "\(s / 3600):\(m < 10 ? "0" : "")\(m):\(sec < 10 ? "0" : "")\(sec)"
 }
 
 /// Show an alert in the status bar now. Never allocates.

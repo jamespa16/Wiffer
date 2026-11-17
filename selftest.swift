@@ -77,6 +77,9 @@ func runSelfTests() -> Never {
     // Phase N: text buffer and editor key model.
     editorTests(&t)
 
+    // Phase K: window manager, decorations, taskbar.
+    wmTests(&t)
+
     puts("selftest: "); printDec(UInt64(t.passed)); puts(" passed, ")
     printDec(UInt64(t.failed)); puts(" failed\n")
     qemuExit(t.failed == 0 ? 0 : 1)

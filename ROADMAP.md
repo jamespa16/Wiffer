@@ -182,6 +182,13 @@ are right. On QEMU, the cursor moves smoothly over a static desktop.
 
 ## Phase K: window manager
 
+**Done** (`window.swift`, `wm.swift`, `taskbar.swift`, `wm_selftest.swift`).
+Boot still shows the Part 2 shell; the `desktop` command (`startDesktop`)
+turns the console into window #1 and the status bar into the taskbar.
+Serial keys always go to that console's shell (`WindowManager.serialTarget`).
+Launchers are hooks: `windowManager.openTerminal` / `openEditor`. Debug
+commands: `windows`, `open`, `close <n>`, `warp <x> <y>`.
+
 **K1. Windows.**
 
 - `class Window` has a frame `Rect`, a title, a content `Surface`, an
