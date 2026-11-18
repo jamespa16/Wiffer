@@ -2,7 +2,8 @@
 //
 // A Task is a stack, a saved rsp and an inbox. Switching is cooperative:
 // a task runs until it calls yield(), blocks in waitEvent() on an empty
-// inbox, or returns. The timer never switches tasks. The main loop
+// inbox, or returns. The timer never switches kernel code (Phase 6D: it
+// preempts ring 3 only; preempt.swift). The main loop
 // (runMainLoop) is task 0, on the boot stack: it polls the devices, routes
 // events into inboxes, runs the ready tasks, and sleeps when there are none.
 //
@@ -311,6 +312,14 @@ func wakeIdleCPU(for task: Task) {
     }
 }
 
+/// Phase 6D: keep the run queue's capacity above the task count, so that
+/// enqueue never allocates (a task is in the queue at most once). The timer
+/// IRQ wakes sleepers with it. Under schedLock, in task context.
+func ensureRunQueueRoom() {
+    let need = scheduler.all.count + 8
+    if scheduler.runQueue.capacity < need { scheduler.runQueue.reserveCapacity(need * 2) }
+}
+
 /// Put a ready task at the back of the run queue. Under schedLock.
 func enqueue(_ task: Task) {
     task.readySince = ticks
@@ -347,6 +356,7 @@ func spawn(_ name: String, affinity: Affinity = .cpu(0), stackSize: Int = Task.d
         task.id = scheduler.nextID
         scheduler.nextID += 1
         scheduler.all.append(task)
+        ensureRunQueueRoom()
         enqueue(task)
         wakeIdleCPU(for: task)
     }
@@ -379,7 +389,9 @@ func waitKey() -> Key {
     }
 }
 
-enum SwitchReason { case yield, block, exit, park }
+/// Phase 6D: `preempt` is the timer taking the CPU from ring-3 code whose
+/// slice is used up (preempt.swift); otherwise it is a yield.
+enum SwitchReason { case yield, block, exit, park, preempt }
 
 // MARK: park / unpark (Phase 6C)
 
@@ -394,13 +406,19 @@ func park() {
 /// Wake `task` from park (or make its next park return at once). Any CPU.
 func unpark(_ task: Task) {
     let flags = schedLock.acquireIRQ()
+    unparkLocked(task)
+    schedLock.releaseIRQ(flags)
+}
+
+/// unpark's body, under schedLock. Allocation-free (see ensureRunQueueRoom),
+/// so the timer IRQ uses it for expired deadlines (preempt.swift).
+func unparkLocked(_ task: Task) {
     task.wakePending = true
     if task.state == .blocked {
         task.state = .ready
         enqueue(task)
         wakeIdleCPU(for: task)
     }
-    schedLock.releaseIRQ(flags)
 }
 
 // MARK: onCPU0 (Parts 6-7 "Scheduling")
@@ -514,6 +532,16 @@ func takeRunnable(_ cpu: Int, stealing: Bool, force: Bool = false) -> Task? {
     return scheduler.runQueue.remove(at: i)
 }
 
+/// The first task in the queue that CPU `cpu` may run and that has waited
+/// at least stealDelayTicks (preemption's fallback). Under schedLock.
+func takeLongWaiting(_ cpu: Int) -> Task? {
+    let now = ticks
+    guard let i = scheduler.runQueue.firstIndex(where: {
+        $0.affinity.allows(cpu) && now &- $0.readySince >= stealDelayTicks
+    }) else { return nil }
+    return scheduler.runQueue.remove(at: i)
+}
+
 /// All the bookkeeping of a switch, under schedLock and before it, so no
 /// Swift reference lives in the frame that calls context_switch. Returns
 /// where to save the current rsp and the incoming task's rsp slot, or nil
@@ -532,12 +560,18 @@ func prepareSwitch(_ why: SwitchReason) -> (UnsafeMutablePointer<UInt64>, Unsafe
     // something (task 0 is always queued then; `force` is a safety net).
     // Phase 6C: a yield by a task that may no longer run here (onCPU0) is
     // a move: it must leave, to the idle task if nothing else is ready.
-    let moving = why == .yield && !prev.affinity.allows(sched.cpu)
-    let stealing = why != .yield || prev.isMain || moving
-    let force = (why != .yield || moving) && sched.idle == nil
+    // Phase 6D: a preemption is a yield that may also take a task that has
+    // waited stealDelayTicks (else a new process could starve while every
+    // CPU runs ring-3 code).
+    let yielding = why == .yield || why == .preempt
+    let moving = yielding && !prev.affinity.allows(sched.cpu)
+    let stealing = !yielding || prev.isMain || moving
+    let force = (!yielding || moving) && sched.idle == nil
     if let n = takeRunnable(sched.cpu, stealing: stealing, force: force) {
         next = n
-    } else if why == .yield && !moving {
+    } else if why == .preempt, let n = takeLongWaiting(sched.cpu) {
+        next = n
+    } else if yielding && !moving {
         watchdogSwitch(from: prev, toIdle: false) // cooperating counts, even with no switch
         return nil
     } else if let idle = sched.idle, idle !== prev {
@@ -550,8 +584,9 @@ func prepareSwitch(_ why: SwitchReason) -> (UnsafeMutablePointer<UInt64>, Unsafe
     if !prev.canaryIntact { taskPanic("stack overflow (canary) in the task switching out") }
     if !next.canaryIntact { taskPanic("stack overflow (canary) in the task switching in") }
     watchdogSwitch(from: prev, toIdle: next === sched.idle)
+    if why == .preempt { thisCPU().pointee.preemptions &+= 1 }
     switch why {
-    case .yield:
+    case .yield, .preempt:
         prev.state = .ready
         enqueue(prev)
         wakeIdleCPU(for: prev)
@@ -574,6 +609,7 @@ func switchedIn(_ next: Task, _ sched: CPUSched) {
     scheduler.switches += 1
     let e = thisCPU()
     e.pointee.switches &+= 1
+    e.pointee.sliceTicks = 0 // Phase 6D: a fresh slice
     e.pointee.inSyscall = 0 // (stats: the incoming task sets it again)
     e.pointee.processRunning = next.process != nil ? 1 : 0
     // Phase 6B: its page tables, and the kernel stack ring 3 enters on.

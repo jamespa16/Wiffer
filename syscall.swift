@@ -82,6 +82,10 @@ func handleSyscall(_ n: UInt64, _ a1: UInt64, _ a2: UInt64, _ a3: UInt64, _ a4: 
         return sysDebugWrite(p, a1, a2)
     case SyscallNumber.getpid:
         return p.pid
+    case SyscallNumber.sleep:
+        return sysSleep(p, a1)
+    case SyscallNumber.now:
+        return sysNow()
     case SyscallNumber.write:
         return sysWrite(p, a1, a2, a3)
     case SyscallNumber.map:

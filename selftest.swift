@@ -123,6 +123,7 @@ func runSelfTests() -> Never {
     vmmTests(&t)
     ringThreeTests(&t)
     processTests(&t)
+    preemptTests(&t) // Phase 6D: timers, preemption, sleep
 
     puts("selftest: "); printDec(UInt64(t.passed)); puts(" passed, ")
     printDec(UInt64(t.failed)); puts(" failed\n")

@@ -22,8 +22,8 @@
 //   kernel log. 6E replaces this with file descriptors.
 // - kill sets killRequested and kicks the thread: unparks it if it's
 //   blocked, or IPIs the CPU it runs on, so the next return to ring 3
-//   leaves instead (userLeavePoint). A process spinning in ring 3 on CPU 0
-//   has to wait for 6D's preemption.
+//   leaves instead (userLeavePoint). One spinning in ring 3 on CPU 0 is
+//   preempted (6D), so the killer gets to run there too.
 // - No reference cycles: the thread and the process point at each other
 //   until processLeave breaks both links; parents and children are pids.
 

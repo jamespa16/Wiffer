@@ -86,6 +86,13 @@ static inline uint16_t read_ss(void) {
     return sel;
 }
 
+// Phase 6D: an interrupt from ring 3 loads SS with the null selector; the
+// handler reloads the kernel's, so a task switched to from there (or a
+// process's thread leaving ring 3) doesn't carry SS = 0 on.
+static inline void load_ss(uint16_t sel) {
+    __asm__ volatile ("mov %0, %%ss" : : "r"(sel) : "memory");
+}
+
 static inline uint64_t read_cr2(void) {
     uint64_t value;
     __asm__ volatile ("mov %%cr2, %0" : "=r"(value));
