@@ -1797,7 +1797,7 @@ file_selftest.swift):
   and a program's output to a terminal window is copied by the shell task
   on CPU 0 (a flood is bounded by the channel's 64 KiB).
 
-## Phase 6F: windows for processes
+## Phase 6F: windows for processes (done)
 
 **6F1. Protocol.** `win_create(w, h, title) -> (fd, buffer address)`.
 The kernel allocates a contiguous frame run for the pixels and maps it
@@ -1831,6 +1831,58 @@ event flood with no reader.
 
 **Done when:** a ring-3 app opens a window, draws, reacts to keys and the
 mouse, and its crash or exit closes the window cleanly.
+
+**As built** (window_user.swift, window_selftest.swift, lib/gui/,
+user/libwiffer/gui/, user/{clock,sysmon,wintest}):
+- **ABI** (abi/syscalls.swift): 40 `win_create(w, h, title, titleLen,
+  WinInfo*) -> fd`, 41 `win_present(fd, x, y, w, h)` (w or h <= 0: all),
+  42 `win_resize(fd, w, h, WinInfo*)` (0, 0 adopts the current size), 43
+  `win_set_title(fd, ptr, len)`, 44 `sysinfo(SysInfo*)`. `WinInfo` is
+  {address UInt64, width, height, stride, reserved Int32}; pixels are
+  0x00RRGGBB. Events are 16-byte `WinEvent` records {kind UInt16, mods
+  UInt16, a, b, c Int32} read from the fd (`WinEventKind` key/mouse/resize/
+  focus/close; `WinKey`, `WinMod`, `WinButton`); the fd is readable in
+  `wait`. Limits: 4096 per side, 8 windows per process, 128-byte titles.
+- **Buffer.** A contiguous frame run, zeroed, mapped RW+NX and not owned
+  (the address space never frees it) behind a region so map() avoids it.
+  `UserWindow.content` is a Surface wrapping the buffer: no copy, the
+  compositor reads user pixels through the identity map. If the
+  framebuffer isn't 0x00RRGGBB, content is a kernel surface and draw()
+  copies the presented damage with conversion. Frames are freed on the
+  fd's last close, after unmapping only pages that still translate to them.
+- **Decisions.** The WM sizes windows, so a resize gives the window a
+  kernel surface (old pixels copied) and posts `resize`; the process calls
+  `win_resize` to adopt (new buffer mapped before the old one is unmapped,
+  so the address changes; old pixels copied across). `win_present` is
+  lock-protected, not an onCPU0 hop; create, resize, title and close hop.
+  The queue is 128 records: motion coalesces and is dropped first, a key
+  evicts old motion, resizes coalesce, close is a flag. The close box and
+  Alt-F4 send `close` and leave the window alone; a second request while
+  the first is unread kills the process. The fd's last close (also exit,
+  kill) removes the window. `testWindowManager` lets selftests run windows
+  on an off-screen WM.
+- **lib/gui** (host-tested: `./run.sh --hosttest gui`): `GUITheme`,
+  `GUIEvent`/`GUIKeyEvent`, `Widget`, `Container` (focus, Tab, capture,
+  damage-tracking `render(into:) -> Rect`), `Label`, `Button`, `TextField`
+  (selection, clipboard, word moves, Enter/Escape callbacks, caret blink),
+  `ScrollView`, `Surface.line/fillEllipse/drawTextCentered`. It shares
+  surface.swift and psf.swift (split out of console.swift) through
+  `lib/gui/SRCS`, a new per-lib list of repo files (also read by
+  hosttest.sh); `lib/gui/USERSRCS` adds user-only files. libwiffer's
+  `AppWindow` and `App` (one `wait` with a tick/blink timeout, `watch(fd:)`
+  for sockets) live in user/libwiffer/gui/. The font is linked into every
+  program with .incbin (user/libwiffer/font.S, dropped when unused).
+- **Apps and launcher.** /bin/clock (RTC time, once a second), /bin/sysmon
+  (via `sysinfo`), /bin/wintest (tests). The taskbar's "+ Apps" button
+  opens a `LauncherMenu` (WM.setApps; programs run with no console and are
+  reaped on exit). `clock &` from a shell works too.
+- **Tests.** In-kernel (queue policy, create/draw/present/composite, keys,
+  mouse, drag, resize, close, kill while focused, flood, hung close, bad
+  arguments from ring 3, frames and heap back to baseline), `gui_checks`
+  in the harness, and host tests for lib/gui.
+- Known gaps: no mouse wheel (the field exists, always 0); no key-up or
+  repeat events; text is Latin-1 bytes; the clipboard is per-program; no
+  scrollbar buttons; the main-thread stack is 1 MiB (UserLayout.stackSize).
 
 ## Phase 6G: docs and cleanup
 
