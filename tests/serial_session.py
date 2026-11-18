@@ -106,6 +106,14 @@ NODISK_CHECKS = [
 ]
 
 PROMPT = b"> "
+
+
+def boot_timeout(timeout: float) -> float:
+    """The wait for the first prompt. Up to a dozen QEMUs boot at once (fault
+    checks, desktop/editor/terminal sessions, Phase Y's disk boots), and
+    under OVMF with -smp 4 that load pushed boots past 10 s. A pass returns
+    as soon as the prompt shows, so the long ceiling costs nothing."""
+    return max(timeout, 60.0)
 # The prompt is coloured (Phase G): "> " wrapped in SGR escapes.
 SGR = rb"(?:\x1b\[[0-9;]*m)*"
 PROMPT_RE = re.compile(rb"(?:\n|\x1b\[H)" + SGR + rb"> " + SGR)
@@ -657,7 +665,7 @@ def main():
         blank_img = scratch_disk(fat=False)
         blank = Session(iso=NODESKTOP_ISO, extra_args=disk_args(blank_img[0]))
     try:
-        boot = s.read_prompt(opts.timeout)
+        boot = s.read_prompt(boot_timeout(opts.timeout))
         if not PROMPT_RE.search(boot):
             print(boot.decode(errors="replace"))
             print("FAIL: no prompt after boot")
@@ -950,7 +958,7 @@ def desktop_checks(s: Session, timeout: float) -> int:
     def title_px_right(win):  # inside the title bar, just left of the close box
         return win[0] + win[2] - 24, win[1] + 12
 
-    boot = s.read_prompt(timeout)
+    boot = s.read_prompt(boot_timeout(timeout))
     got = s.command("desktop")
     if not check("desktop: on" in got and PROMPT_RE.search(boot), "desktop command", repr(got)):
         return failures
@@ -1047,7 +1055,7 @@ def enter_desktop(s: Session, timeout: float):
     """Boot to the shell and switch to the desktop; the `desktop` output (or
     None if that failed). If boot goes straight into the desktop (Phase L),
     only the wait for the first prompt is needed."""
-    boot = s.read_prompt(timeout)
+    boot = s.read_prompt(boot_timeout(timeout))
     if not PROMPT_RE.search(boot):
         return None
     if b"desktop: on" in s.log:  # booted into it: serial is terminal #1's
@@ -1141,7 +1149,7 @@ def mkfs_checks(s: Session, img: str, timeout: float) -> int:
         failures += not ok
         print(f"{'PASS' if ok else 'FAIL'}: blank disk: {label}" + ("" if ok or not detail else f"\n  {detail}"))
 
-    boot = s.read_prompt(timeout)
+    boot = s.read_prompt(boot_timeout(timeout))
     check(b"vda: no FAT32 filesystem (mkfs vda)" in s.log, "boot says 'no FAT32 filesystem (mkfs vda)'",
           repr(boot[-300:]))
     got = s.command("mount") + s.command("ls /disk")  # /disk is made anyway, empty
@@ -1201,7 +1209,7 @@ def persistence_checks(s: Session, img: str, timeout: float) -> int:
 
     second = Session(iso=NODESKTOP_ISO, extra_args=disk_args(img))
     try:
-        boot = second.read_prompt(timeout)
+        boot = second.read_prompt(boot_timeout(timeout))
         check(b"vda: FAT32 'WIFFER' mounted at /disk" in second.log, "boot 2 mounts the same image", repr(boot[-300:]))
         for path, want in [("/disk/notes.txt", PERSIST_NOTE), ("/disk/log.txt", "from the terminal"),
                            ("/disk/saved/deep.txt", "nested"), ("/disk/hello.txt", "replaced")]:
@@ -1270,7 +1278,7 @@ def terminal_checks(s: Session, timeout: float) -> int:
     def has(lines, text):
         return any(text in l for l in lines)
 
-    boot = s.read_prompt(timeout)
+    boot = s.read_prompt(boot_timeout(timeout))
     if not check(PROMPT_RE.search(boot) and b"desktop: on" in s.log and b"cmdline: ''" in s.log,
                  "boots into the desktop with a prompt", repr(boot[-200:])):
         return failures
