@@ -197,8 +197,8 @@ CHECKS = [
     ("rm moved tmp", "> "),
     ("cat /moved", "cat: /moved: no such file or directory"),
     # README, motd, src/hello.swift, 13 files in /fonts (Part 8), and
-    # Phase 6C's 5 programs in /bin.
-    ("df", "bytes in 21 files, 4 directories"),
+    # Part 8 /etc files and the /bin programs; the counts change with rootfs.
+    ("df", " files, "),
     # Phase 6C: programs from /bin run in ring 3; crashes are reported and
     # the shell carries on.
     ("ls /bin", "  hello\r\n"),
@@ -708,6 +708,7 @@ def main():
     desk = None if opts.command else Session(monitor=True, iso=NODESKTOP_ISO)
     ed = None if opts.command else Session(monitor=True)  # Phase N, in the boot desktop
     term = None if opts.command else Session(monitor=True)  # Phase L, in the boot desktop
+    pre = None if opts.command else Session(monitor=True)  # Phase 6D, in the boot desktop
     # Phase Y: persistence (boot 1 of 2, in the desktop, on its own FAT32
     # image) and mkfs on a blank image. Not with --nodisk.
     persist = blank = None
@@ -904,6 +905,8 @@ def main():
             failures += editor_checks(ed, opts.timeout)
         if term:
             failures += terminal_checks(term, opts.timeout)
+        if pre:
+            failures += preempt_desktop_checks(pre, opts.timeout)
         if blank:
             failures += mkfs_checks(blank, blank_img[0], opts.timeout)
         if persist:
@@ -953,6 +956,8 @@ def main():
             ed.close()
         if term:
             term.close()
+        if pre:
+            pre.close()
 
 
 def fake_dns_server():
@@ -1081,16 +1086,17 @@ def net_checks(s: Session, timeout: float) -> int:
 
 
 def process_checks(s: Session, timeout: float) -> int:
-    """Phase 6C: a background `spin` shows in `ps` and `kill` stops it (it
-    runs on an AP: without 6D's preemption a spin on CPU 0 can't be killed)."""
+    """Phase 6C: a background `spin` shows in `ps` and `kill` stops it.
+    Phase 6D (any -smp count, 1 included): with a spin per CPU the shell
+    still runs commands and programs; `sleep 500` takes about 500 ms; Ctrl-C
+    kills a foreground spin (on CPU 0 with -smp 1)."""
     failures = 0
     def check(ok, label, detail=""):
         nonlocal failures
         failures += not ok
         print(f"{'PASS' if ok else 'FAIL'}: {label}" + ("" if ok else f"\n  {detail}"))
         return ok
-    if int(SMP) < 2:
-        return 0
+    failures += preempt_checks(s, timeout)
     got = s.command("spin &", timeout)
     m = re.search(r"\[(\d+)\]", got)
     if not check(m is not None, "6C: spin & prints its pid", repr(got)):
@@ -1114,10 +1120,100 @@ def process_checks(s: Session, timeout: float) -> int:
     return failures
 
 
+def preempt_checks(s: Session, timeout: float) -> int:
+    """Phase 6D on the serial shell (see process_checks)."""
+    failures = 0
+    def check(ok, label, detail=""):
+        nonlocal failures
+        failures += not ok
+        print(f"{'PASS' if ok else 'FAIL'}: {label}" + ("" if ok else f"\n  {detail}"))
+        return ok
+    n = int(SMP)
+    pids = []
+    for _ in range(n):
+        m = re.search(r"\[(\d+)\]", s.command("spin &", timeout))
+        if m:
+            pids.append(m.group(1))
+    check(len(pids) == n, f"6D: {n} background spin(s) started", repr(pids))
+    time.sleep(0.5)
+    got = s.command("echo preempted", timeout)
+    check("\r\npreempted\r\n" in got, f"6D: the shell runs beside {n} spin(s)", repr(got))
+    got = s.command("hello", timeout)
+    check("Hello from ring 3!" in got, f"6D: programs run beside {n} spin(s)", repr(got))
+    got = s.command("ps", timeout)
+    running = [p for p in pids if re.search(rf"^\s*{p}\s+0\s+running\s", got, re.M)]
+    check(len(running) == n, "6D: ps lists every spin running", repr(got))
+    for p in pids:
+        s.command(f"kill {p}", timeout)
+    gone = False
+    for _ in range(20):
+        got = s.command("ps", timeout)
+        if not any(re.search(rf"^\s*{p}\s", got, re.M) for p in pids):
+            gone = True
+            break
+        time.sleep(0.1)
+    check(gone, "6D: kill stops every spin", repr(got))
+    # sleep: the shell waits about 500 ms (host time is loose under load).
+    t0 = time.time()
+    got = s.command("sleep -v 500", timeout)
+    took = time.time() - t0
+    m = re.search(r"slept (\d+) ms", got)
+    check(m is not None and 490 <= int(m.group(1)) <= 510 and took >= 0.45,
+          f"6D: sleep -v 500 sleeps 500 ms ({m.group(1) if m else None} ms, {took:.2f} s on the host)", repr(got))
+    # Ctrl-C kills a foreground spin (on CPU 0 when it's the only CPU).
+    s.send("spin")
+    time.sleep(0.5)
+    s.p.stdin.write(b"\x03")
+    s.p.stdin.flush()
+    got = s.read_prompt(timeout).decode(errors="replace")
+    check("(spin): killed" in got, "6D: Ctrl-C kills a foreground spin", repr(got))
+    got = s.command("echo after", timeout)
+    check("\r\nafter\r\n" in got, "6D: the shell carries on after Ctrl-C", repr(got))
+    return failures
+
+
+def preempt_desktop_checks(s: Session, timeout: float) -> int:
+    """Phase 6D on the desktop: with a spin per CPU, keys typed on the PS/2
+    keyboard still echo in the terminal window, on screen."""
+    failures = 0
+    dump = os.path.join(ROOT, "build", "preempt.ppm")
+    def check(ok, label, detail=""):
+        nonlocal failures
+        failures += not ok
+        print(f"{'PASS' if ok else 'FAIL'}: 6D desktop: {label}" + ("" if ok or not detail else f"\n  {detail}"))
+        return ok
+    boot = s.read_prompt(boot_timeout(timeout))
+    if not check(PROMPT_RE.search(boot) and b"desktop: on" in s.log, "boots into the desktop", repr(boot[-200:])):
+        return failures
+    n = int(SMP)
+    pids = []
+    for _ in range(n):
+        m = re.search(r"\[(\d+)\]", s.command("spin &", timeout))
+        if m:
+            pids.append(m.group(1))
+    check(len(pids) == n, f"{n} spin(s) in the background", repr(pids))
+    time.sleep(0.5)
+    s.sendkeys(key_names("echo typed\n"))
+    got = s.read_prompt(timeout).decode(errors="replace")
+    check("\r\ntyped\r\n" in got, "keys reach the shell beside the spins", repr(got))
+    wins, _ = s.windows()
+    w1 = wins.get(1)
+    s.warp(640, 600)
+    time.sleep(0.5)
+    s.screendump(dump)
+    lines = ocr_window(dump, w1) if w1 else []
+    check(any("> echo typed" in l for l in lines) and any(l.strip() == "typed" for l in lines),
+          "the terminal redraws the typed line", "\n  ".join(lines))
+    for p in pids:
+        s.command(f"kill {p}", timeout)
+    got = s.command("ps", timeout)
+    check(not any(re.search(rf"^\s*{p}\s+\d+\s+running", got, re.M) for p in pids), "spins killed", repr(got))
+    return failures
+
+
 def program_io_checks(s: Session, timeout: float, where: str) -> int:
     """Phase 6E: programs reading the terminal (cooked lines, Ctrl-D), a
-    pipeline waiting on it, and Ctrl-C killing a `spin` (on CPU 1: until 6D
-    nothing interrupts a ring-3 spin on CPU 0), typed over serial."""
+    pipeline waiting on it, and Ctrl-C killing a `spin` (6D preempts it), typed over serial."""
     failures = 0
     def check(ok, label, detail=""):
         nonlocal failures
@@ -1152,8 +1248,7 @@ def program_io_checks(s: Session, timeout: float, where: str) -> int:
     ctrl(0x04)
     got = s.read_prompt(timeout).decode(errors="replace")
     check("\r\n1 2 8\r\n" in got, "cat | wc ends on Ctrl-D and counts the line", repr(got))
-    if int(SMP) >= 2:
-        s.command("set affinity 1", timeout)
+    if True:
         s.send("spin")
         time.sleep(0.5)
         ctrl(0x03)
@@ -1164,7 +1259,6 @@ def program_io_checks(s: Session, timeout: float, where: str) -> int:
         ctrl(0x03)
         got = s.read_prompt(timeout).decode(errors="replace")
         check("^C" in got and "(spin): killed" in got, "Ctrl-C kills a whole pipeline", repr(got))
-        s.command("set affinity -1", timeout)
     got = s.command("echo shell is back", timeout)
     check("\r\nshell is back\r\n" in got, "the shell carries on", repr(got))
     got = s.command("ps", timeout)

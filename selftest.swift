@@ -123,6 +123,7 @@ func runSelfTests() -> Never {
     vmmTests(&t)
     ringThreeTests(&t)
     processTests(&t)
+    preemptTests(&t) // Phase 6D: timers, preemption, sleep
 
     // Phase 6E: fds, pipes, console, wait, the ported programs.
     fileTests(&t)

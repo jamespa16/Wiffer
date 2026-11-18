@@ -93,14 +93,6 @@ func fileTests(_ t: inout SelfTest) {
     if case .data(let d) = ch.tryRead(1), d == [3] {} else { t.check("6E2: input survives detach", false) }
     if case .data(let d) = ch.tryRead(1), d.isEmpty {} else { t.check("6E2: a detached console reads end of file", false) }
 
-    // Timed park.
-    let start = ticks
-    while ticks < start + 5 { parkUntil(start + 5) } // (a stale wake flag may end one park early)
-    let elapsed = ticks - start
-    if elapsed < 5 || elapsed > 8 { print("  parkUntil(+5) took \(elapsed) ticks") }
-    t.check("6E4: parkUntil sleeps about its deadline", elapsed >= 5 && elapsed <= 8)
-    t.check("6E4: no deadline left behind", timedWaits.isEmpty)
-
     programTests(&t)
 }
 

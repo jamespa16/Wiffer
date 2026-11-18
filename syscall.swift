@@ -103,6 +103,10 @@ func handleSyscall(_ n: UInt64, _ a1: UInt64, _ a2: UInt64, _ a3: UInt64, _ a4: 
     case SyscallNumber.pipe: return sysPipe(p, a1)
     case SyscallNumber.wait: return sysWait(p, a1, a2, a3)
     case SyscallNumber.consoleMode: return sysConsoleMode(p, a1, a2)
+    case SyscallNumber.sleep:
+        return sysSleep(p, a1)
+    case SyscallNumber.now:
+        return sysNow()
     case SyscallNumber.map:
         return p.mapAnonymous(hint: UInt(a1), length: a2, prot: a3)
     case SyscallNumber.unmap:

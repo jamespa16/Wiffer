@@ -298,7 +298,7 @@ func sysWait(_ p: Process, _ fdsPtr: UInt64, _ count: UInt64, _ timeout: UInt64)
     }
     let timeoutMs = Int64(bitPattern: timeout)
     var deadline: UInt64? = nil
-    if timeoutMs >= 0 { deadline = ticks &+ msToTicks(min(UInt64(timeoutMs), 1 << 40)) }
+    if timeoutMs >= 0 { deadline = deadlineAfter(ms: min(UInt64(timeoutMs), 1 << 40)) }
     var objects: [FileObject?] = []
     for e in entries { objects.append(e.fd >= 0 ? p.fds.get(Int(e.fd)) : nil) }
 
@@ -329,7 +329,7 @@ func sysWait(_ p: Process, _ fdsPtr: UInt64, _ count: UInt64, _ timeout: UInt64)
             if p.killRequested {
                 interrupted = true
             } else if let deadline {
-                parkUntil(deadline)
+                _ = parkUntil(deadline)
             } else {
                 park()
             }
