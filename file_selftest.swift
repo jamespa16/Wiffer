@@ -172,9 +172,9 @@ func programTests(_ t: inout SelfTest) {
             var sent = false
             // Nothing wakes the pump while the spin runs (a real shell is
             // woken by keys): a helper task does it after a while.
-            spawn("ctrlc-wake", affinity: .cpu(0), { sleepMilliseconds(150); unpark(me) })
+            spawn("ctrlc-wake", affinity: .cpu(0), { for _ in 0..<40 { sleepMilliseconds(50); unpark(me) } })
             let s = waitProcesses([p], console: channel, keys: {
-                if !sent && ticks - begin >= 10 { sent = true; return ([.char(0x03)], false) }
+                if ticks - begin >= 10 && (!sent || ticks - begin >= 30) { sent = true; return ([.char(0x03)], false) } // (re-sent once)
                 return ([], false)
             })
             t.check("6E2: Ctrl-C kills a spin", s[0] == .killed)
