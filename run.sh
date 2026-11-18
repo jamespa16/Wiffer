@@ -6,8 +6,29 @@
 #   ./run.sh --nodesktop   the Part 2 full-screen shell (`nodesktop` cmdline)
 #   ./run.sh --test   headless: scripted shell checks + in-kernel selftest
 #   ./run.sh --test --uefi   the same, booted through OVMF
+#   ./run.sh --smp N   N virtual CPUs (default 4, or env WIFFER_SMP); works with --test
+# Options may be given in any order.
 set -euo pipefail
 cd "$(dirname "$0")"
+
+TEST=0 UEFI=0 NODESKTOP=0 NOGRAPHIC=0
+SMP="${WIFFER_SMP:-4}"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --test) TEST=1 ;;
+    --uefi) UEFI=1 ;;
+    --nographic) NOGRAPHIC=1 ;;
+    --nodesktop) NODESKTOP=1 ;;
+    --smp)
+      [[ $# -ge 2 ]] || { echo "--smp needs a count" >&2; exit 1; }
+      SMP="$2"; shift ;;
+    --smp=*) SMP="${1#--smp=}" ;;
+    *) echo "unknown option: $1" >&2; exit 1 ;;
+  esac
+  shift
+done
+[[ "$SMP" =~ ^[1-9][0-9]*$ ]] || { echo "invalid --smp count: $SMP" >&2; exit 1; }
+
 ./build.sh
 
 # UEFI firmware: Homebrew qemu's edk2 on macOS, the ovmf package on Linux
@@ -23,20 +44,17 @@ if [[ -z "${WIFFER_OVMF:-}" ]]; then
 fi
 export WIFFER_OVMF
 
-ISO=build/wiffer.iso
-EXTRA=()
-DISPLAY_ARGS=(-serial stdio)
-if [[ "${1:-}" == "--test" ]]; then
-  [[ "${2:-}" == "--uefi" ]] && export WIFFER_UEFI=1
+if (( TEST )); then
+  export WIFFER_SMP="$SMP"
+  (( UEFI )) && export WIFFER_UEFI=1
   exec python3 tests/serial_session.py
 fi
-for a in "$@"; do
-  case "$a" in
-    --uefi) EXTRA+=(-drive "if=pflash,format=raw,readonly=on,file=$WIFFER_OVMF") ;;
-    --nographic) DISPLAY_ARGS=(-nographic) ;;
-    --nodesktop) ISO=build/wiffer-nodesktop.iso ;;
-    *) echo "unknown option: $a" >&2; exit 1 ;;
-  esac
-done
-exec qemu-system-x86_64 -M q35 -m 256M -cdrom "$ISO" -boot d -no-reboot -no-shutdown \
+
+ISO=build/wiffer.iso
+(( NODESKTOP )) && ISO=build/wiffer-nodesktop.iso
+EXTRA=()
+DISPLAY_ARGS=(-serial stdio)
+(( UEFI )) && EXTRA+=(-drive "if=pflash,format=raw,readonly=on,file=$WIFFER_OVMF")
+(( NOGRAPHIC )) && DISPLAY_ARGS=(-nographic)
+exec qemu-system-x86_64 -M q35 -m 256M -cpu max -smp "$SMP" -cdrom "$ISO" -boot d -no-reboot -no-shutdown \
   ${EXTRA[@]+"${EXTRA[@]}"} "${DISPLAY_ARGS[@]}"
