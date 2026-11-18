@@ -1998,7 +1998,7 @@ Files: `net_packet.swift` (Packet, checksums, `NetRNG`), `net_device.swift`
   command table has four new names (`ifconfig`, `arp`, `ping`, `host`), so the
   "h" completion test now lists `host`.
 
-## Phase 7D: TCP
+## Phase 7D: TCP (done)
 
 This is the largest phase in Part 7. It follows RFC 9293.
 
@@ -2029,6 +2029,102 @@ in.
 
 **Done when:** the lossy-link tests pass deterministically, and a 1 MiB
 download over SLIRP is correct.
+
+### Notes from 7D (as built)
+
+Files: `net_tcp.swift` (`TCPLayer`: table, listeners, demux, one stack
+timer for all deadlines, ISNs, ports, resets, ICMP errors, segment parsing),
+`net_tcp_conn.swift` (`TCPConnection`: state machine, buffers, output,
+retransmission, congestion control), `net_tcp_commands.swift` (`tcpget`,
+`tcplisten`, `netstat`), `net_tcp_selftest.swift`. `NetStack` gained
+`var tcp: TCPLayer!` (created in its init, registers protocol 6 and the
+ICMP error handler). bridge.h gained `rdrand64`.
+
+**Kernel API for 7E** (all on CPU 0, like the rest of the stack):
+
+- `TCPConnection.connect(stack, to: IPv4Addr, port: UInt16, localPort: UInt16 = 0, options: TCPOptions = TCPOptions()) -> TCPConnection?`
+  (nil: no address yet, no free port, table full; SYN goes out at once)
+- `TCPConnection.listen(stack, port:, backlog: Int = 8, options:) -> TCPConnection?`
+  (nil: port already listened on), `listener.accept() -> TCPConnection?`
+- `send(_ UnsafeRawBufferPointer) -> Int`, `send(_ [UInt8], from:count:) -> Int`:
+  bytes queued, 0 when the send buffer is full, -1 when sending is over
+  (error, or after shutdown/close). Data may be queued in SYN_SENT.
+- `receive(into: UnsafeMutableRawBufferPointer) -> Int`, `receive(max:) -> [UInt8]`:
+  0 bytes means nothing yet; check `eof` / `error`.
+- `shutdown()` half close (FIN after queued data, keep reading);
+  `close()` full close (unread or later-arriving data turns it into a RST,
+  RFC 2525; an orphan waits at most 60 s in FIN_WAIT_2); `abort()` RST now.
+- Readiness: `readable` (data, EOF, error, or a listener with a queued
+  connection), `writable` (send space in ESTABLISHED/CLOSE_WAIT, or an
+  error), `isClosed` (CLOSED or TIME_WAIT), `error: TCPError?`
+  (`.refused`, `.reset`, `.timedOut`, `.unreachable`, `.aborted`, with
+  `.message`), plus `eof`, `connected`, `available`, `sendSpace`, `state`.
+  `onEvent: ((TCPConnection) -> Void)?` is a hint that any of those may have
+  changed; it is called from netd after segment/timer processing (or at the
+  end of an API call), never mid-segment, so it may call the API. netBlock
+  waiters are woken after every netd run anyway.
+- `TCPOptions`: `recvBuffer` (128 KiB), `sendBuffer` (64 KiB),
+  `windowScale` (on), `noDelay` (off); `noDelay` is also a var on the
+  connection. Listeners pass their options to accepted connections.
+
+Decisions:
+
+- **Timers.** One stack timer per layer, armed for the earliest of every
+  connection's deadlines (RTO, persist, delayed ACK, TIME_WAIT/FIN_WAIT_2
+  linger); it scans the table when it fires. Initial RTO 1 s, min 200 ms
+  (Linux's, not RFC 6298's 1 s), max 60 s, 12 retries (5 for SYNs), delayed
+  ACK 40 ms or every second full segment.
+- **Retransmission** is go-back-N from sndUna after an RTO (cwnd = 1 MSS),
+  fast retransmit plus NewReno partial-ACK recovery after three duplicate
+  ACKs. Pure ACKs and RSTs are numbered `sndMax` (BSD): with `sndNxt`
+  after a rewind, two rewound ends dropped each other's ACKs as
+  unacceptable and deadlocked at 20% loss.
+- **Zero window:** the persist probe is a byte-less segment at sndUna-1
+  (Linux), which any receiver answers with its window; backoff from
+  max(RTO, 500 ms) to 60 s, never giving up. An RTO with a zero window
+  switches to probing instead of counting a retry.
+- **RST in TIME_WAIT is ignored** (RFC 1337), not RFC 9293's close: our
+  own duplicate ACK of the peer's FIN reached its listener and drew a
+  RST that killed TIME_WAIT early. A retransmitted FIN in TIME_WAIT is
+  ACKed and restarts the 2 × 10 s.
+- **RFC 5961:** exact-sequence RSTs only; in-window RSTs, SYNs on a
+  synchronized connection and too-old ACKs get a challenge ACK (10 per
+  second per layer); ACKs above sndMax are answered and dropped.
+- **Memory:** 64 connections per stack, backlog ≤ 64, buffers allocated on
+  ESTABLISHED (a SYN flood costs a small object per backlog slot), the
+  out-of-order queue capped at 64 segments and the receive buffer's size.
+- **ISNs:** RFC 6528, a keyed hash (two RDRAND words mixed with the TSC
+  at layer creation, TSC/xorshift without RDRAND) of the 4-tuple plus
+  TSC/4096. Tests set `tcp.rng` (seeded ISNs and ports) or `tcp.nextISN`.
+- `csumAdd` and `Packet.append` were rewritten with unsafe buffer copies
+  (TCP checksums every segment twice).
+
+Measured (Apple-silicon host, TCG, `-smp 4`): over LinkPair (1-tick delay),
+1 MiB each way at the same time on one connection: clean 42 virtual ticks,
+50-110 ms real; 5% loss + 5% reorder + 2% dup 1591 ticks, 50-140 ms; 20% loss +
+10% reorder + 5% dup 9421 ticks, 70-170 ms (ranges: BIOS/UEFI runs on a loaded host). The whole TCP selftest adds
+about a second. `tcpTests` is `@inline(never)` and yields between groups: inlined into runSelfTests it made the later watchdog check flaky. SLIRP: `tcpget` of 1 MiB from the host's Python
+`http.server` took 40-90 ms across runs (11-25 MB/s, polled NIC, before MSI-X).
+
+Tests: selftest (`tcp: ...`, 60 checks) covers the bulk transfers with
+FNV-1a hashes and sequence-number wraparound; simultaneous open and close;
+RST in every state (SYN_SENT, both kinds of SYN_RECEIVED, ESTABLISHED,
+FIN_WAIT_1/2, CLOSE_WAIT, CLOSING, LAST_ACK, TIME_WAIT, LISTEN) with the
+blind-reset checks; backlog and table limits; window scaling on/off;
+half close; TIME_WAIT length; Nagle, delayed ACKs, noDelay; zero window
+with probes and a lost window update; closed port (RST → refused),
+retransmission and SYN timeouts, ICMP unreachable; 3000 hostile segments.
+Harness: `tcpget 10.0.2.2 <port> /data` (1 MiB, hash compared), a 404,
+a closed host port refused, and `tcplisten 7777` reached from the host
+through `hostfwd=tcp:127.0.0.1:<free port>-:7777` (main session only),
+echoing 256 KiB.
+
+Known gaps: no SACK, timestamps or keepalive; no RFC 6191 timestamp check
+for TIME_WAIT reuse (a SYN above rcvNxt is accepted); urgent data is
+treated as normal data; data in a SYN is ignored (the peer resends); no
+receive-side PMTU probing (fragmentation-needed only lowers the MSS);
+`netstat` shows counters, not per-connection timers; ICMP soft errors are
+recorded (`softError`) but not reported to readers.
 
 ## Phase 7E: sockets for user space
 

@@ -400,6 +400,19 @@ static inline uint8_t dma_load8(const void *p) {
 // Full fence (mfence): ring updates before the notify port write.
 static inline void dma_fence(void) { __atomic_thread_fence(__ATOMIC_SEQ_CST); }
 
+// ---- Part 7 (Phase 7D): RDRAND for TCP initial sequence numbers -------------
+
+// One 64-bit RDRAND value into *out: 1 on success, 0 if the DRNG had nothing
+// after 10 tries. The caller checks CPUID.1:ECX[30] first.
+static inline int rdrand64(uint64_t *out) {
+    for (int i = 0; i < 10; i++) {
+        uint64_t v;
+        unsigned char ok;
+        __asm__ volatile ("rdrand %0; setc %1" : "=r"(v), "=qm"(ok) : : "cc");
+        if (ok) { *out = v; return 1; }
+    }
+    return 0;
+}
 // ---- Phase 6A: page tables -------------------------------------------------
 
 // Drop one TLB entry on this CPU.

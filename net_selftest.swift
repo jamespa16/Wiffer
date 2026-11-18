@@ -281,6 +281,7 @@ func netTests(_ t: inout SelfTest) {
     netDHCPTests(&t)
     netDNSParseTests(&t)
     netDNSResolverTests(&t)
+    tcpTests(&t) // net_tcp_selftest.swift
     netMachineTests(&t)
 }
 

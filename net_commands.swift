@@ -244,6 +244,6 @@ extension Shell {
             Command(name: "host", args: "<name>", help: "DNS lookup; 'host <name> <ip[:port]>' picks the server") { sh, args in
                 hostCommand(args) { sh.say($0) }
             },
-        ]
+        ] + tcpCommands()
     }
 }
