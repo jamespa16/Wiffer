@@ -1,0 +1,33 @@
+block <html> 0,0 400x488
+  block <body> 0,16 300x472
+    block <p> 0,16 300x34
+      text "known " 0,31 58x19
+      replaced <img> 58,16 40x30
+      text " attr " 98,31 39x19
+      replaced <img> 137,26 30x20
+      text " alt " 167,31 31x19
+      replaced <img> 197,27 62x19
+    block <p> 0,66 300x29
+      replaced <img> 0,66 50x25
+      text " half" 50,76 35x19
+    anon-block 0,95 300x104
+      replaced <img.max> 0,95 300x100
+    replaced <img> 0,199 80x60
+    block <form> 0,259 300x70
+      replaced <input> 0,259 178x22
+      text " " 178,266 5x19
+      replaced <input> 183,268 13x13
+      text " " 196,266 5x19
+      replaced <input> 201,268 13x13
+      text " " 214,266 5x19
+      replaced <input> 219,259 34x22
+      replaced <select> 0,301 102x22
+      text " " 102,308 5x19
+      replaced <textarea> 108,285 93x38
+      text " " 200,308 5x19
+      inline-block <button> 205,308 78x22
+        text "Press " 213,311 39x16
+        inline <b> 253,311 23x16
+          text "me" 253,311 23x16
+    anon-block 0,330 300x158
+      replaced <iframe> 0,330 304x154

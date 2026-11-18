@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<style>
+body { margin: 0; font: 14px sans-serif }
+table { margin-bottom: 6px }
+td, th { background: #ddd }
+.collapse { border-collapse: collapse }
+.collapse td { border: 1px solid black }
+.fixed { table-layout: fixed; width: 300px }
+</style>
+<table border=1 cellpadding=4 cellspacing=2>
+<caption>Caption text</caption>
+<tr><th>Head A</th><th>Head B wider</th><th>C</th></tr>
+<tr><td colspan=2>spans two columns</td><td rowspan=2>two rows</td></tr>
+<tr><td>a</td><td>b</td></tr>
+</table>
+<table width="100%" cellspacing=0 cellpadding=0>
+<tr><td width="25%">quarter</td><td>rest of the row</td><td width=50>50px</td></tr>
+</table>
+<table class=collapse><tr><td>x</td><td>y</td></tr><tr><td>z</td><td>w</td></tr></table>
+<table class=fixed><tr><td style="width:100px">100</td><td>auto</td><td>auto</td></tr></table>
+<table><tr><td valign=top style="height:50px">top</td><td valign=middle>mid</td><td valign=bottom>bottom</td><td valign=baseline>base<br>line</td></tr></table>
+<table width=200><tr><td>A long cell text that must wrap inside a narrow table</td><td>short</td></tr></table>
+<div style="display:table"><div style="display:table-cell; width:60px">css</div><div style="display:table-cell">table</div></div>

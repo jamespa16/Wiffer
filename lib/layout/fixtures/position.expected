@@ -1,0 +1,20 @@
+block <html> 0,0 400x150
+  block <body> 0,0 400x150
+    block <div.rel> 20,10 400x30 relative
+      text "relative " 20,10 65x19
+      inline <span> 85,5 20x19 relative
+        text "up" 85,5 20x19
+    block <div.cb> 10,40 380x100 relative
+      block <div.abs> 330,45 50x20 absolute
+      block <div.abs2> 20,125 360x15 absolute
+      inline <span> 10,40 118x19
+        text "static position:" 10,40 118x19
+        block <span.abs3> 133,40 28x19 absolute
+          text "abs" 133,40 28x19
+      block <div.z1> 10,40 40x40 absolute
+      block <div.z2> 20,50 40x40 absolute
+      block <div.center> 150,90 100x10 absolute
+    block <div.sticky> 0,140 400x10 sticky
+      text "sticky" 0,140 46x19
+    block <div.fixed> 0,280 100x20 fixed
+      text "fixed" 0,280 39x19

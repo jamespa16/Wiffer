@@ -1,0 +1,51 @@
+block <html> 0,0 400x479
+  block <body> 8,8 300x463
+    block <p> 8,8 300x58
+      text "Plain text that wraps across more" 8,8 269x19
+      text "than one line in a three hundred" 8,27 259x19
+      text "pixel wide body." 8,47 128x19
+    block <p> 8,66 300x38
+      text "Some " 8,66 50x19
+      inline <span.box> 8,63 286x44
+        text "boxed inline text that wraps" 69,66 224x19
+        text "onto the next line" 8,85 142x19
+      text " after." 161,85 47x19
+    block <p.center> 8,104 300x38
+      text "Centered text that also wraps over" 18,104 279x19
+      text "two lines here." 99,123 118x19
+    block <p.right> 8,142 300x19
+      text "Right aligned text." 160,143 148x19
+    block <p.justify> 8,162 300x58
+      text "Justified " 8,162 69x19
+      text "text " 83,162 37x19
+      text "spreads " 126,162 68x19
+      text "its " 200,162 24x19
+      text "words " 231,162 53x19
+      text "so" 290,162 18x19
+      text "that " 8,181 38x19
+      text "every " 46,181 50x19
+      text "line " 98,181 34x19
+      text "except " 133,181 59x19
+      text "the " 192,181 31x19
+      text "last " 225,181 34x19
+      text "one " 259,181 35x19
+      text "is" 295,181 13x19
+      text "flush on both sides." 8,200 156x19
+    block <p.indent> 8,219 300x38
+      text "Indented first line of a paragraph" 38,219 265x19
+      text "that wraps." 8,239 91x19
+    block <p> 8,258 300x77
+      text "Line" 8,258 33x19
+      text "breaks" 8,277 54x19
+      text "here" 8,315 36x19
+    block <p.lh> 8,334 300x60
+      text "Tall line height text that wraps over" 8,340 284x19
+      text "two lines of text." 8,370 134x19
+    block <p> 8,394 300x38
+      text "Mixed " 8,410 52x19
+      inline <span.big> 60,395 56x37
+        text "BIG" 60,395 56x37
+      text " sizes on a line." 117,410 123x19
+    block <p> 8,433 300x38
+      text "averyveryveryveryveryverylongwordthatcan..." 8,433 507x19
+      text "next" 8,452 35x19

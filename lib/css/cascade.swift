@@ -235,9 +235,13 @@ final class CSSStyleResolver {
     /// The computed style of `el`. `parent` is the parent element's computed
     /// style (nil for the root). If `el` is the root, `ctx.rootFontSize`
     /// is updated for later `rem` units.
-    func computeStyle<E: CSSElement>(_ el: E, parent: CSSComputedStyle?) -> CSSComputedStyle {
+    ///
+    /// `hints` are HTML presentational hints (`bgcolor`, `width`, ...): they
+    /// cascade as author declarations with specificity zero that precede every
+    /// author rule, so any author rule (or `style=""`) beats them.
+    func computeStyle<E: CSSElement>(_ el: E, parent: CSSComputedStyle?, hints: [CSSDeclaration] = []) -> CSSComputedStyle {
         let isRoot = el.cssIsRoot
-        let s = compute(el, 0, parent ?? CSSComputedStyle(), inlineStyle: true, isRoot: isRoot)
+        let s = compute(el, 0, parent ?? CSSComputedStyle(), inlineStyle: true, isRoot: isRoot, hints: hints)
         if isRoot { ctx.rootFontSize = s.fontSize }
         return s
     }
@@ -262,7 +266,8 @@ final class CSSStyleResolver {
         return s
     }
 
-    private func compute<E: CSSElement>(_ el: E, _ slot: Int, _ parent: CSSComputedStyle, inlineStyle: Bool, isRoot: Bool) -> CSSComputedStyle {
+    private func compute<E: CSSElement>(_ el: E, _ slot: Int, _ parent: CSSComputedStyle, inlineStyle: Bool, isRoot: Bool,
+                                        hints: [CSSDeclaration] = []) -> CSSComputedStyle {
         var matches: [CSSMatch] = []
         collect(el, slot, &matches)
         var inline: [CSSDeclaration] = []
@@ -271,7 +276,7 @@ final class CSSStyleResolver {
         }
         if matches.count > 1 { matches.sort { $0.key < $1.key } }
 
-        // Winners per property: (rule or -2 for inline, declaration index).
+        // Winners per property: (rule, -2 for style="" or -3 for a hint; declaration index).
         for k in 0..<cssPropCount { winRule[k] = -1 }
         var customWinners: [String: [CSSComponent]] = [:]
         var hasPending = false
@@ -282,11 +287,18 @@ final class CSSStyleResolver {
             winRule[Int(d.prop.rawValue)] = rule
             winDecl[Int(d.prop.rawValue)] = Int32(truncatingIfNeeded: idx)
         }
-        // 1. normal declarations: user agent, then author (specificity, order), then style=""
+        // 1. normal declarations: user agent, then presentational hints, then
+        //    author (specificity, order), then style=""
+        var hintsTaken = hints.isEmpty
         for m in matches {
+            if !hintsTaken && ruleSet.rules[Int(m.rule)].origin == .author {
+                for (i, d) in hints.enumerated() where !d.important { take(d, -3, i) }
+                hintsTaken = true
+            }
             let ds = ruleSet.rules[Int(m.rule)].declarations
             for (i, d) in ds.enumerated() where !d.important { take(d, m.rule, i) }
         }
+        if !hintsTaken { for (i, d) in hints.enumerated() where !d.important { take(d, -3, i) } }
         for (i, d) in inline.enumerated() where !d.important { take(d, -2, i) }
         // 2. author !important (rules, then style="")
         for m in matches where ruleSet.rules[Int(m.rule)].origin == .author {
@@ -320,6 +332,7 @@ final class CSSStyleResolver {
             let prop = CSSProp(rawValue: UInt8(k)) ?? .custom
             var d: CSSDeclaration
             if rule == -2 { d = inline[Int(winDecl[k])] }
+            else if rule == -3 { d = hints[Int(winDecl[k])] }
             else { d = ruleSet.rules[Int(rule)].declarations[Int(winDecl[k])] }
             explicit[k] = true
             if d.kind == .pending {

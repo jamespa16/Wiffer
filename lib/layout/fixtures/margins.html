@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<style>
+body { margin: 0; font: 16px sans-serif }
+div { height: 10px; background: #ccc }
+.a { margin: 20px 0 }
+.b { margin: 30px 0 10px }
+.neg { margin-top: -15px }
+.parent { height: auto; background: none }
+.first { margin-top: 25px }
+.last { margin-bottom: 35px }
+.empty { height: 0; margin: 12px 0 }
+.bordered { height: auto; border-top: 1px solid; margin-top: 5px }
+.bfc { height: auto; overflow: hidden; background: none }
+</style>
+<div class=a></div>
+<div class=b></div>
+<div class=neg></div>
+<div class=parent><div class=first></div><div class=last></div></div>
+<div class=a></div>
+<div class=empty></div>
+<div class=a></div>
+<div class=bordered><div class=first></div></div>
+<div class=bfc><div class=first></div><div class=last></div></div>
+<div class=a></div>
