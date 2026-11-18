@@ -283,7 +283,7 @@ func x509FuzzTests(_ t: Tests) {
         var i = 0
         while let el = r.next(), i < 6 { if i % 2 == 0 { seeds.append(el.encoded) }; i += 1 }
     }
-    t.fuzz("X509Certificate", seeds: seeds, iterations: 6000) { data in
+    t.fuzz("X509Certificate", seeds: seeds, iterations: 10000) { data in
         if let c = try? X509Certificate(der: data) {
             _ = c.subject.description; _ = c.issuer.description
             _ = x509MatchesHostname(c, "localhost")

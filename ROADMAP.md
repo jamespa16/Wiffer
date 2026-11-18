@@ -1832,22 +1832,138 @@ user space (see the design decisions). They can start before Parts 6 and
   bundled root store (Mozilla's, as `/etc/roots.der` in rootfs), validity
   dates from the RTC, the hostname against SAN (with wildcards), basic
   constraints and key usage. Treat every byte as hostile.
+
+  **Done** (`lib/x509`: `asn1.swift`, `certificate.swift`,
+  `validate.swift`). Two libs, not one: `lib/x509` (DEPS bytes crypto)
+  and `lib/tls` (DEPS x509), so a program that only reads certificates
+  doesn't carry the TLS state machine. `ASN1Reader` is strict DER
+  (definite, minimal lengths; minimal INTEGERs and OID arcs; BOOLEAN
+  00/ff; no unused-bit garbage; UTCTime/GeneralizedTime with seconds and
+  `Z` only; nesting depth 24). `X509Certificate(der:)` keeps the TBS
+  bytes, raw and printable DNs, validity as Unix seconds, RSA / P-256 /
+  P-384 (and Ed25519, parse only) keys, sha256/384/512WithRSA,
+  RSASSA-PSS (hash, MGF1, salt parameters) and ecdsa-with-SHA256/384/512
+  signatures, basicConstraints, keyUsage, extKeyUsage, SAN dNSName and
+  iPAddress, AKI/SKI and dNSName/iPAddress name constraints; SHA-1, MD5
+  and P-521 parse as `.unsupported` so old anchors still load.
+  `X509Validator.validate(chain:hostname:now:roots:)` builds a path
+  through the server's certificates in any order (extras and duplicates
+  ignored, alternatives tried for cross-signs, at most 8 deep and 24
+  signature checks) to an `X509TrustStore`, and checks every signature,
+  every certificate's dates against the caller's `now`, cA and
+  keyCertSign on issuers (v1 anchors without extensions accepted),
+  pathLenConstraint, EKU serverAuth (leaf and intermediates, when
+  present), digitalSignature on the leaf, name constraints, unknown
+  critical extensions, and the hostname: SAN only, `*` only as the whole
+  left-most label matching one label, IP literals against iPAddress, and
+  **no CN fallback** (like Chrome and Firefox). Errors are `X509Error`
+  (`expired`, `notYetValid`, `hostnameMismatch`, `untrustedRoot`,
+  `badSignature`, `notCA`, `keyUsage`, `extendedKeyUsage`, `pathLength`,
+  `nameConstraints`, `unknownCriticalExtension`, `malformed(why)`,
+  `unsupportedAlgorithm(what)`, ...) with readable descriptions. No
+  revocation, policies or SCTs.
+
+  Root store: `rootfs/etc/roots.der` is the DER certificates of curl's
+  `cacert.pem` (Mozilla NSS data, MPL 2.0; `rootfs/etc/roots.README`
+  says so) concatenated, made by `lib/x509/tools/mkroots.py`.
+  `X509TrustStore(concatenatedDER:)` loads it: 118 roots (data of
+  2026-11-05) parse in about 1 ms with none rejected; keys are RSA 79,
+  P-384 35, P-256 3 and P-521 1; 114 self-signatures verify, and 3
+  SHA-1-signed roots and the P-521 one are unsupported (the SHA-1 ones
+  still work as anchors, since an anchor's own signature is never
+  checked; the P-521 root can't anchor anything yet).
 - **TLS 1.3 client** (RFC 8446): the cipher suites TLS_AES_128_GCM_SHA256,
   TLS_AES_256_GCM_SHA384 and TLS_CHACHA20_POLY1305_SHA256; X25519 key
   share (and P-256 as a fallback, for HelloRetryRequest); SNI; ALPN
   `http/1.1`; signature algorithms ECDSA and RSA-PSS. No client
   certificates, no 0-RTT, and no resumption at first.
+
+  **Done** (`lib/tls`: `tls.swift` for constants, errors, config and the
+  key schedule; `record.swift`; `client.swift`). `TLSClient` is I/O-free:
+  `start()`, `feed(bytes)`, `takeOutput()`, `write(data)` (queued until
+  connected), `read()`, `close()`, `transportClosed()`, `state`
+  (idle/handshaking/connected/closed/failed) and `error` (`TLSError`:
+  `peerAlert`, `protocolError(alert, reason)`, `certificate(X509Error)`,
+  `truncated`, `closed`). Randomness comes from a caller closure
+  `(Int) -> [UInt8]` (getrandom or `ChaChaDRBG`; tests inject the RFC
+  8448 values). Trust is `.roots(store)`, `.pinned(leafDER)` or
+  `.insecureAcceptAny` (CertificateVerify is still checked). Decisions:
+  ChaCha20-Poly1305 first in our preference order (AES is table-based
+  software); X25519 is the only first-flight share, and P-256 or P-384
+  are sent after a HelloRetryRequest asks (with cookie and message_hash
+  transcript); middlebox compatibility mode on (32-byte session id, one
+  CCS before the second flight); ClientHellos of 256–511 bytes padded to
+  512; rsa_pkcs1 is offered for certificates but refused in
+  CertificateVerify. Strict where RFC 8446 says so: unsolicited
+  extensions are unsupported_extension, duplicates illegal_parameter,
+  key changes must fall on record boundaries, the downgrade sentinel is
+  checked, records over 2^14 (+256 encrypted) are record_overflow,
+  handshake messages over 64 KiB and more than 16 certificates are
+  refused. A CertificateRequest is answered with an empty Certificate.
+  NewSessionTicket is ignored; KeyUpdate is handled both ways;
+  record_size_limit is honoured when offered; close_notify is answered.
 - **Tests:** RFC 8448's recorded handshake replayed byte for byte (with
   its fixed keys and randomness), a host `openssl s_server` or Python
   `ssl` server with a test CA (`tests/certs/`), and bad certificates
   (expired, wrong host, untrusted root, bad signature) that must all be
   refused with a clear error.
+
+  **Done.** `./run.sh --hosttest x509 tls`:
+  - RFC 8448 section 3 and section 5 (HelloRetryRequest) replayed byte
+    for byte (`lib/tls/fixtures/rfc8448.txt`, extracted from the RFC by
+    `gen_rfc8448.py`): every ClientHello record (the second one with its
+    P-256 share, cookie and padding), all derived secrets, the server
+    flights accepted (RSA-PSS CertificateVerify against the RFC's pinned
+    self-signed cert), the client Finished, application data both ways,
+    and both close_notify records; also fed whole, in 7-byte pieces and
+    byte by byte.
+  - Live, against `openssl s_server -www` on 127.0.0.1 with the test PKI
+    from `tests/certs/gen.py` (Python `cryptography`; RSA-2048 and
+    P-384 roots, P-256 and RSA intermediates, a PSS-signed RSA leaf):
+    a full handshake plus `GET /` for each cipher suite with both an
+    ECDSA P-256 and an RSA server certificate, HelloRetryRequest to
+    P-256 and to P-384, ALPN, the validated three-certificate path, and
+    a wrong host name and an expired chain refused over the wire. The
+    test prints a note and skips if OpenSSL 3+ isn't on PATH (macOS's
+    LibreSSL doesn't count). `hosttest/host.h` gained loopback socket
+    and popen helpers for this (host runner only).
+  - Bad certificates, each with its error: expired, not yet valid,
+    wrong host, wildcard depth, wrong IP, untrusted root (rogue root
+    with the real root's name), missing intermediate, bad signature,
+    intermediate without CA:true, intermediate without keyCertSign,
+    pathLenConstraint, EKU clientAuth only, name constraints; plus
+    out-of-order/extra/duplicate chains, IPv4/IPv6 SANs and pinning.
+  - Protocol errors: peer alerts, TLS 1.2 servers and the downgrade
+    sentinel, unoffered suites/groups/extensions/schemes, tampered
+    records (alert sent encrypted), bad Finished and CertificateVerify,
+    out-of-order and oversized messages, stray CCS, plaintext
+    application data, KeyUpdate in both directions, 2^14 fragmentation.
+  - Fuzzing (`t.fuzz`): 10000 certificate/DER mutants and 1500 chain
+    mutants; 3000 raw server-byte mutants, 3000 ServerHello mutants and
+    4000 mutated *plaintext* server flights re-encrypted with the RFC
+    8448 server keys, so EncryptedExtensions/Certificate/
+    CertificateVerify/Finished parsing sees them (none accepted).
+  - Result: `ok x509: 114 passed, 0 failed`, `ok tls: 130 passed, 0
+    failed` with `live s_server: 8/8 handshakes + GET ok`. A manual
+    check (not committed) through a localhost relay reached example.com,
+    google, cloudflare, github, wikipedia, apple, letsencrypt, amazon,
+    news.ycombinator.com, bbc.co.uk, microsoft and swift.org: every
+    one handshakes, validates against the Mozilla roots and answers
+    HTTP.
+  - Gaps: no revocation, no Ed25519/P-521 signatures (no curve code), no
+    SHA-1 (so a chain needing a SHA-1 intermediate fails), no P-521 or
+    FFDHE groups, no TLS 1.2, no resumption/0-RTT, no client
+    certificates, no exporters; the record layer never pads.
 - Stretch: TLS 1.2 (ECDHE with AES-GCM or ChaCha20) for older servers,
   and session resumption.
 
 **Done when:** the host test runner completes a handshake with a local
 server, and inside Wiffer, `fetch https://example.com/` works (a manual
 check).
+
+**Status:** the host half is done (above). Left for Parts 6/7: the
+`getrandom` syscall, and `/bin/fetch` driving `TLSClient` over a socket
+with `/etc/roots.der` and the RTC time.
 
 ## Phase 8B: URLs, HTTP and inflate (`lib/url`, `lib/http`, `lib/inflate`)
 

@@ -6,7 +6,8 @@
 Writes into tests/certs/ (all committed; keys are test-only):
   <name>.der            every certificate, DER
   <name>.key.pem        private keys of the leaves openssl s_server serves
-  <name>.chain.pem      leaf + intermediates, for openssl s_server -cert
+  <name>.chain.pem      leaf + intermediates
+  int-ec.pem, int-rsa.pem   intermediates, for openssl s_server -cert_chain
   roots.der             the test trust store (concatenated DER, like
                         /etc/roots.der): root-rsa and root-ec
 
@@ -148,6 +149,8 @@ def main():
         write(n + ".der", der(c))
     write("leaf-ec.chain.pem", pem(out["leaf-ec"]) + pem(out["int-ec"]))
     write("leaf-rsa.chain.pem", pem(out["leaf-rsa"]) + pem(out["int-rsa"]))
+    write("int-ec.pem", pem(out["int-ec"]))      # for s_server -cert_chain
+    write("int-rsa.pem", pem(out["int-rsa"]))
     write("roots.der", der(out["root-rsa"]) + der(out["root-ec"]))
     print(f"wrote {len(out) + 1} certificates to {HERE}")
 
