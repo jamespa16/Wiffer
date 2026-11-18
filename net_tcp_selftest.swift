@@ -154,14 +154,16 @@ func tcpTestBulk(seed: UInt64, loss: Int, reorder: Int, dup: Int, up: [UInt8], d
     return r
 }
 
+@inline(never)
 func tcpTests(_ t: inout SelfTest) {
+    // (yield between groups: the selftest task would otherwise hold CPU 0 for over a second)
     tcpUnitTests(&t)
-    tcpBulkTests(&t)
-    tcpHandshakeTests(&t)
-    tcpResetTests(&t)
-    tcpFlowTests(&t)
-    tcpErrorTests(&t)
-    tcpHostileTests(&t)
+    tcpBulkTests(&t); yield()
+    tcpHandshakeTests(&t); yield()
+    tcpResetTests(&t); yield()
+    tcpFlowTests(&t); yield()
+    tcpErrorTests(&t); yield()
+    tcpHostileTests(&t); yield()
 }
 
 func tcpUnitTests(_ t: inout SelfTest) {
