@@ -47,6 +47,7 @@ struct Shell<T: Terminal> {
         term = terminal
         commands = Shell.builtins() + Shell.fileCommands() + Shell.desktopCommands()
             + Shell.editorCommands() + Shell.terminalCommands() + Shell.diskCommands()
+            + Shell.netCommands()
     }
 
     /// Until the terminal says the session is over (Phase L: `exit`, or the
