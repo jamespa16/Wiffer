@@ -89,7 +89,8 @@ ld.lld -T linker.ld -nostdlib -static --gc-sections -z norelro -z max-page-size=
 if [[ -n "$(llvm-nm -u build/kernel.elf)" ]]; then
   echo "error: undefined symbols:" >&2; llvm-nm -u build/kernel.elf >&2; exit 1
 fi
-ENTRY_SYMS="kernel_main$(llvm-nm build/kernel.elf | awk '$3 ~ /kernelEntry/ { printf ",%s", $3 }')"
+#    The AP entry (Phase R) is the same: ap_entry and its Swift continuation.
+ENTRY_SYMS="kernel_main,ap_entry$(llvm-nm build/kernel.elf | awk '$3 ~ /kernelEntry|apEnterStack/ { printf ",%s", $3 }')"
 if llvm-objdump -d --disassemble-symbols="$ENTRY_SYMS" build/kernel.elf | grep -qE '%[xy]mm'; then
   echo "error: SSE instructions in $ENTRY_SYMS (runs before SSE is enabled)" >&2; exit 1
 fi

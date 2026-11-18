@@ -77,6 +77,7 @@ func recursiveLockTests(_ t: inout SelfTest) {
 }
 
 func perCPUTests(_ t: inout SelfTest) {
+    let spare = maxCPUs - 1 // an entry no real CPU uses (the APs own 1..<count)
     t.check("percpu: GS base set up", gsBaseReady)
     t.check("percpu: thisCPU().index == 0", thisCPU().pointee.index == 0 && cpuIndex() == 0)
     t.check("percpu: GS base is the BSP's block",
@@ -84,24 +85,24 @@ func perCPUTests(_ t: inout SelfTest) {
             && thisCPU().pointee.selfAddress == perCPUAddress(0))
     t.check("percpu: %gs:8 matches the index field (layout)", this_cpu_index() == thisCPU().pointee.index)
     t.check("percpu: block at a lower-half address", perCPUAddress(0) < 1 << 47)
-    t.check("percpu: BSP online", perCPU[0].online && !perCPU[1].online)
+    t.check("percpu: BSP online", perCPU[0].online && !perCPU[spare].online)
     t.check("percpu: GDT is the BSP's own", read_gdtr().base == address(of: &perCPUEntry(0).pointee.gdt))
 
     // gdtInit(cpu:) for another index: load CPU 1's tables here, then the
     // BSP's again. Interrupts off, no locks or output in between.
-    let e1 = perCPUEntry(1)
+    let e1 = perCPUEntry(spare)
     e1.pointee.doubleFaultStackTop = address(of: &doubleFaultStack) + UInt64(doubleFaultStack.count)
     let flags = irq_save()
-    gdtInit(cpu: 1)
+    gdtInit(cpu: spare)
     let gdtr1 = read_gdtr(), tr1 = read_tr()
     let gs1 = rdmsr(msrGSBase), index1 = this_cpu_index()
     gdtInit(cpu: 0)
     irq_restore(flags)
     e1.pointee = PerCPU() // leave the entry clean for AP bring-up
-    t.check("percpu: gdtInit(cpu: 1) loads CPU 1's GDT and TSS",
+    t.check("percpu: gdtInit(cpu: spare) loads CPU spare's GDT and TSS",
             gdtr1.base == address(of: &e1.pointee.gdt) && tr1 == Selector.tss)
-    t.check("percpu: gdtInit(cpu: 1) points GS at CPU 1's block",
-            gs1 == perCPUAddress(1) && index1 == 1)
+    t.check("percpu: gdtInit(cpu: spare) points GS at its's block",
+            gs1 == perCPUAddress(spare) && index1 == UInt64(spare))
     t.check("percpu: back on the BSP's tables",
             read_gdtr().base == address(of: &perCPUEntry(0).pointee.gdt)
             && read_tr() == Selector.tss && cpuIndex() == 0 && rdmsr(msrGSBase) == perCPUAddress(0))

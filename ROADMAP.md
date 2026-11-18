@@ -563,6 +563,16 @@ runs with 4, and `./run.sh --test --smp 1` with 1.
 
 ## Phase R: AP bring-up
 
+**Done** (smp.swift, percpu.swift, boot.c, bridge.h, kernel.swift,
+descriptors.swift `idtLoad`, interrupts.swift, shell.swift, selftest.swift,
+percpu_selftest.swift, build.sh). `smpInit()` runs right after the BSP's first
+`sti` (pmm, heap, IDT, x2APIC and PIT ticks exist) and waits up to 100 ticks
+(1 s) for the APs. Each AP gets a 64 KiB stack (`PerCPU.stackBase/stackTop`,
+for Phase S's idle task) and a 16 KiB #DF stack; `ap_entry` -> `apEnterStack`
+(SSE-checked by build.sh) -> `apMain` -> `apIdleLoop()` (`sti; hlt`, counts
+`idleWakeups`; Phase S replaces it). APs print nothing. `cpus` command,
+"cpu N" in exception reports, AP selftests (ping, CR3, online count).
+
 - Add a `limine_mp_request` (flags: x2APIC) in boot.c. Read its response
   after pmm and heap init.
 - For each AP, allocate its stack (64 KiB, identity-mapped) and fill in

@@ -39,6 +39,14 @@ volatile struct limine_executable_cmdline_request cmdline_request = {
     .revision = 0,
 };
 
+// Phase R: SMP. Ask for x2APIC (APs are started in x2APIC mode).
+__attribute__((used, section(".limine_requests")))
+volatile struct limine_mp_request mp_request = {
+    .id = LIMINE_MP_REQUEST_ID,
+    .revision = 0,
+    .flags = LIMINE_MP_REQUEST_X86_64_X2APIC,
+};
+
 __attribute__((used, section(".limine_requests_end")))
 static volatile uint64_t limine_requests_end_marker[] = LIMINE_REQUESTS_END_MARKER;
 

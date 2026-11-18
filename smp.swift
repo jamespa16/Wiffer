@@ -1,0 +1,159 @@
+// Phase R: AP bring-up through Limine's MP request.
+//
+// Sequencing (kernelMain): smpInit() runs right after the BSP's first `sti`,
+// once pmm, heap, the IDT, x2APIC and the PIT tick exist, and before fsInit
+// and the desktop. For each AP the BSP allocates a 64 KiB stack and a 16 KiB
+// double-fault stack from the pmm (identity-mapped), fills in perCPU[i], and
+// last of all writes the AP's goto_address (mp_start). The BSP then waits up
+// to smpTimeoutTicks timer ticks (1 s, interrupts on, `hlt` between checks)
+// for every AP to count itself in, and prints `smp: N CPUs online`.
+//
+// An AP runs ap_entry (kernel's first code on it: SSE on, then a never-inlined
+// continuation), moves to its own lower-half stack, loads its GDT/TSS/GS
+// (gdtInit(cpu:) -- before it prints or takes a lock), the shared IDT and
+// x2APIC (LINTs masked), records its CR3, marks itself online, and parks in
+// apIdleLoop(). APs print nothing: all output comes from the BSP.
+//
+// With no MP response, no x2APIC, or one CPU: `smp: 1 CPU online`, nothing else.
+
+let smpTimeoutTicks: UInt64 = 100 // 1 s at 100 Hz
+let apStackSize = 65536
+let apDoubleFaultStackSize = 16384
+
+/// CPUs Limine reported (BSP included, capped at maxCPUs); 1 without MP.
+var smpReported = 1
+/// CPUs we started (BSP + APs we gave a stack and a goto_address).
+var smpStarted = 1
+/// APs that have counted themselves in (atomic, written by the APs).
+var apsOnline: UInt64 = 0
+
+/// How many CPUs are online (BSP included).
+func onlineCPUCount() -> Int {
+    var n = 0
+    for i in 0..<smpStarted where perCPUEntry(i).pointee.online { n += 1 }
+    return n
+}
+
+func smpInit() {
+    let bsp = perCPUEntry(0)
+    bsp.pointee.cr3 = read_cr3()
+    guard x2apicEnabled, let resp = mp_request.response,
+          resp.pointee.flags & UInt32(LIMINE_MP_RESPONSE_X86_64_X2APIC) != 0,
+          let cpus = resp.pointee.cpus else {
+        print("smp: 1 CPU online")
+        return
+    }
+    let reported = min(Int(resp.pointee.cpu_count), maxCPUs)
+    smpReported = max(reported, 1)
+    let bspID = resp.pointee.bsp_lapic_id
+    var next = 1
+    for n in 0..<reported {
+        guard let info = cpus[n] else { continue }
+        if info.pointee.lapic_id == bspID { continue }
+        guard next < maxCPUs, let stack = pmm.allocate(count: apStackSize / frameSize),
+              let df = pmm.allocate(count: apDoubleFaultStackSize / frameSize) else {
+            print("smp: out of memory for CPU \(next)")
+            break
+        }
+        let e = perCPUEntry(next)
+        e.pointee.apicID = UInt64(info.pointee.lapic_id)
+        e.pointee.stackBase = UInt64(stack)
+        e.pointee.stackTop = UInt64(stack) + UInt64(apStackSize)
+        e.pointee.doubleFaultStackTop = UInt64(df) + UInt64(apDoubleFaultStackSize)
+        mp_start(info, UInt64(next), apEntry) // last: the AP starts now
+        next += 1
+    }
+    smpStarted = next
+
+    let deadline = ticks + smpTimeoutTicks
+    while ticks < deadline && withUnsafeMutablePointer(to: &apsOnline, { atomic_load64($0) }) < UInt64(next - 1) {
+        hlt()
+    }
+    let up = onlineCPUCount()
+    if up < next { print("smp: only \(up) of \(next) CPUs came up") }
+    print("smp: \(up) CPU\(up == 1 ? "" : "s") online")
+    for i in 1..<next where perCPUEntry(i).pointee.online && perCPUEntry(i).pointee.cr3 != bsp.pointee.cr3 {
+        print("smp: CPU \(i) CR3 differs from the BSP's")
+    }
+}
+
+/// An AP's first code (Limine calls it in 64-bit mode on its own small HHDM
+/// stack, interrupts off). Like kernel_main: SSE first, then on. build.sh
+/// checks this function and apEnterStack for xmm instructions.
+@_cdecl("ap_entry")
+public func apEntry(_ info: UnsafeMutablePointer<limine_mp_info>?) {
+    enableSSE()
+    apEnterStack(info!)
+}
+
+/// Leave Limine's high-memory AP stack for this CPU's lower-half stack (same
+/// Swift tag-bit reasoning as enterBootStack), then run apMain there.
+@inline(never)
+func apEnterStack(_ info: UnsafeMutablePointer<limine_mp_info>) -> Never {
+    let cpu = info.pointee.extra_argument
+    let top = perCPUEntry(Int(cpu)).pointee.stackTop & ~15
+    switch_stack_arg(top, cpu) { apMain(Int($0)) }
+}
+
+@inline(never)
+func apMain(_ cpu: Int) -> Never {
+    gdtInit(cpu: cpu) // first: builds this CPU's GDT/TSS, loads them and GS base
+    idtLoad()
+    apicEnableThisCPU(bsp: false)
+    let e = thisCPU()
+    e.pointee.cr3 = read_cr3()
+    e.pointee.online = true
+    _ = withUnsafeMutablePointer(to: &apsOnline) { atomic_fetch_add64($0, 1) }
+    apIdleLoop()
+}
+
+/// The AP's idle loop. Phase S replaces this with the scheduler's idle task.
+func apIdleLoop() -> Never {
+    while true {
+        sti_hlt()
+        thisCPU().pointee.idleWakeups &+= 1
+    }
+}
+
+// MARK: cpus command, selftests
+
+func cpusInfo() -> [String] {
+    var lines = ["cpu  apic  online  task  switches  wakeups  ipis  contention"]
+    for i in 0..<smpStarted {
+        let e = perCPUEntry(i)
+        lines.append("\(i)  \(e.pointee.apicID)  \(e.pointee.online ? "yes" : "no")  -  \(e.pointee.switches)  \(e.pointee.idleWakeups)  \(e.pointee.ipisReceived)  \(e.pointee.lockContention)")
+    }
+    return lines
+}
+
+func smpBringUpTests(_ t: inout SelfTest) {
+    let up = onlineCPUCount()
+    t.check("smp: every started CPU is online", up == smpStarted)
+    t.check("smp: online count == CPUs Limine reported", up == smpReported)
+    if smpStarted == 1 { puts("  note single CPU: AP ping and CR3 checks are trivial\n") }
+    var cr3Same = true, stacksOK = true
+    for i in 1..<max(smpStarted, 1) {
+        let e = perCPUEntry(i)
+        if e.pointee.cr3 != perCPUEntry(0).pointee.cr3 { cr3Same = false }
+        if e.pointee.stackTop - e.pointee.stackBase != UInt64(apStackSize) || e.pointee.stackTop >= 1 << 47 { stacksOK = false }
+    }
+    t.check("smp: every AP's CR3 equals the BSP's", cr3Same)
+    t.check("smp: AP stacks are 64 KiB, lower-half", stacksOK)
+    var pinged = true
+    for i in 1..<max(smpStarted, 1) {
+        let e = perCPUEntry(i)
+        let before = withUnsafeMutablePointer(to: &e.pointee.ipisReceived) { atomic_load64($0) }
+        let wakes = e.pointee.idleWakeups
+        sendIPI(apicID: UInt32(e.pointee.apicID), vector: Vector.ping)
+        var spins = 0
+        while withUnsafeMutablePointer(to: &e.pointee.ipisReceived, { atomic_load64($0) }) == before && spins < 20_000_000 {
+            spins += 1; cpu_pause()
+        }
+        if e.pointee.ipisReceived == before { pinged = false; puts("  smp: CPU "); printDec(UInt64(i)); puts(" did not answer\n") }
+        _ = wakes
+    }
+    t.check("smp: ping IPI reaches every AP", pinged)
+    var woke = true
+    for i in 1..<max(smpStarted, 1) where perCPUEntry(i).pointee.idleWakeups == 0 { woke = false }
+    t.check("smp: every AP idles in hlt and wakes", woke)
+}

@@ -58,6 +58,9 @@ func runSelfTests() -> Never {
     // Phase P: spinlocks, per-CPU data, locked allocators and output.
     smpPrepTests(&t)
 
+    // Phase R: AP bring-up.
+    smpBringUpTests(&t)
+
     // Phase F: PS/2 input.
     inputTests(&t)
 

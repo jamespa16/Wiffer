@@ -316,3 +316,25 @@ static inline struct cpuid_result cpuid(uint32_t leaf, uint32_t subleaf) {
                       : "a"(leaf), "c"(subleaf));
     return r;
 }
+
+// ---- Phase R: AP bring-up --------------------------------------------------
+
+extern volatile struct limine_mp_request mp_request;
+
+// switch_stack with one argument: move rsp to `top` and call fn(arg).
+static inline __attribute__((noreturn)) void switch_stack_arg(uint64_t top, uint64_t arg,
+                                                              void (*fn)(uint64_t)) {
+    __asm__ volatile ("movq %0, %%rsp\n\txorl %%ebp, %%ebp\n\tcall *%1\n\tud2"
+                      : : "r"(top), "r"(fn), "D"(arg) : "memory");
+    __builtin_unreachable();
+}
+
+// Start a Limine AP: set its extra_argument, then (last, atomically: the AP
+// spins on this word) its goto_address.
+static inline void mp_start(struct limine_mp_info *info, uint64_t arg, limine_goto_address entry) {
+    info->extra_argument = arg;
+    __atomic_store_n((uint64_t *)&info->goto_address, (uint64_t)entry, __ATOMIC_SEQ_CST);
+}
+
+// `sti; hlt` as one asm: an interrupt can't slip in between and be lost.
+static inline void sti_hlt(void) { __asm__ volatile ("sti\n\thlt" : : : "memory"); }

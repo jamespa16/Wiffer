@@ -57,6 +57,7 @@ func exceptionReport(_ f: interrupt_frame) -> Never {
     // Reset attributes first: the fault may have hit mid-way through output.
     puts("\u{1B}[0m\n\u{1B}[1;97;41m*** EXCEPTION "); printDec(f.vector); puts(": ")
     puts(exceptionName(f.vector)); puts(" ***\u{1B}[0m")
+    puts("\n    cpu    "); printDec(cpuIndex())
     puts("\n    error  "); printHex(f.error_code)
     puts("\n    rip    "); printHex(f.rip)
     puts("\n    rsp    "); printHex(f.rsp)

@@ -35,6 +35,14 @@ struct PerCPU {
     var idleTicks: UInt64 = 0
     var ipisReceived: UInt64 = 0
     var lockContention: UInt64 = 0
+    /// Times the idle loop woke from hlt (APs; Phase R).
+    var idleWakeups: UInt64 = 0
+
+    // Phase R: this CPU's boot/idle stack (identity-mapped, 64 KiB) and CR3.
+    // Phase S turns the AP's boot stack into that CPU's idle task.
+    var stackBase: UInt64 = 0
+    var stackTop: UInt64 = 0
+    var cr3: UInt64 = 0
 
     // Phase S adds the scheduler fields here: current and idle task, zombies.
 }

@@ -87,6 +87,11 @@ func idtInit() {
     for v in 0..<idtVectors {
         setGate(v, handler: stubs[v], ist: v == doubleFaultVector ? 1 : 0)
     }
+    idtLoad()
+}
+
+/// Load the shared IDT on this CPU (APs call this; the gates are built once).
+func idtLoad() {
     var idtr = descriptor_ptr(limit: UInt16(idtVectors * 16 - 1), base: address(of: &idt))
     lidt(&idtr)
 }

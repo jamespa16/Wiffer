@@ -74,6 +74,9 @@ func kernelMain() -> Never {
     sti()
     puts("GDT, IDT, PIC, PIT and PS/2 ready; interrupts on.\n")
 
+    // Phase R: start the other CPUs (needs pmm, heap, ticks and the IDT).
+    smpInit()
+
     if ps2.mouse { cursorDraw(x: mouse.x, y: mouse.y) }
 
     fsInit() // RAM filesystem from the rootfs.tar module (Phase M)

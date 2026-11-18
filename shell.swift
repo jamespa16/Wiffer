@@ -338,6 +338,9 @@ struct Shell<T: Terminal> {
             Command(name: "mem", args: "", help: "memory map, frame and heap stats") { sh, _ in
                 for l in memoryInfo() { sh.say(l) }
             },
+            Command(name: "cpus", args: "", help: "per-CPU state: APIC id, switches, wakeups, IPIs") { sh, _ in
+                for l in cpusInfo() { sh.say(l) }
+            },
             Command(name: "peek", args: "<hex>", help: "read a 64-bit value at an address") { sh, args in
                 guard args.count == 1, let addr = parseHex(args[0]) else {
                     sh.say("usage: peek <hex addr>")
