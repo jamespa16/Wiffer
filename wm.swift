@@ -73,6 +73,12 @@ final class WindowManager {
         openEditorWindow(wm, path: nil) // an untitled EditorWindow (editor_window.swift)
     }
 
+    /// Phase 6F: the programs the "+ Apps" menu lists (names in /bin), the
+    /// launch hook, and the open menu.
+    private(set) var apps: [String] = []
+    var launchApp: (String) -> Void = { _ in }
+    private(set) var menu: LauncherMenu?
+
     // Pointer state.
     enum Grab {
         case none
@@ -110,6 +116,7 @@ final class WindowManager {
     /// Take everything off the compositor and drop every window reference
     /// (tests; a WM is otherwise never torn down).
     func shutdown() {
+        closeMenu()
         while let w = windows.last { remove(w) }
         if let tb = taskbar { tb.clear(); compositor.remove(tb) }
         serialTarget = nil
@@ -126,6 +133,31 @@ final class WindowManager {
     func index(of w: Window) -> Int? {
         for i in 0..<windows.count where windows[i] === w { return i }
         return nil
+    }
+
+    // MARK: The launcher menu (Phase 6F)
+
+    /// Show a "+ Apps" taskbar button that opens a menu of `names`.
+    func setApps(_ names: [String]) {
+        apps = names
+        taskbar?.showApps = !names.isEmpty
+        closeMenu()
+        layoutTaskbar()
+    }
+
+    func openMenu() {
+        guard menu == nil, let tb = taskbar, !apps.isEmpty else { return }
+        var x = tb.frame.x
+        for i in tb.items { if case .openApps = i.action { x = i.rect.x } }
+        let m = LauncherMenu(items: apps, font: theme.font, theme: theme, anchor: Point(x, tb.frame.y))
+        menu = m
+        compositor.add(m)
+    }
+
+    func closeMenu() {
+        guard let m = menu else { return }
+        menu = nil
+        compositor.remove(m)
     }
 
     // MARK: Opening and closing
@@ -297,6 +329,7 @@ final class WindowManager {
     }
 
     func key(_ k: Key) {
+        if menu != nil, !k.serial, k.code == .char(0x1B) { closeMenu(); return }
         if k.serial && serialFollowsFocus && serialTarget == nil {
             openTerminal(self) // a serial console with nothing on the other end
             return
@@ -352,6 +385,7 @@ final class WindowManager {
             press(p, b)
             return
         }
+        if let m = menu, m.setHover(at: p) { compositor.damage(m.frame) }
         // Hovering, or another button: content only.
         if let hit = hitTest(p), hit.part == .content {
             deliver(hit.window, p, b)
@@ -362,6 +396,12 @@ final class WindowManager {
     /// The left button went down at `p`.
     func press(_ p: Point, _ b: UInt8) {
         grab = .ignore
+        if let m = menu {
+            closeMenu()
+            if let i = m.item(at: p) { launchApp(apps[i]); return }
+            // On "+ Apps" itself: just close. Elsewhere: the press goes on.
+            if let tb = taskbar, tb.frame.contains(p), let item = tb.item(at: p), case .openApps = item.action { return }
+        }
         if let tb = taskbar, tb.frame.contains(p) {
             if let item = tb.item(at: p) { activate(item.action) }
             return
@@ -384,6 +424,7 @@ final class WindowManager {
         switch action {
         case .openTerminal: openTerminal(self)
         case .openEditor: openEditor(self)
+        case .openApps: openMenu()
         case .focus(let w): focus(w)
         }
     }
@@ -551,6 +592,7 @@ func startDesktop(task: Task?) -> String {
     windowManager = wm
     wm.log = true
     wm.openTerminal = openTerminalWindow // Phase L
+    installAppLauncher(wm) // Phase 6F
     wm.add(cw, at: Point((wm.workArea.w - cw.frame.w) / 2, wm.workArea.y))
     wm.serialTarget = cw
     statusNextTick = 0

@@ -53,6 +53,13 @@ for lib in "${LIBS[@]}"; do
   SRCS=()
   for n in "${ORDER[@]}"; do
     for f in lib/"$n"/*.swift; do [[ -e "$f" ]] && SRCS+=("$f"); done
+    # lib/<n>/SRCS: repo files shared with the kernel (e.g. surface.swift).
+    if [[ -f "lib/$n/SRCS" ]]; then
+      for f in $(cat "lib/$n/SRCS"); do
+        dup=0; for e in "${SRCS[@]}"; do [[ "$e" == "$f" ]] && dup=1; done
+        (( dup )) || SRCS+=("$f")
+      done
+    fi
   done
   # 1. Freestanding Embedded compile (what user programs get).
   if ! swiftc -target x86_64-unknown-none-elf "${SWIFT_FLAGS[@]}" \

@@ -83,6 +83,7 @@ func startBootDesktop() -> WindowManager? {
     wm.log = true
     wm.serialFollowsFocus = true
     wm.openTerminal = openTerminalWindow
+    installAppLauncher(wm) // Phase 6F
     statusNextTick = 0
     statusBarRefresh()
     print("desktop: on, \(wm.screen.w)x\(wm.screen.h), serial follows the focused terminal")

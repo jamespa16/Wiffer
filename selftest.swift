@@ -128,6 +128,9 @@ func runSelfTests() -> Never {
     // Phase 6E: fds, pipes, console, wait, the ported programs.
     fileTests(&t)
 
+    // Phase 6F: windows for processes.
+    windowTests(&t)
+
     puts("selftest: "); printDec(UInt64(t.passed)); puts(" passed, ")
     printDec(UInt64(t.failed)); puts(" failed\n")
     qemuExit(t.failed == 0 ? 0 : 1)
