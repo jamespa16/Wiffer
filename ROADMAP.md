@@ -3,7 +3,8 @@
 - **Part 1: Serial shell.** Done (M1–M4).
 - **Part 2: Graphical shell.** Done (Phases A–G). The original plan for both
   parts is in git history (`git show 4cf881e:ROADMAP.md`).
-- **Part 3: Window manager and text editor.** This document.
+- **Part 3: Window manager and text editor.** Phases H–N done (N4 stretch
+  items not started). Phase O (stretch) is open. This document.
 
 Goal: boot into a desktop with overlapping, draggable windows. Each shell
 runs in its own terminal window, and a text editor can open, edit and save
@@ -83,6 +84,10 @@ Two things stand in the way of a window manager:
 
 ## Phase H: event loop and cooperative tasks
 
+**Done** (`events.swift`, `task.swift`, `task_selftest.swift`; `context_switch`
+and `task_trampoline` in `cpu.S`).
+
+
 **H1. One event queue.**
 
 - Define an `Event` enum: `.key(KeyEvent)`, `.mouse(x, y, buttons)`
@@ -129,6 +134,9 @@ Part 2 shell, run as a task, still passes `./run.sh --test`.
 
 ## Phase I: pixel surfaces and drawing
 
+**Done** (`surface.swift`, `surface_selftest.swift`).
+
+
 **I1. `Rect` and `Surface`.**
 
 - `struct Rect { x, y, w, h }` with `intersection`, `union`, `contains`,
@@ -155,6 +163,9 @@ working and proves the API before any windows exist.
 console still looks identical in the `screendump` check.
 
 ## Phase J: compositor
+
+**Done** (`compositor.swift`, `compositor_selftest.swift`; stats via `gfx`).
+
 
 - The compositor owns the screen: a screen-sized back buffer, an ordered
   layer list (bottom to top), and a **damage list** of `Rect`s. This is
@@ -282,6 +293,10 @@ and variables. Typing in one doesn't echo in the other. `./run.sh --test`
 drives both through `sendkey` plus clicks.
 
 ## Phase M: RAM filesystem
+
+**Done** (`fs.swift`, `ustar.swift`, `fs_commands.swift`, `fs_selftest.swift`;
+seeded from `rootfs/`).
+
 
 The editor needs files. Start in memory. Persistence is Phase O.
 
