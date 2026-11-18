@@ -11,9 +11,13 @@
 #                      mounted at /disk; made by tests/fat32.py if missing,
 #                      never touched if present); with --test the harness's
 #                      main session boots without its scratch disk too
+#   ./run.sh --hosttest [lib...]   build and run the lib/ host tests (no QEMU;
+#                      see hosttest/hosttest.sh); must be the first option
 # Options may be given in any order.
 set -euo pipefail
 cd "$(dirname "$0")"
+
+if [[ "${1:-}" == "--hosttest" ]]; then shift; exec hosttest/hosttest.sh "$@"; fi
 
 TEST=0 UEFI=0 NODESKTOP=0 NOGRAPHIC=0 NODISK=0
 SMP="${WIFFER_SMP:-4}"
