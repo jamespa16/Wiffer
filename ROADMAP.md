@@ -6,6 +6,7 @@
 - **Part 3: Window manager and text editor.** Phases H–N done (N4 stretch
   items not started). Phase O (stretch) is open. This document.
 - **Part 4: SMP.** Done (Phases P–T).
+- **Part 5: Writing to disk.** Phases U–Y. In progress.
 
 Goal: boot into a desktop with overlapping, draggable windows. Each shell
 runs in its own terminal window, and a text editor can open, edit and save
@@ -414,7 +415,7 @@ it end-to-end with `sendkey` and a `screendump`.
 
 Pick and choose. Each is independent.
 
-- **Persistence.** A virtio-blk driver needs PCI config-space enumeration
+- **Persistence.** Now Part 5 (below). Original note: a virtio-blk driver needs PCI config-space enumeration
   (port `0xCF8`/`0xCFC` is enough under QEMU) and a virtqueue. The simpler
   option is ATA PIO on the q35 AHCI controller in IDE mode, or `-M pc`.
   Then either mount a FAT image read/write, or write the RAM fs out as a
@@ -759,3 +760,237 @@ events.swift, wm_selftest.swift).
 - **Desktop no longer freezes while CPU 0 computes.** runMainLoop calls
   `refreshStep()` (status bar and console flush, the screen half of
   idleStep) at most once per tick while tasks are ready.
+
+---
+
+# Part 5: Writing to disk
+
+Goal: files survive a reboot. A FAT32 volume on a virtio disk is mounted
+at `/disk`. Anything written there — `write`, `mkdir`, `mv`, `rm`, or
+Ctrl-S in the editor — reaches the disk before the command returns. The
+rest of `/` stays in RAM, seeded from rootfs.tar as before. The image is
+plain FAT32 with no partition table, so the host can read it too
+(`hdiutil attach -imagekey diskimage-class=CRawDiskImage build/disk.img`
+on macOS, or `tests/fat32.py`).
+
+```
+U block layer (block.swift: done) ─┬─→ V PCI + virtio-blk ──┐
+                                   ├─→ W FAT32 read/format ─→ X FAT32 write ─┼─→ Y /disk: VFS, commands, persistence tests
+                                   └─→ Z host tool (tests/fat32.py) ───────┘
+```
+
+V, W→X and Z don't depend on each other. They meet only at `BlockDevice`
+(block.swift) and the `FATVolume` API below. Y joins them.
+
+## Design decisions
+
+- **virtio-blk, legacy interface, polled.** The legacy (0.9.5) transport
+  works entirely through an I/O-port BAR: there's no MMIO to map. QEMU
+  gets `-device virtio-blk-pci,drive=vd0,disable-legacy=off,disable-modern=on`
+  (vendor 0x1AF4, device 0x1001). Completion is found by polling the used
+  ring, with `pause` and a tick timeout. No IRQ is needed, so there's no
+  IOAPIC or INTx routing. QEMU completes most requests before the notify
+  returns anyway. AHCI and NVMe are later options. They'd slot in as more
+  `BlockDevice` subclasses.
+- **DMA is easy here.** PML4[0] identity-maps physical memory (pmm.swift),
+  so a pointer from `pmm.allocate(count:)` is also the device address.
+  The virtqueue and a bounce buffer are contiguous frame runs, allocated
+  once at probe time. Don't DMA into Swift arrays.
+- **FAT32, whole-disk ("superfloppy"), 512-byte sectors.** It's simple
+  enough to write, and every host can read it. Long file names (VFAT LFN)
+  are read and written, so names keep their case and length. Lookup is
+  case-insensitive, as FAT requires. A 64 MiB image at 512-byte clusters
+  is 131k clusters, comfortably FAT32. Format refuses volumes under the
+  65,525-cluster minimum. The sparse `RamDisk` makes full-size test
+  volumes cheap.
+- **Write-through, mirrored in RAM.** Mounting loads the whole volume into
+  FSNodes under the mount point, so reads (`cat`, `ls`, the editor) don't
+  change at all. Every mutating `FileSystem` call on a path under a mount
+  goes to the `FATVolume` first. Only if that succeeds is the RAM tree
+  changed, so a disk error leaves both sides as they were. Each operation
+  ends with a device flush. This won't scale to a huge disk; that's fine
+  for now, and the size of what's loaded is shown by `df`.
+- **Crash-safe ordering for file writes.** Write the new data into newly
+  allocated clusters, then point the directory entry at them, then free the
+  old chain. A failure partway leaks clusters at worst (fsck reports them).
+  It never corrupts an existing file. FSInfo's free count is a hint and is
+  recomputed when it looks wrong.
+- **CPU 0 only**, like the RAM fs and the WM (Part 4 affinity), so it needs
+  no locks. A long transfer spins on CPU 0. That's acceptable for now.
+- **Swift first** (as always): PCI, virtio and FAT are Swift. bridge.h only
+  gains `outw/inw/outl/inl` and volatile/fenced load/store helpers for the
+  rings.
+- **Timestamps** come from the CMOS RTC (ports 0x70/0x71, BCD). If reading
+  it fails, use 2026-01-01 00:00.
+
+## Phase U: block layer
+
+**Done** (block.swift; selftest `blockTests`). `class BlockDevice` holds a
+name, `sectorCount` and `readOnly`. `read(lba, count) -> [UInt8]`,
+`write(lba, bytes)` and `flush()` are range-checked wrappers that throw
+`BlockError` (`outOfRange`, `io`, `readOnly`). Drivers override
+`readSectors`/`writeSectors`/`flush`. `RamDisk` is sparse and can inject
+write failures (`failWritesAfter`). Every device found goes into the
+global `blockDevices`.
+
+## Phase V: PCI and virtio-blk
+
+**V1. PCI** (`pci.swift`). Config mechanism #1 (0xCF8/0xCFC). Brute-force
+bus 0–255, device 0–31, and functions 0–7 for multi-function devices. That
+gives a `[PCIDevice]` with location, vendor/device, class/subclass, BARs
+(I/O or memory, with sizes) and an interrupt line. Helpers read and write
+config dwords and enable I/O and bus mastering. Shell: `lspci`.
+
+**V2. virtio-blk** (`virtio_blk.swift`, `final class VirtioBlock:
+BlockDevice`). Follow the legacy init sequence: reset, ACK, DRIVER, read
+features, accept `VIRTIO_BLK_F_FLUSH` (and `RO`, if present), queue 0
+size, allocate the queue (descriptor table + avail ring, then the used
+ring at the next 4 KiB boundary), write the PFN, then DRIVER_OK. Capacity
+comes from device config. Each request is a 3-descriptor chain: a 16-byte
+header (type, sector), the data in the bounce buffer, and a 1-byte status.
+Split large transfers by bounce-buffer size. Use T_FLUSH for `flush()`.
+Time out after about 2 s and report `.io`. Name devices vda, vdb and so
+on, and add them to `blockDevices` in `diskInit()`, called from
+kernel.swift after `smpInit()`.
+
+**V3. Shell, run.sh, harness.**
+- `disks` lists name, size in MiB, sectors read/written and `ro`.
+- `rtc.swift`: `rtcNow()` returns (year, month, day, hour, minute,
+  second).
+- run.sh attaches `build/disk.img` (64 MiB; created blank if missing; Y
+  makes it formatted). `--nodisk` leaves it off.
+- The harness's main session attaches a fresh scratch image under a temp
+  dir, so a test run never touches build/disk.img.
+- Selftest (only when vda exists): save the last sector, write a pattern,
+  read it back, flush, then restore the sector.
+- Harness check: `lspci` shows 1af4:1001, and `disks` shows vda at
+  64 MiB.
+
+**Done when:** BIOS and UEFI boots both find vda. The round-trip selftest
+passes. Booting with `--nodisk` still passes everything else.
+
+## Phase W: FAT32 read and format
+
+`fat32.swift` (plus `fat32_selftest.swift`) is pure Swift over a
+`BlockDevice`. It's written against `RamDisk` only, so it needs nothing
+from V.
+
+```swift
+enum FATError: Error, Equatable {
+    case notFAT32, corrupt, notFound, exists, notADirectory, isADirectory,
+         notEmpty, invalidName, noSpace, io(BlockError)
+    var message: String { ... }
+}
+struct FATEntry { var name: String; var isDirectory: Bool; var size: Int }
+final class FATVolume {
+    static func format(_ dev: BlockDevice, label: String) throws(FATError)
+    static func mount(_ dev: BlockDevice) throws(FATError) -> FATVolume
+    let device: BlockDevice
+    var label: String; var clusterSize: Int; var totalClusters: Int; var freeClusters: Int
+    // paths are components from the volume root; names match case-insensitively
+    func list(_ path: [String]) throws(FATError) -> [FATEntry]
+    func read(_ path: [String]) throws(FATError) -> [UInt8]
+    // Phase X:
+    func write(_ path: [String], _ bytes: [UInt8]) throws(FATError) // create or replace
+    func mkdir(_ path: [String]) throws(FATError)
+    func remove(_ path: [String]) throws(FATError)  // a file or an empty directory
+    func rename(_ from: [String], to: [String]) throws(FATError) // `to` must not exist
+    func sync() throws(FATError)                   // FSInfo, then device flush
+    func check() -> [String]                       // fsck: problems, [] when clean
+}
+```
+
+- **Format.** BPB/EBPB at sector 0 with a backup at 6, and FSInfo at 1
+  (and 7). 32 reserved sectors, 2 FATs, root at cluster 2, `0x55AA`
+  signatures, and the volume label in the root directory as well. Take
+  sectors per cluster from Microsoft's FAT32 table.
+- **Mount** validates the BPB: bytes per sector 512, power-of-two
+  sectors/cluster, FAT32 by cluster count, not by the type string.
+- **Directory parsing:** 8.3 entries, LFN sequences with the checksum
+  verified (fall back to the 8.3 name on mismatch), deleted (0xE5) and
+  end (0x00) markers, and skipping `.`, `..` and the volume label.
+- **Cache:** whole FAT sectors, write-back until the end of each
+  operation. Cluster chains are followed with loop detection, which
+  reports `.corrupt`.
+- **Selftests:**
+  - format a 64 MiB RamDisk, mount it, check geometry and free count
+  - hand-build directory sectors with LFN and 8.3 names and list them
+  - a corrupt BPB gives `.notFAT32`
+  - a FAT loop gives `.corrupt`
+  - Z's image fixture (if Z has landed) is listed correctly
+  - the heap goes back to baseline after unmount
+
+## Phase X: FAT32 write
+
+- **Names:** pick a short name (`NAME~1.TXT`) and write LFN entries when
+  the name isn't a valid uppercase 8.3 name. Characters outside FAT's set
+  give `.invalidName`. Store the 8.3 case bits (0x08/0x10) for
+  all-lowercase names, as Windows does.
+- Directory entries are allocated from free or deleted slots, and the
+  directory grows by a cluster when it's full. `mkdir` writes `.` and
+  `..` (`..` = 0 for the root's children).
+- File write follows the crash-safe order above. Free chains on remove.
+  Rename rewrites the entry in place when only the name changes,
+  otherwise it writes the new entry, then deletes the old one. Moving a
+  directory updates its `..`. Timestamps come from `rtcNow()` (stub it
+  in a test hook until V lands).
+- **`check()`** compares the FAT with what the directories reference:
+  lost clusters, cross-links, sizes against chain lengths, and FSInfo
+  against the real free count.
+- **Selftests:**
+  - a script of create/write/overwrite/grow/shrink/mkdir/rename/remove,
+    then remount from the same RamDisk and compare against a model
+    `FileSystem`
+  - `check()` is clean after every step
+  - a full disk gives `.noSpace` with nothing leaked
+  - a `failWritesAfter` sweep over one overwrite leaves the old or the
+    new contents readable, and check() reports at most lost clusters
+  - long and mixed-case names round-trip
+  - heap baseline
+
+## Phase Z: host tool `tests/fat32.py`
+
+A Python 3 stdlib-only implementation, written from the spec and
+independent of the Swift code: two implementations checking each other.
+`fat32.py mkfs IMG [--size 64M] [--label WIFFER]`, `ls IMG [path]`,
+`cat IMG path`, `put IMG hostfile path`, `mkdir IMG path`, and
+`fsck IMG` (exit 1 on problems). It has an importable API for the harness.
+It has its own tests in `tests/test_fat32.py`
+(`python3 -m unittest tests/test_fat32.py`). If `newfs_msdos`/`mkfs.fat`/
+`mtools` are present, it cross-checks against them. They aren't required.
+It also produces a small fixture image for W's selftest. That fixture is
+`tests/fixtures/fat32-lfn.img.gz`, or a generator in build.sh: whichever
+keeps the ISO small. The kernel would read it as a Limine module.
+
+## Phase Y: /disk
+
+- **VFS mounts** (`fs.swift`): `FileSystem.mount(volume, at:)` loads the
+  volume into FSNodes under the mount point. `unmount(at:)` syncs it and
+  drops them. Mutations under a mount call the volume first (see the
+  design decisions). Recursive `rm -r` removes bottom-up. Cross-mount
+  `mv` gives `.crossDevice`. Removing or renaming a mount point gives
+  `.busy`. New `FSError` cases: `io`, `noSpace`, `invalidName`,
+  `crossDevice`, `busy`. FAT's case-insensitive collisions come back as
+  `.exists`.
+- **Boot:** `diskInit` mounts vda at `/disk` if it holds FAT32. Otherwise
+  it prints `vda: no FAT32 filesystem (mkfs vda)`.
+- **Shell:** `mkfs <dev> [label]`, `mount <dev> <dir>`, `umount <dir>`,
+  `sync`, and `fsck <dir>`. `df` adds a per-mount line (label, used/free
+  MiB). `disks` shows mount points.
+- **run.sh** formats a new build/disk.img with `tests/fat32.py mkfs`.
+- **Editor:** saving under /disk just works. An I/O error shows up as
+  `save: /disk/x: I/O error`, and the buffer stays dirty.
+- **Harness:**
+  1. boot with a scratch image made by fat32.py, holding a host-written
+     file
+  2. `cat` it
+  3. `write`, `mkdir`, `mv` and `rm` under /disk
+  4. edit `/disk/notes.txt` in the editor and Ctrl-S
+  5. `sync`, then kill QEMU
+  6. boot a second QEMU on the same image and check every file
+  7. finally run `fat32.py fsck` plus `cat` on the host
+
+  Also: `mkfs` on a blank image, a full disk, and `--nodisk`.
+
+**Done when:** a note written in the editor survives a reboot and reads
+back on the host. `./run.sh --test`, `--test --uefi` and `--smp 1` pass.

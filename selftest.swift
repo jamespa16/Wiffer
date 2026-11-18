@@ -89,6 +89,9 @@ func runSelfTests() -> Never {
     // Phase M: RAM filesystem, ustar, file commands.
     fsTests(&t)
 
+    // Phase U: block devices.
+    blockTests(&t)
+
     // Phase N: text buffer and editor key model.
     editorTests(&t)
 
