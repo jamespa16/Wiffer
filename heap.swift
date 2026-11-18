@@ -15,6 +15,8 @@
 // payload forward inside a bigger block; the header records that padding.
 //
 // This code must not allocate (no classes, arrays, strings, or print).
+// The allocation hooks hold heapLock (IRQ-saving spinlock, spinlock.swift);
+// refills and large blocks then take pmmLock inside it.
 
 let heapMagicLive: UInt32 = 0x4845_4150   // "HEAP"
 let heapMagicFree: UInt32 = 0x4652_4545   // "FREE"
@@ -159,8 +161,8 @@ var heap = Heap()
 @_cdecl("_swift_allocate")
 public func swiftAllocate(_ alignment: UInt, _ size: UInt, _ flags: UInt64) -> UnsafeMutableRawPointer? {
     guard size <= UInt(Int.max / 2), alignment <= UInt(Int.max / 2) else { return nil }
-    let saved = irq_save()
-    defer { irq_restore(saved) }
+    let saved = heapLock.acquireIRQ()
+    defer { heapLock.releaseIRQ(saved) }
     let p = heap.allocate(size: Int(size), alignment: Int(alignment))
     if let p, flags & 1 != 0 { // SWIFT_ALLOC_ZERO_MEMORY
         p.initializeMemory(as: UInt8.self, repeating: 0, count: Int(size))
@@ -170,7 +172,7 @@ public func swiftAllocate(_ alignment: UInt, _ size: UInt, _ flags: UInt64) -> U
 
 @_cdecl("_swift_deallocate")
 public func swiftDeallocate(_ ptr: UnsafeMutableRawPointer, _ alignment: UInt, _ size: UInt, _ flags: UInt64) {
-    let saved = irq_save()
-    defer { irq_restore(saved) }
+    let saved = heapLock.acquireIRQ()
+    defer { heapLock.releaseIRQ(saved) }
     heap.deallocate(ptr)
 }

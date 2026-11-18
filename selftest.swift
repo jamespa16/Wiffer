@@ -27,11 +27,13 @@ func runSelfTests() -> Never {
 
     // Phase A: descriptor tables.
     let gdtr = read_gdtr()
-    t.check("GDT loaded", gdtr.base == address(of: &gdt) && Int(gdtr.limit) == gdt.count * 8 - 1)
+    let bsp = perCPUEntry(0)
+    t.check("GDT loaded", gdtr.base == address(of: &bsp.pointee.gdt) && Int(gdtr.limit) == bsp.pointee.gdt.count * 8 - 1)
     t.check("CS/SS are kernel selectors", read_cs() == Selector.kernelCode && read_ss() == Selector.kernelData)
     t.check("TSS loaded (TR)", read_tr() == Selector.tss)
     t.check("TSS ist1 = top of #DF stack",
-            UInt64(tss[10]) << 32 | UInt64(tss[9]) == address(of: &doubleFaultStack) + UInt64(doubleFaultStack.count))
+            UInt64(bsp.pointee.tss[10]) << 32 | UInt64(bsp.pointee.tss[9])
+                == address(of: &doubleFaultStack) + UInt64(doubleFaultStack.count))
     let idtr = read_idtr()
     t.check("IDT loaded", idtr.base == address(of: &idt) && Int(idtr.limit) == idtVectors * 16 - 1)
     t.check("#DF gate uses IST1", (idt[doubleFaultVector * 2] >> 32) & 7 == 1)
@@ -52,6 +54,9 @@ func runSelfTests() -> Never {
 
     // Phase C: frame allocator and heap.
     memoryTests(&t)
+
+    // Phase P: spinlocks, per-CPU data, locked allocators and output.
+    smpPrepTests(&t)
 
     // Phase F: PS/2 input.
     inputTests(&t)

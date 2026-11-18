@@ -250,18 +250,63 @@ extern const uint64_t task_trampoline_address;
 // Restores the caller's MXCSR and control word.
 uint32_t check_callee_saved(void (*fn)(void), uint64_t seed, uint32_t mxcsr, uint32_t fcw);
 
-// ---- Phase Q: MSRs, CPUID, x2APIC ------------------------------------------
+// ---- Phase P: atomics, spinlocks, per-CPU data ----------------------------
+// Sequentially consistent __atomic builtins on 64-bit words. Swift passes the
+// address of the word (a field of a global struct: see spinlock.swift).
+
+static inline uint64_t atomic_load64(const volatile uint64_t *p) {
+    return __atomic_load_n(p, __ATOMIC_SEQ_CST);
+}
+
+static inline void atomic_store64(volatile uint64_t *p, uint64_t value) {
+    __atomic_store_n(p, value, __ATOMIC_SEQ_CST);
+}
+
+static inline uint64_t atomic_exchange64(volatile uint64_t *p, uint64_t value) {
+    return __atomic_exchange_n(p, value, __ATOMIC_SEQ_CST);
+}
+
+// Returns 1 (and stores `desired`) if *p was `expected`, else 0.
+static inline int atomic_cas64(volatile uint64_t *p, uint64_t expected, uint64_t desired) {
+    return __atomic_compare_exchange_n(p, &expected, desired, 0,
+                                       __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+}
+
+// Returns the old value.
+static inline uint64_t atomic_fetch_add64(volatile uint64_t *p, uint64_t value) {
+    return __atomic_fetch_add(p, value, __ATOMIC_SEQ_CST);
+}
+
+// Spin-wait hint.
+static inline void cpu_pause(void) { __asm__ volatile ("pause" : : : "memory"); }
 
 static inline uint64_t rdmsr(uint32_t msr) {
     uint32_t lo, hi;
     __asm__ volatile ("rdmsr" : "=a"(lo), "=d"(hi) : "c"(msr));
-    return ((uint64_t)hi << 32) | lo;
+    return (uint64_t)hi << 32 | lo;
 }
 
 static inline void wrmsr(uint32_t msr, uint64_t value) {
     __asm__ volatile ("wrmsr" : : "c"(msr), "a"((uint32_t)value), "d"((uint32_t)(value >> 32))
                       : "memory");
 }
+
+// Per-CPU block (percpu.swift): IA32_GS_BASE points at this CPU's PerCPU
+// entry, whose word 0 is its own address and word 1 its CPU index.
+// volatile: a task may move to another CPU between two reads (Phase S).
+static inline uint64_t this_cpu_address(void) {
+    uint64_t v;
+    __asm__ volatile ("movq %%gs:0, %0" : "=r"(v));
+    return v;
+}
+
+static inline uint64_t this_cpu_index(void) {
+    uint64_t v;
+    __asm__ volatile ("movq %%gs:8, %0" : "=r"(v));
+    return v;
+}
+
+// ---- Phase Q: CPUID --------------------------------------------------------
 
 struct cpuid_result { uint32_t eax, ebx, ecx, edx; };
 
@@ -271,5 +316,3 @@ static inline struct cpuid_result cpuid(uint32_t leaf, uint32_t subleaf) {
                       : "a"(leaf), "c"(subleaf));
     return r;
 }
-
-static inline void cpu_pause(void) { __asm__ volatile ("pause" : : : "memory"); }

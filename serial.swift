@@ -25,9 +25,14 @@ func getc() -> UInt8 {
 }
 
 /// Write a byte to COM1 and mirror it to the framebuffer console.
+/// The output paths below hold stdoutLock (recursive, spinlock.swift) so a
+/// line from one CPU isn't interleaved with another's. Nothing may allocate
+/// while holding it.
 func putc(_ byte: UInt8) {
+    stdoutLock.acquire()
     serialPutc(byte)
     consoleWrite(byte)
+    stdoutLock.release()
 }
 
 /// Spin until the transmit holding register is empty (bit 5), then write.
@@ -38,6 +43,8 @@ func serialPutc(_ byte: UInt8) {
 
 /// Write a static string, translating `\n` to `\r\n` for the terminal.
 func puts(_ s: StaticString) {
+    stdoutLock.acquire()
+    defer { stdoutLock.release() }
     s.withUTF8Buffer { buf in
         for byte in buf {
             if byte == 0x0A { putc(0x0D) }
@@ -47,12 +54,16 @@ func puts(_ s: StaticString) {
 }
 
 func newline() {
+    stdoutLock.acquire()
+    defer { stdoutLock.release() }
     putc(0x0D)
     putc(0x0A)
 }
 
 /// Print `value` as `0x`-prefixed, zero-padded 16-digit hex.
 func printHex(_ value: UInt64) {
+    stdoutLock.acquire()
+    defer { stdoutLock.release() }
     puts("0x")
     var shift: UInt64 = 60
     while true {
@@ -73,6 +84,8 @@ func printDec(_ value: UInt64) {
         n /= 10
         count += 1
     } while n != 0
+    stdoutLock.acquire()
+    defer { stdoutLock.release() }
     while count > 0 {
         count -= 1
         putc(digits[count])

@@ -33,6 +33,9 @@ if os.environ.get("WIFFER_UEFI"):
         _ovmf = f"{_prefix}/share/qemu/edk2-x86_64-code.fd"
     FIRMWARE = ["-drive", f"if=pflash,format=raw,readonly=on,file={_ovmf}"]
 
+# Virtual CPU count for every QEMU (run.sh --smp N sets WIFFER_SMP).
+SMP = os.environ.get("WIFFER_SMP", "4")
+
 PROMPT = b"> "
 # The prompt is coloured (Phase G): "> " wrapped in SGR escapes.
 SGR = rb"(?:\x1b\[[0-9;]*m)*"
@@ -153,7 +156,7 @@ class Session:
             self.mondir = tempfile.mkdtemp(prefix="wiffer")
             self.monitor_path = os.path.join(self.mondir, "mon.sock")
             mon = f"unix:{self.monitor_path},server,nowait"
-        args = ["qemu-system-x86_64", "-M", "q35", "-m", "256M", "-cdrom", iso,
+        args = ["qemu-system-x86_64", "-M", "q35", "-m", "256M", "-cpu", "max", "-smp", SMP, "-cdrom", iso,
                 "-boot", "d", "-no-reboot", "-display", "none",
                 "-serial", "stdio", "-monitor", mon, *FIRMWARE, *extra_args]
         if exit_device:  # without it, a fault or selftest leaves QEMU running
@@ -552,6 +555,7 @@ def main():
     ap.add_argument("--screendump", metavar="PPM", help="with -c: dump the display at the end")
     ap.add_argument("--nodesktop", action="store_true", help="with -c: boot the full-screen shell")
     opts = ap.parse_args()
+    print(f"harness: -smp {SMP}")
 
     # Each fault halts its machine, so every kind gets its own QEMU, booted now
     # so they run alongside the main session.

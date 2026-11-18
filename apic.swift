@@ -23,8 +23,8 @@ enum APICReg { // x2APIC MSRs
 
 /// Set by apicInit when x2APIC was found and enabled on this (boot) CPU.
 var x2apicEnabled = false
-/// Vector 0xF2 deliveries. A plain global until per-CPU storage exists.
-var apicPingCount: UInt64 = 0
+/// Vector 0xF2 deliveries to this CPU (perCPU ipisReceived; no allocation).
+var apicPingCount: UInt64 { thisCPU().pointee.ipisReceived }
 
 /// CPUID.1:ECX bit 21.
 func x2apicSupported() -> Bool {
@@ -52,6 +52,7 @@ func apicInit() {
     guard x2apicSupported() else { return }
     apicEnableThisCPU(bsp: true)
     x2apicEnabled = true
+    thisCPU().pointee.apicID = UInt64(apicID())
     puts("apic: x2APIC enabled, id "); printDec(UInt64(apicID())); puts("\n")
 }
 
@@ -96,7 +97,7 @@ func sendNMI(apicID: UInt32?) {
 /// Vectors 0xF0 and up, from interrupt_dispatch. No allocation.
 func apicInterrupt(_ vector: UInt8) {
     if vector == Vector.spurious { return } // spurious: no EOI
-    if vector == Vector.ping { apicPingCount &+= 1 }
+    if vector == Vector.ping { thisCPU().pointee.ipisReceived &+= 1 }
     if x2apicEnabled { apicEOI() }
     if vector == Vector.halt { hcf() } // 0xF0 (reschedule) needs nothing else: waking from hlt is the point
 }
