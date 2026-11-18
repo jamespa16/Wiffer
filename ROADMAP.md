@@ -2101,10 +2101,10 @@ Decisions:
 
 Measured (Apple-silicon host, TCG, `-smp 4`): over LinkPair (1-tick delay),
 1 MiB each way at the same time on one connection: clean 42 virtual ticks,
-~50 ms real; 5% loss + 5% reorder + 2% dup 1591 ticks, ~70 ms; 20% loss +
-10% reorder + 5% dup 9421 ticks, ~70 ms. The whole TCP selftest adds well
-under a second. SLIRP: `tcpget` of 1 MiB from the host's Python
-`http.server` took 40-80 ms across runs (12-25 MB/s, polled NIC, before MSI-X).
+50-110 ms real; 5% loss + 5% reorder + 2% dup 1591 ticks, 50-140 ms; 20% loss +
+10% reorder + 5% dup 9421 ticks, 70-170 ms (ranges: BIOS/UEFI runs on a loaded host). The whole TCP selftest adds
+about a second. `tcpTests` is `@inline(never)` and yields between groups: inlined into runSelfTests it made the later watchdog check flaky. SLIRP: `tcpget` of 1 MiB from the host's Python
+`http.server` took 40-90 ms across runs (11-25 MB/s, polled NIC, before MSI-X).
 
 Tests: selftest (`tcp: ...`, 60 checks) covers the bulk transfers with
 FNV-1a hashes and sequence-number wraparound; simultaneous open and close;
