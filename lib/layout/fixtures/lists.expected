@@ -1,0 +1,73 @@
+block <html> 0,0 400x444
+  block <body> 0,4 400x436
+    block <ul> 0,4 400x85
+      list-item <li> 40,4 360x19
+        marker "• " 25,4 15x19
+        text "disc" 40,4 32x19
+      list-item <li> 40,23 360x19
+        marker "• " 25,23 15x19
+        text "second" 40,23 57x19
+      block <ul> 40,46 360x42
+        list-item <li> 80,46 320x19
+          marker "◦ " 65,47 15x19
+          text "circle" 80,47 43x19
+        block <ul> 80,70 320x19
+          list-item <li> 120,70 280x19
+            marker "▪ " 104,70 16x19
+            text "square" 120,70 55x19
+    block <ol> 0,93 400x77
+      list-item <li> 40,93 360x19
+        marker "1. " 20,93 20x19
+        text "one" 40,93 30x19
+      list-item <li> 40,112 360x19
+        marker "2. " 20,112 20x19
+        text "two" 40,112 29x19
+      list-item <li> 40,131 360x19
+        marker "10. " 9,131 31x19
+        text "ten" 40,131 26x19
+      list-item <li> 40,150 360x19
+        marker "11. " 9,151 31x19
+        text "eleven" 40,151 54x19
+    block <ol> 0,174 400x38
+      list-item <li> 40,174 360x19
+        marker "d. " 20,174 20x19
+        text "d" 40,174 10x19
+      list-item <li> 40,193 360x19
+        marker "e. " 20,193 20x19
+        text "e" 40,193 10x19
+    block <ol> 0,216 400x77
+      list-item <li> 40,216 360x19
+        marker "I. " 25,216 15x19
+        text "I" 40,216 5x19
+      list-item <li> 40,235 360x19
+        marker "II. " 20,235 20x19
+        text "II" 40,235 9x19
+      list-item <li> 40,254 360x19
+        marker "III. " 16,255 24x19
+        text "III" 40,255 14x19
+      list-item <li> 40,274 360x19
+        marker "IV. " 16,274 24x19
+        text "IV" 40,274 16x19
+    block <ol> 0,297 400x38
+      list-item <li> 40,297 360x19
+        marker "i. " 25,297 15x19
+        text "i" 40,297 4x19
+      list-item <li> 40,316 360x19
+        marker "ii. " 21,316 19x19
+        text "ii" 40,316 9x19
+    block <ol> 0,339 400x19
+      list-item <li> 40,339 360x19
+        marker "A. " 19,339 21x19
+        text "A" 40,339 11x19
+    block <ul.inside> 0,362 400x19
+      list-item <li> 40,362 360x19
+        text "• " 40,363 15x19
+        text "inside marker" 55,363 110x19
+    block <ul> 0,386 400x19
+      list-item <li> 40,386 360x19
+        text "no marker" 40,386 82x19
+    block <ul> 0,421 400x19
+      list-item <li> 40,421 360x19
+        marker "• " 25,421 15x19
+        block <p> 40,421 360x19
+          text "block first child" 40,421 122x19

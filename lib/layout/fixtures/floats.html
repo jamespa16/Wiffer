@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<style>
+body { margin: 0; font: 16px sans-serif; width: 300px }
+.l { float: left; width: 80px; height: 60px; background: #888 }
+.r { float: right; width: 60px; height: 40px; background: #444 }
+.clear { clear: both; height: 10px; background: red }
+.bfc { overflow: hidden; background: #ddd }
+.contain { overflow: hidden }
+.shrink { float: left; background: #ccc }
+p { margin: 0 }
+</style>
+<div class=l></div><div class=r></div>
+<p>Text flows around the two floats and then continues below them once it runs out of room beside them.</p>
+<div class=clear></div>
+<div class=l></div>
+<div class=bfc>A new block formatting context sits beside the float.</div>
+<div class=clear></div>
+<div class=contain><div class=l></div>contained</div>
+<div class=shrink>shrink to fit</div>
+<div class=shrink>second float</div>
+<div class=clear></div>
+<p>inline <span class=r style="height:20px"></span>float inside a line</p>

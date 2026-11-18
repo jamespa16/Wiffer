@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<style>
+body { margin: 0; font: 16px sans-serif }
+.ib { display: inline-block; width: 20px; height: 40px; background: #888 }
+.sm { display: inline-block; width: 10px; height: 10px; background: red }
+p { margin: 0 0 10px; line-height: 20px }
+</style>
+<p>base <span class=ib></span> line</p>
+<p>mid <span class=sm style="vertical-align: middle"></span> <span class=ib></span></p>
+<p>top <span class=sm style="vertical-align: top"></span> <span class=ib></span></p>
+<p>bottom <span class=sm style="vertical-align: bottom"></span> <span class=ib></span></p>
+<p>text-top <span class=sm style="vertical-align: text-top"></span> text-bottom <span class=sm style="vertical-align: text-bottom"></span></p>
+<p>x<sub>sub</sub> y<sup>sup</sup> z<span style="vertical-align: 5px">up5</span></p>
+<p>img <img src="a.png"> <img src="a.png" style="vertical-align: middle"></p>
+<p><span class=ib style="width:auto;height:auto">inline-block with text</span> after</p>

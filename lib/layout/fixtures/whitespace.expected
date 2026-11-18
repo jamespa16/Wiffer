@@ -1,0 +1,30 @@
+block <html> 0,0 400x235
+  block <body> 0,0 200x235
+    block <div> 0,0 200x34
+      text "collapse these spaces " 0,0 158x16
+      inline <b> 158,0 29x16
+        text "and" 158,0 29x16
+      text "across boxes" 0,17 90x16
+    block <div.nowrap> 0,34 200x17
+      text "this text does not wrap even though it i..." 0,34 451x16
+    block <div.pre> 0,50 200x50
+      text "pre  keeps   spaces\n" 0,51 160x16
+      text "and     tabs\n" 0,67 101x16
+      text "  and newlines" 0,84 118x16
+    block <div.prewrap> 0,101 200x50
+      text "pre-wrap keeps   spaces" 0,101 170x16
+      text "but wraps long lines when" 0,118 184x16
+      text "needed here" 0,135 88x16
+    block <div.preline> 0,151 200x34
+      text "pre-line collapses spaces" 0,151 175x16
+      text "but keeps newlines" 0,168 135x16
+    block <div.up> 0,185 200x17
+      text "UPPER CASE" 0,185 87x16
+    block <div.cap> 0,202 200x17
+      text "Capitalize Every Word" 0,202 154x16
+    block <div> 0,218 200x0
+    block <div> 0,218 200x17
+      text "a" 0,219 9x16
+      inline <span> 9,219 4x16
+        text " " 9,219 4x16
+      text "b" 13,219 9x16

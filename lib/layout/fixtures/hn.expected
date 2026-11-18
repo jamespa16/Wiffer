@@ -1,0 +1,1265 @@
+block <html> 0,0 1024x1220
+  block <body> 8,8 1008x1204
+    block <center> 8,8 1008x1204
+      table <table#hnmain> 84,8 857x1204
+        row-group <tbody> 84,8 857x1204
+          row <tr> 84,8 857x24
+            cell <td> 84,8 857x24 [r0 c0]
+              table <table> 84,8 857x24
+                row-group <tbody> 86,10 853x20
+                  row <tr> 86,10 853x20
+                    cell <td> 86,10 24x20 [r0 c0]
+                      block <a> 86,10 20x20
+                        replaced <img> 86,10 20x20
+                    cell <td> 110,10 765x20 [r0 c1]
+                      inline <span.pagetop> 110,12 438x16
+                        inline <b.hnname> 111,12 97x16
+                          inline <a> 111,12 97x16
+                            text "Hacker News" 111,12 97x16
+                        inline <a> 213,12 28x16
+                          text "new" 213,12 28x16
+                        text " | " 240,12 13x16
+                        inline <a> 253,12 29x16
+                          text "past" 253,12 29x16
+                        text " | " 282,12 13x16
+                        inline <a> 295,12 70x16
+                          text "comments" 295,12 70x16
+                        text " | " 365,12 13x16
+                        inline <a> 378,12 23x16
+                          text "ask" 378,12 23x16
+                        text " | " 401,12 13x16
+                        inline <a> 414,12 34x16
+                          text "show" 414,12 34x16
+                        text " | " 449,12 13x16
+                        inline <a> 462,12 27x16
+                          text "jobs" 462,12 27x16
+                        text " | " 489,12 13x16
+                        inline <a> 502,12 46x16
+                          text "submit" 502,12 46x16
+                    cell <td> 875,10 64x20 [r0 c2]
+                      inline <span.pagetop> 902,12 32x16
+                        inline <a> 902,12 32x16
+                          text "login" 902,12 32x16
+          row <tr> 84,32 857x10
+          row <tr#bigbox> 84,42 857x1079
+            cell <td> 84,42 857x1079 [r2 c0]
+              table <table> 84,42 718x1079
+                row-group <tbody> 84,42 718x1079
+                  row <tr#50547374.athing.submission> 84,42 718x19
+                    cell <td.title> 84,42 21x19 [r0 c0]
+                      inline <span.rank> 92,42 13x16
+                        text "1." 92,42 13x16
+                    cell <td.votelinks> 105,42 14x19 [r0 c1]
+                      block <center> 105,45 14x10
+                        block <a#up_50547374> 105,45 14x10
+                          block <div.votearrow> 107,45 10x10
+                    cell <td.title> 119,42 682x19 [r0 c2]
+                      inline <span.titleline> 119,44 370x16
+                        inline <a> 119,44 328x16
+                          text "Unauthenticated remote code execution in..." 119,44 328x16
+                        inline <span.sitebit.comhead> 447,46 42x12
+                          text " (" 447,46 8x12
+                          inline <a> 455,46 30x12
+                            inline <span.sitestr> 455,46 30x12
+                              text "wiz.io" 455,46 30x12
+                          text ")" 485,46 4x12
+                  row <tr> 84,61 718x11
+                    cell <td> 84,61 35x11 [r1 c0 cs2]
+                    cell <td.subtext> 119,61 682x11 [r1 c2]
+                      inline <span.subline> 119,61 282x11
+                        inline <span#score_50547374.score> 119,61 49x11
+                          text "834 points" 119,61 49x11
+                        text " by " 168,61 17x11
+                        inline <a> 186,61 49x11
+                          text "speedping" 186,61 49x11
+                        text " " 234,61 3x11
+                        inline <span.age> 237,61 55x11
+                          inline <a> 237,61 55x11
+                            text "6 hours ago" 237,61 55x11
+                        text " " 293,61 3x11
+                        inline <span#unv_50547374> 296,61 0x11
+                        text "| " 296,61 6x11
+                        inline <a> 302,61 20x11
+                          text "hide" 302,61 20x11
+                        text " | " 322,61 9x11
+                        inline <a> 331,61 70x11
+                          text "355 comments" 331,61 70x11
+                  row <tr.spacer> 84,72 718x5
+                  row <tr#50548021.athing.submission> 84,77 718x19
+                    cell <td.title> 84,77 21x19 [r3 c0]
+                      inline <span.rank> 92,77 13x16
+                        text "2." 92,77 13x16
+                    cell <td.votelinks> 105,77 14x19 [r3 c1]
+                      block <center> 105,80 14x10
+                        block <a#up_50548021> 105,80 14x10
+                          block <div.votearrow> 107,80 10x10
+                    cell <td.title> 119,77 682x19 [r3 c2]
+                      inline <span.titleline> 119,79 404x16
+                        inline <a> 119,79 330x16
+                          text "Seven new models at scalable price-perfo..." 119,79 330x16
+                        inline <span.sitebit.comhead> 449,81 74x12
+                          text " (" 449,81 8x12
+                          inline <a> 456,81 63x12
+                            inline <span.sitestr> 456,81 63x12
+                              text "microsoft.ai" 456,81 63x12
+                          text ")" 519,81 4x12
+                  row <tr> 84,96 718x11
+                    cell <td> 84,96 35x11 [r4 c0 cs2]
+                    cell <td.subtext> 119,96 682x11 [r4 c2]
+                      inline <span.subline> 119,96 265x11
+                        inline <span#score_50548021.score> 119,96 49x11
+                          text "342 points" 119,96 49x11
+                        text " by " 168,96 17x11
+                        inline <a> 186,96 31x11
+                          text "gmays" 186,96 31x11
+                        text " " 217,96 3x11
+                        inline <span.age> 220,96 55x11
+                          inline <a> 220,96 55x11
+                            text "5 hours ago" 220,96 55x11
+                        text " " 275,96 3x11
+                        inline <span#unv_50548021> 278,96 0x11
+                        text "| " 278,96 6x11
+                        inline <a> 284,96 20x11
+                          text "hide" 284,96 20x11
+                        text " | " 304,96 9x11
+                        inline <a> 314,96 70x11
+                          text "230 comments" 314,96 70x11
+                  row <tr.spacer> 84,107 718x5
+                  row <tr#50547620.athing.submission> 84,112 718x19
+                    cell <td.title> 84,112 21x19 [r6 c0]
+                      inline <span.rank> 92,113 13x16
+                        text "3." 92,113 13x16
+                    cell <td.votelinks> 105,112 14x19 [r6 c1]
+                      block <center> 105,115 14x10
+                        block <a#up_50547620> 105,115 14x10
+                          block <div.votearrow> 107,115 10x10
+                    cell <td.title> 119,112 682x19 [r6 c2]
+                      inline <span.titleline> 119,114 232x16
+                        inline <a> 119,114 145x16
+                          text "Inside Deutsche Bank" 119,114 145x16
+                        inline <span.sitebit.comhead> 264,117 87x12
+                          text " (" 264,117 8x12
+                          inline <a> 271,117 75x12
+                            inline <span.sitestr> 271,117 75x12
+                              text "inside-db.com" 271,117 75x12
+                          text ")" 346,117 4x12
+                  row <tr> 84,131 718x11
+                    cell <td> 84,131 35x11 [r7 c0 cs2]
+                    cell <td.subtext> 119,131 682x11 [r7 c2]
+                      inline <span.subline> 119,132 272x11
+                        inline <span#score_50547620.score> 119,132 49x11
+                          text "426 points" 119,132 49x11
+                        text " by " 168,132 17x11
+                        inline <a> 186,132 39x11
+                          text "gyre007" 186,132 39x11
+                        text " " 224,132 3x11
+                        inline <span.age> 227,132 55x11
+                          inline <a> 227,132 55x11
+                            text "5 hours ago" 227,132 55x11
+                        text " " 283,132 3x11
+                        inline <span#unv_50547620> 286,132 0x11
+                        text "| " 286,132 6x11
+                        inline <a> 292,132 20x11
+                          text "hide" 292,132 20x11
+                        text " | " 312,132 9x11
+                        inline <a> 321,132 70x11
+                          text "151 comments" 321,132 70x11
+                  row <tr.spacer> 84,143 718x5
+                  row <tr#50547777.athing.submission> 84,148 718x19
+                    cell <td.title> 84,148 21x19 [r9 c0]
+                      inline <span.rank> 92,148 13x16
+                        text "4." 92,148 13x16
+                    cell <td.votelinks> 105,148 14x19 [r9 c1]
+                      block <center> 105,151 14x10
+                        block <a#up_50547777> 105,151 14x10
+                          block <div.votearrow> 107,151 10x10
+                    cell <td.title> 119,148 682x19 [r9 c2]
+                      inline <span.titleline> 119,149 640x16
+                        inline <a> 119,149 452x16
+                          text "AI agents ask better questions than KPMG..." 119,149 452x16
+                        inline <span.sitebit.comhead> 571,152 187x12
+                          text " (" 571,152 8x12
+                          inline <a> 579,152 175x12
+                            inline <span.sitestr> 579,152 175x12
+                              text "europeanbusinessmagazine.com" 579,152 175x12
+                          text ")" 754,152 4x12
+                  row <tr> 84,167 718x11
+                    cell <td> 84,167 35x11 [r10 c0 cs2]
+                    cell <td.subtext> 119,167 682x11 [r10 c2]
+                      inline <span.subline> 119,167 287x11
+                        inline <span#score_50547777.score> 119,167 49x11
+                          text "218 points" 119,167 49x11
+                        text " by " 168,167 17x11
+                        inline <a> 186,167 53x11
+                          text "Betelbuddy" 186,167 53x11
+                        text " " 239,167 3x11
+                        inline <span.age> 242,167 55x11
+                          inline <a> 242,167 55x11
+                            text "5 hours ago" 242,167 55x11
+                        text " " 297,167 3x11
+                        inline <span#unv_50547777> 300,167 0x11
+                        text "| " 300,167 6x11
+                        inline <a> 306,167 20x11
+                          text "hide" 306,167 20x11
+                        text " | " 327,167 9x11
+                        inline <a> 336,167 70x11
+                          text "105 comments" 336,167 70x11
+                  row <tr.spacer> 84,178 718x5
+                  row <tr#50545958.athing.submission> 84,183 718x19
+                    cell <td.title> 84,183 21x19 [r12 c0]
+                      inline <span.rank> 92,183 13x16
+                        text "5." 92,183 13x16
+                    cell <td.votelinks> 105,183 14x19 [r12 c1]
+                      block <center> 105,186 14x10
+                        block <a#up_50545958> 105,186 14x10
+                          block <div.votearrow> 107,186 10x10
+                    cell <td.title> 119,183 682x19 [r12 c2]
+                      inline <span.titleline> 119,185 437x16
+                        inline <a> 119,185 329x16
+                          text "DNS resolvers are the wrong place to fig..." 119,185 329x16
+                        inline <span.sitebit.comhead> 448,187 108x12
+                          text " (" 448,187 8x12
+                          inline <a> 455,187 97x12
+                            inline <span.sitestr> 455,187 97x12
+                              text "techstackups.com" 455,187 97x12
+                          text ")" 552,187 4x12
+                  row <tr> 84,202 718x11
+                    cell <td> 84,202 35x11 [r13 c0 cs2]
+                    cell <td.subtext> 119,202 682x11 [r13 c2]
+                      inline <span.subline> 119,202 265x11
+                        inline <span#score_50545958.score> 119,202 49x11
+                          text "502 points" 119,202 49x11
+                        text " by " 168,202 17x11
+                        inline <a> 186,202 32x11
+                          text "ritzaco" 186,202 32x11
+                        text " " 217,202 3x11
+                        inline <span.age> 220,202 55x11
+                          inline <a> 220,202 55x11
+                            text "8 hours ago" 220,202 55x11
+                        text " " 276,202 3x11
+                        inline <span#unv_50545958> 279,202 0x11
+                        text "| " 279,202 6x11
+                        inline <a> 285,202 20x11
+                          text "hide" 285,202 20x11
+                        text " | " 305,202 9x11
+                        inline <a> 314,202 70x11
+                          text "172 comments" 314,202 70x11
+                  row <tr.spacer> 84,213 718x5
+                  row <tr#50551046.athing.submission> 84,218 718x19
+                    cell <td.title> 84,218 21x19 [r15 c0]
+                      inline <span.rank> 92,218 13x16
+                        text "6." 92,218 13x16
+                    cell <td.votelinks> 105,218 14x19 [r15 c1]
+                      block <center> 105,221 14x10
+                        block <a#up_50551046> 105,221 14x10
+                          block <div.votearrow> 107,221 10x10
+                    cell <td.title> 119,218 682x19 [r15 c2]
+                      inline <span.titleline> 119,220 657x16
+                        inline <a> 119,220 575x16
+                          text "DaisyRose-27B: 1,200-task RL took Qwen3...." 119,220 575x16
+                        inline <span.sitebit.comhead> 694,222 82x12
+                          text " (" 694,222 8x12
+                          inline <a> 702,222 70x12
+                            inline <span.sitestr> 702,222 70x12
+                              text "radixark.com" 702,222 70x12
+                          text ")" 772,222 4x12
+                  row <tr> 84,237 718x11
+                    cell <td> 84,237 35x11 [r16 c0 cs2]
+                    cell <td.subtext> 119,237 682x11 [r16 c2]
+                      inline <span.subline> 119,237 241x11
+                        inline <span#score_50551046.score> 119,237 44x11
+                          text "45 points" 119,237 44x11
+                        text " by " 162,237 17x11
+                        inline <a> 180,237 30x11
+                          text "de_sty" 180,237 30x11
+                        text " " 210,237 3x11
+                        inline <span.age> 213,237 51x11
+                          inline <a> 213,237 51x11
+                            text "1 hour ago" 213,237 51x11
+                        text " " 264,237 3x11
+                        inline <span#unv_50551046> 267,237 0x11
+                        text "| " 267,237 6x11
+                        inline <a> 273,237 20x11
+                          text "hide" 273,237 20x11
+                        text " | " 293,237 9x11
+                        inline <a> 302,237 58x11
+                          text "5 comments" 302,237 58x11
+                  row <tr.spacer> 84,248 718x5
+                  row <tr#50550096.athing.submission> 84,253 718x19
+                    cell <td.title> 84,253 21x19 [r18 c0]
+                      inline <span.rank> 92,253 13x16
+                        text "7." 92,253 13x16
+                    cell <td.votelinks> 105,253 14x19 [r18 c1]
+                      block <center> 105,256 14x10
+                        block <a#up_50550096> 105,256 14x10
+                          block <div.votearrow> 107,256 10x10
+                    cell <td.title> 119,253 682x19 [r18 c2]
+                      inline <span.titleline> 119,255 313x16
+                        inline <a> 119,255 206x16
+                          text "The Magic of Partial Evaluation" 119,255 206x16
+                        inline <span.sitebit.comhead> 325,257 107x12
+                          text " (" 325,257 8x12
+                          inline <a> 332,257 95x12
+                            inline <span.sitestr> 332,257 95x12
+                              text "jimmyhmiller.com" 332,257 95x12
+                          text ")" 428,257 4x12
+                  row <tr> 84,272 718x11
+                    cell <td> 84,272 35x11 [r19 c0 cs2]
+                    cell <td.subtext> 119,272 682x11 [r19 c2]
+                      inline <span.subline> 119,272 248x11
+                        inline <span#score_50550096.score> 119,272 44x11
+                          text "62 points" 119,272 44x11
+                        text " by " 162,272 17x11
+                        inline <a> 180,272 33x11
+                          text "aray07" 180,272 33x11
+                        text " " 212,272 3x11
+                        inline <span.age> 215,272 55x11
+                          inline <a> 215,272 55x11
+                            text "2 hours ago" 215,272 55x11
+                        text " " 271,272 3x11
+                        inline <span#unv_50550096> 274,272 0x11
+                        text "| " 274,272 6x11
+                        inline <a> 280,272 20x11
+                          text "hide" 280,272 20x11
+                        text " | " 300,272 9x11
+                        inline <a> 309,272 58x11
+                          text "8 comments" 309,272 58x11
+                  row <tr.spacer> 84,283 718x5
+                  row <tr#50551398.athing.submission> 84,288 718x19
+                    cell <td.title> 84,288 21x19 [r21 c0]
+                      inline <span.rank> 92,289 13x16
+                        text "8." 92,289 13x16
+                    cell <td.votelinks> 105,288 14x19 [r21 c1]
+                      block <center> 105,291 14x10
+                        block <a#up_50551398> 105,291 14x10
+                          block <div.votearrow> 107,291 10x10
+                    cell <td.title> 119,288 682x19 [r21 c2]
+                      inline <span.titleline> 119,290 622x16
+                        inline <a> 119,290 510x16
+                          text "Search Browser – Minimalist WebKit brows..." 119,290 510x16
+                        inline <span.sitebit.comhead> 628,293 112x12
+                          text " (" 628,293 8x12
+                          inline <a> 636,293 101x12
+                            inline <span.sitestr> 636,293 101x12
+                              text "searchbrowser.app" 636,293 101x12
+                          text ")" 737,293 4x12
+                  row <tr> 84,307 718x11
+                    cell <td> 84,307 35x11 [r22 c0 cs2]
+                    cell <td.subtext> 119,307 682x11 [r22 c2]
+                      inline <span.subline> 119,308 236x11
+                        inline <span#score_50551398.score> 119,308 44x11
+                          text "24 points" 119,308 44x11
+                        text " by " 162,308 17x11
+                        inline <a> 180,308 19x11
+                          text "rsaz" 180,308 19x11
+                        text " " 199,308 3x11
+                        inline <span.age> 202,308 51x11
+                          inline <a> 202,308 51x11
+                            text "1 hour ago" 202,308 51x11
+                        text " " 253,308 3x11
+                        inline <span#unv_50551398> 256,308 0x11
+                        text "| " 256,308 6x11
+                        inline <a> 262,308 20x11
+                          text "hide" 262,308 20x11
+                        text " | " 282,308 9x11
+                        inline <a> 291,308 64x11
+                          text "12 comments" 291,308 64x11
+                  row <tr.spacer> 84,319 718x5
+                  row <tr#50549493.athing.submission> 84,324 718x19
+                    cell <td.title> 84,324 21x19 [r24 c0]
+                      inline <span.rank> 92,324 13x16
+                        text "9." 92,324 13x16
+                    cell <td.votelinks> 105,324 14x19 [r24 c1]
+                      block <center> 105,327 14x10
+                        block <a#up_50549493> 105,327 14x10
+                          block <div.votearrow> 107,327 10x10
+                    cell <td.title> 119,324 682x19 [r24 c2]
+                      inline <span.titleline> 119,325 363x16
+                        inline <a> 119,325 289x16
+                          text "Advancing chip design with OpenAI models" 119,325 289x16
+                        inline <span.sitebit.comhead> 407,328 74x12
+                          text " (" 407,328 8x12
+                          inline <a> 415,328 62x12
+                            inline <span.sitestr> 415,328 62x12
+                              text "openai.com" 415,328 62x12
+                          text ")" 477,328 4x12
+                  row <tr> 84,343 718x11
+                    cell <td> 84,343 35x11 [r25 c0 cs2]
+                    cell <td.subtext> 119,343 682x11 [r25 c2]
+                      inline <span.subline> 119,343 282x11
+                        inline <span#score_50549493.score> 119,343 44x11
+                          text "90 points" 119,343 44x11
+                        text " by " 162,343 17x11
+                        inline <a> 180,343 60x11
+                          text "vighneshiyer" 180,343 60x11
+                        text " " 240,343 3x11
+                        inline <span.age> 243,343 55x11
+                          inline <a> 243,343 55x11
+                            text "3 hours ago" 243,343 55x11
+                        text " " 298,343 3x11
+                        inline <span#unv_50549493> 301,343 0x11
+                        text "| " 301,343 6x11
+                        inline <a> 307,343 20x11
+                          text "hide" 307,343 20x11
+                        text " | " 327,343 9x11
+                        inline <a> 337,343 64x11
+                          text "48 comments" 337,343 64x11
+                  row <tr.spacer> 84,354 718x5
+                  row <tr#50550415.athing.submission> 84,359 718x19
+                    cell <td.title> 84,359 21x19 [r27 c0]
+                      inline <span.rank> 84,359 21x16
+                        text "10." 84,359 21x16
+                    cell <td.votelinks> 105,359 14x19 [r27 c1]
+                      block <center> 105,362 14x10
+                        block <a#up_50550415> 105,362 14x10
+                          block <div.votearrow> 107,362 10x10
+                    cell <td.title> 119,359 682x19 [r27 c2]
+                      inline <span.titleline> 119,361 237x16
+                        inline <a> 119,361 163x16
+                          text "Genie 4 is now available" 119,361 163x16
+                        inline <span.sitebit.comhead> 281,363 74x12
+                          text " (" 281,363 8x12
+                          inline <a> 289,363 63x12
+                            inline <span.sitestr> 289,363 63x12
+                              text "blog.google" 289,363 63x12
+                          text ")" 352,363 4x12
+                  row <tr> 84,378 718x11
+                    cell <td> 84,378 35x11 [r28 c0 cs2]
+                    cell <td.subtext> 119,378 682x11 [r28 c2]
+                      inline <span.subline> 119,378 269x11
+                        inline <span#score_50550415.score> 119,378 49x11
+                          text "127 points" 119,378 49x11
+                        text " by " 168,378 17x11
+                        inline <a> 186,378 35x11
+                          text "leumon" 186,378 35x11
+                        text " " 221,378 3x11
+                        inline <span.age> 224,378 55x11
+                          inline <a> 224,378 55x11
+                            text "2 hours ago" 224,378 55x11
+                        text " " 279,378 3x11
+                        inline <span#unv_50550415> 282,378 0x11
+                        text "| " 282,378 6x11
+                        inline <a> 288,378 20x11
+                          text "hide" 288,378 20x11
+                        text " | " 308,378 9x11
+                        inline <a> 317,378 70x11
+                          text "104 comments" 317,378 70x11
+                  row <tr.spacer> 84,389 718x5
+                  row <tr#50546914.athing.submission> 84,394 718x19
+                    cell <td.title> 84,394 21x19 [r30 c0]
+                      inline <span.rank> 84,394 21x16
+                        text "11." 84,394 21x16
+                    cell <td.votelinks> 105,394 14x19 [r30 c1]
+                      block <center> 105,397 14x10
+                        block <a#up_50546914> 105,397 14x10
+                          block <div.votearrow> 107,397 10x10
+                    cell <td.title> 119,394 682x19 [r30 c2]
+                      inline <span.titleline> 119,396 577x16
+                        inline <a> 119,396 510x16
+                          text "The Cambridge Dictionary has named ‘huma..." 119,396 510x16
+                        inline <span.sitebit.comhead> 629,398 67x12
+                          text " (" 629,398 8x12
+                          inline <a> 637,398 55x12
+                            inline <span.sitestr> 637,398 55x12
+                              text "cam.ac.uk" 637,398 55x12
+                          text ")" 692,398 4x12
+                  row <tr> 84,413 718x11
+                    cell <td> 84,413 35x11 [r31 c0 cs2]
+                    cell <td.subtext> 119,413 682x11 [r31 c2]
+                      inline <span.subline> 119,413 283x11
+                        inline <span#score_50546914.score> 119,413 49x11
+                          text "196 points" 119,413 49x11
+                        text " by " 168,413 17x11
+                        inline <a> 186,413 50x11
+                          text "DeepLogin" 186,413 50x11
+                        text " " 235,413 3x11
+                        inline <span.age> 238,413 55x11
+                          inline <a> 238,413 55x11
+                            text "6 hours ago" 238,413 55x11
+                        text " " 294,413 3x11
+                        inline <span#unv_50546914> 297,413 0x11
+                        text "| " 297,413 6x11
+                        inline <a> 303,413 20x11
+                          text "hide" 303,413 20x11
+                        text " | " 323,413 9x11
+                        inline <a> 332,413 70x11
+                          text "149 comments" 332,413 70x11
+                  row <tr.spacer> 84,424 718x5
+                  row <tr#50547980.athing.submission> 84,429 718x19
+                    cell <td.title> 84,429 21x19 [r33 c0]
+                      inline <span.rank> 84,429 21x16
+                        text "12." 84,429 21x16
+                    cell <td.votelinks> 105,429 14x19 [r33 c1]
+                      block <center> 105,432 14x10
+                        block <a#up_50547980> 105,432 14x10
+                          block <div.votearrow> 107,432 10x10
+                    cell <td.title> 119,429 682x19 [r33 c2]
+                      inline <span.titleline> 119,431 669x16
+                        inline <a> 119,431 520x16
+                          text "Show HN: ExitPath – Open-source ways out..." 119,431 520x16
+                        inline <span.sitebit.comhead> 639,433 148x12
+                          text " (" 639,433 8x12
+                          inline <a> 647,433 137x12
+                            inline <span.sitestr> 647,433 137x12
+                              text "exitpath-ruddy.vercel.app" 647,433 137x12
+                          text ")" 783,433 4x12
+                  row <tr> 84,448 718x11
+                    cell <td> 84,448 35x11 [r34 c0 cs2]
+                    cell <td.subtext> 119,448 682x11 [r34 c2]
+                      inline <span.subline> 119,448 291x11
+                        inline <span#score_50547980.score> 119,448 49x11
+                          text "106 points" 119,448 49x11
+                        text " by " 168,448 17x11
+                        inline <a> 186,448 63x11
+                          text "zerocool0101" 186,448 63x11
+                        text " " 249,448 3x11
+                        inline <span.age> 251,448 55x11
+                          inline <a> 251,448 55x11
+                            text "5 hours ago" 251,448 55x11
+                        text " " 307,448 3x11
+                        inline <span#unv_50547980> 310,448 0x11
+                        text "| " 310,448 6x11
+                        inline <a> 316,448 20x11
+                          text "hide" 316,448 20x11
+                        text " | " 336,448 9x11
+                        inline <a> 345,448 64x11
+                          text "21 comments" 345,448 64x11
+                  row <tr.spacer> 84,459 718x5
+                  row <tr#50548660.athing.submission> 84,464 718x19
+                    cell <td.title> 84,464 21x19 [r36 c0]
+                      inline <span.rank> 84,465 21x16
+                        text "13." 84,465 21x16
+                    cell <td.votelinks> 105,464 14x19 [r36 c1]
+                      block <center> 105,467 14x10
+                        block <a#up_50548660> 105,467 14x10
+                          block <div.votearrow> 107,467 10x10
+                    cell <td.title> 119,464 682x19 [r36 c2]
+                      inline <span.titleline> 119,466 553x16
+                        inline <a> 119,466 553x16
+                          text "Show HN: Mastra Factory, the open-source..." 119,466 553x16
+                  row <tr> 84,483 718x11
+                    cell <td> 84,483 35x11 [r37 c0 cs2]
+                    cell <td.subtext> 119,483 682x11 [r37 c2]
+                      inline <span.subline> 119,484 274x11
+                        inline <span#score_50548660.score> 119,484 44x11
+                          text "61 points" 119,484 44x11
+                        text " by " 162,484 17x11
+                        inline <a> 180,484 52x11
+                          text "codekarate" 180,484 52x11
+                        text " " 232,484 3x11
+                        inline <span.age> 235,484 55x11
+                          inline <a> 235,484 55x11
+                            text "3 hours ago" 235,484 55x11
+                        text " " 291,484 3x11
+                        inline <span#unv_50548660> 294,484 0x11
+                        text "| " 294,484 6x11
+                        inline <a> 300,484 20x11
+                          text "hide" 300,484 20x11
+                        text " | " 320,484 9x11
+                        inline <a> 329,484 64x11
+                          text "19 comments" 329,484 64x11
+                  row <tr.spacer> 84,495 718x5
+                  row <tr#50548161.athing.submission> 84,500 718x19
+                    cell <td.title> 84,500 21x19 [r39 c0]
+                      inline <span.rank> 84,500 21x16
+                        text "14." 84,500 21x16
+                    cell <td.votelinks> 105,500 14x19 [r39 c1]
+                      block <center> 105,503 14x10
+                        block <a#up_50548161> 105,503 14x10
+                          block <div.votearrow> 107,503 10x10
+                    cell <td.title> 119,500 682x19 [r39 c2]
+                      inline <span.titleline> 119,501 504x16
+                        inline <a> 119,501 420x16
+                          text "Show HN: Take Voyager 1 apart, down to a..." 119,501 420x16
+                        inline <span.sitebit.comhead> 539,504 84x12
+                          text " (" 539,504 8x12
+                          inline <a> 546,504 72x12
+                            inline <span.sitestr> 546,504 72x12
+                              text "rshekhar.com" 546,504 72x12
+                          text ")" 619,504 4x12
+                  row <tr> 84,519 718x11
+                    cell <td> 84,519 35x11 [r40 c0 cs2]
+                    cell <td.subtext> 119,519 682x11 [r40 c2]
+                      inline <span.subline> 119,519 281x11
+                        inline <span#score_50548161.score> 119,519 49x11
+                          text "108 points" 119,519 49x11
+                        text " by " 168,519 17x11
+                        inline <a> 186,519 53x11
+                          text "raj-shekhar" 186,519 53x11
+                        text " " 239,519 3x11
+                        inline <span.age> 242,519 55x11
+                          inline <a> 242,519 55x11
+                            text "5 hours ago" 242,519 55x11
+                        text " " 297,519 3x11
+                        inline <span#unv_50548161> 300,519 0x11
+                        text "| " 300,519 6x11
+                        inline <a> 306,519 20x11
+                          text "hide" 306,519 20x11
+                        text " | " 326,519 9x11
+                        inline <a> 335,519 64x11
+                          text "24 comments" 335,519 64x11
+                  row <tr.spacer> 84,530 718x5
+                  row <tr#50505310.athing.submission> 84,535 718x19
+                    cell <td.title> 84,535 21x19 [r42 c0]
+                      inline <span.rank> 84,535 21x16
+                        text "15." 84,535 21x16
+                    cell <td.votelinks> 105,535 14x19 [r42 c1]
+                      block <center> 105,538 14x10
+                        block <a#up_50505310> 105,538 14x10
+                          block <div.votearrow> 107,538 10x10
+                    cell <td.title> 119,535 682x19 [r42 c2]
+                      inline <span.titleline> 119,537 682x16
+                        inline <a> 119,537 531x16
+                          text "The First Revolver: How We Got from Blac..." 119,537 531x16
+                        inline <span.sitebit.comhead> 649,539 152x12
+                          text " (" 649,539 8x12
+                          inline <a> 657,539 140x12
+                            inline <span.sitestr> 657,539 140x12
+                              text "americanhandgunner.com" 657,539 140x12
+                          text ")" 797,539 4x12
+                  row <tr> 84,554 718x11
+                    cell <td> 84,554 35x11 [r43 c0 cs2]
+                    cell <td.subtext> 119,554 682x11 [r43 c2]
+                      inline <span.subline> 119,554 265x11
+                        inline <span#score_50505310.score> 119,554 44x11
+                          text "33 points" 119,554 44x11
+                        text " by " 162,554 17x11
+                        inline <a> 180,554 43x11
+                          text "bushwart" 180,554 43x11
+                        text " " 223,554 3x11
+                        inline <span.age> 226,554 55x11
+                          inline <a> 226,554 55x11
+                            text "2 hours ago" 226,554 55x11
+                        text " " 282,554 3x11
+                        inline <span#unv_50505310> 285,554 0x11
+                        text "| " 285,554 6x11
+                        inline <a> 291,554 20x11
+                          text "hide" 291,554 20x11
+                        text " | " 311,554 9x11
+                        inline <a> 320,554 64x11
+                          text "11 comments" 320,554 64x11
+                  row <tr.spacer> 84,565 718x5
+                  row <tr#50517840.athing.submission> 84,570 718x19
+                    cell <td.title> 84,570 21x19 [r45 c0]
+                      inline <span.rank> 84,570 21x16
+                        text "16." 84,570 21x16
+                    cell <td.votelinks> 105,570 14x19 [r45 c1]
+                      block <center> 105,573 14x10
+                        block <a#up_50517840> 105,573 14x10
+                          block <div.votearrow> 107,573 10x10
+                    cell <td.title> 119,570 682x19 [r45 c2]
+                      inline <span.titleline> 119,572 676x16
+                        inline <a> 119,572 523x16
+                          text "Show HN: Nobody blocks a keyboard – Root..." 119,572 523x16
+                        inline <span.sitebit.comhead> 642,574 153x12
+                          text " (" 642,574 8x12
+                          inline <a> 649,574 141x12
+                            inline <span.sitestr> 649,574 141x12
+                              text "github.com/mr-anjaneyam" 649,574 141x12
+                          text ")" 791,574 4x12
+                  row <tr> 84,589 718x11
+                    cell <td> 84,589 35x11 [r46 c0 cs2]
+                    cell <td.subtext> 119,589 682x11 [r46 c2]
+                      inline <span.subline> 119,589 289x11
+                        inline <span#score_50517840.score> 119,589 44x11
+                          text "39 points" 119,589 44x11
+                        text " by " 162,589 17x11
+                        inline <a> 180,589 68x11
+                          text "mr-anjaneyam" 180,589 68x11
+                        text " " 247,589 3x11
+                        inline <span.age> 250,589 55x11
+                          inline <a> 250,589 55x11
+                            text "3 hours ago" 250,589 55x11
+                        text " " 306,589 3x11
+                        inline <span#unv_50517840> 309,589 0x11
+                        text "| " 309,589 6x11
+                        inline <a> 315,589 20x11
+                          text "hide" 315,589 20x11
+                        text " | " 335,589 9x11
+                        inline <a> 344,589 64x11
+                          text "37 comments" 344,589 64x11
+                  row <tr.spacer> 84,600 718x5
+                  row <tr#50551359.athing.submission> 84,605 718x19
+                    cell <td.title> 84,605 21x19 [r48 c0]
+                      inline <span.rank> 84,605 21x16
+                        text "17." 84,605 21x16
+                    cell <td.votelinks> 105,605 14x19 [r48 c1]
+                      block <center> 105,608 14x10
+                        block <a#up_50551359> 105,608 14x10
+                          block <div.votearrow> 107,608 10x10
+                    cell <td.title> 119,605 682x19 [r48 c2]
+                      inline <span.titleline> 119,607 134x16
+                        inline <a> 119,607 79x16
+                          text "Sexp Matrix" 119,607 79x16
+                        inline <span.sitebit.comhead> 198,609 55x12
+                          text " (" 198,609 8x12
+                          inline <a> 205,609 43x12
+                            inline <span.sitestr> 205,609 43x12
+                              text "lisper.cc" 205,609 43x12
+                          text ")" 249,609 4x12
+                  row <tr> 84,624 718x11
+                    cell <td> 84,624 35x11 [r49 c0 cs2]
+                    cell <td.subtext> 119,624 682x11 [r49 c2]
+                      inline <span.subline> 119,624 269x11
+                        inline <span#score_50551359.score> 119,624 44x11
+                          text "17 points" 119,624 44x11
+                        text " by " 162,624 17x11
+                        inline <a> 180,624 58x11
+                          text "todsacerdoti" 180,624 58x11
+                        text " " 238,624 3x11
+                        inline <span.age> 241,624 51x11
+                          inline <a> 241,624 51x11
+                            text "1 hour ago" 241,624 51x11
+                        text " " 292,624 3x11
+                        inline <span#unv_50551359> 295,624 0x11
+                        text "| " 295,624 6x11
+                        inline <a> 301,624 20x11
+                          text "hide" 301,624 20x11
+                        text " | " 321,624 9x11
+                        inline <a> 330,624 58x11
+                          text "2 comments" 330,624 58x11
+                  row <tr.spacer> 84,635 718x5
+                  row <tr#50548004.athing.submission> 84,640 718x19
+                    cell <td.title> 84,640 21x19 [r51 c0]
+                      inline <span.rank> 84,641 21x16
+                        text "18." 84,641 21x16
+                    cell <td.votelinks> 105,640 14x19 [r51 c1]
+                      block <center> 105,643 14x10
+                        block <a#up_50548004> 105,643 14x10
+                          block <div.votearrow> 107,643 10x10
+                    cell <td.title> 119,640 682x19 [r51 c2]
+                      inline <span.titleline> 119,642 625x16
+                        inline <a> 119,642 574x16
+                          text "KVM: x86: Unconditionally reset MMU cont..." 119,642 574x16
+                        inline <span.sitebit.comhead> 693,645 51x12
+                          text " (" 693,645 8x12
+                          inline <a> 700,645 40x12
+                            inline <span.sitestr> 700,645 40x12
+                              text "cve.org" 700,645 40x12
+                          text ")" 740,645 4x12
+                  row <tr> 84,659 718x11
+                    cell <td> 84,659 35x11 [r52 c0 cs2]
+                    cell <td.subtext> 119,659 682x11 [r52 c2]
+                      inline <span.subline> 119,660 273x11
+                        inline <span#score_50548004.score> 119,660 49x11
+                          text "150 points" 119,660 49x11
+                        text " by " 168,660 17x11
+                        inline <a> 186,660 39x11
+                          text "Kozmik1" 186,660 39x11
+                        text " " 225,660 3x11
+                        inline <span.age> 228,660 55x11
+                          inline <a> 228,660 55x11
+                            text "5 hours ago" 228,660 55x11
+                        text " " 283,660 3x11
+                        inline <span#unv_50548004> 286,660 0x11
+                        text "| " 286,660 6x11
+                        inline <a> 292,660 20x11
+                          text "hide" 292,660 20x11
+                        text " | " 313,660 9x11
+                        inline <a> 322,660 70x11
+                          text "103 comments" 322,660 70x11
+                  row <tr.spacer> 84,671 718x5
+                  row <tr#50547583.athing.submission> 84,676 718x19
+                    cell <td.title> 84,676 21x19 [r54 c0]
+                      inline <span.rank> 84,676 21x16
+                        text "19." 84,676 21x16
+                    cell <td.votelinks> 105,676 14x19 [r54 c1]
+                      block <center> 105,679 14x10
+                        block <a#up_50547583> 105,679 14x10
+                          block <div.votearrow> 107,679 10x10
+                    cell <td.title> 119,676 682x19 [r54 c2]
+                      inline <span.titleline> 119,677 461x16
+                        inline <a> 119,677 404x16
+                          text "F-22 Next-Generation micro–Data Transfer..." 119,677 404x16
+                        inline <span.sitebit.comhead> 523,680 57x12
+                          text " (" 523,680 8x12
+                          inline <a> 530,680 45x12
+                            inline <span.sitestr> 530,680 45x12
+                              text "sam.gov" 530,680 45x12
+                          text ")" 576,680 4x12
+                  row <tr> 84,695 718x11
+                    cell <td> 84,695 35x11 [r55 c0 cs2]
+                    cell <td.subtext> 119,695 682x11 [r55 c2]
+                      inline <span.subline> 119,695 279x11
+                        inline <span#score_50547583.score> 119,695 49x11
+                          text "125 points" 119,695 49x11
+                        text " by " 168,695 17x11
+                        inline <a> 186,695 51x11
+                          text "birdboat00" 186,695 51x11
+                        text " " 237,695 3x11
+                        inline <span.age> 240,695 55x11
+                          inline <a> 240,695 55x11
+                            text "5 hours ago" 240,695 55x11
+                        text " " 295,695 3x11
+                        inline <span#unv_50547583> 298,695 0x11
+                        text "| " 298,695 6x11
+                        inline <a> 304,695 20x11
+                          text "hide" 304,695 20x11
+                        text " | " 324,695 9x11
+                        inline <a> 333,695 64x11
+                          text "79 comments" 333,695 64x11
+                  row <tr.spacer> 84,706 718x5
+                  row <tr#50509980.athing.submission> 84,711 718x19
+                    cell <td.title> 84,711 21x19 [r57 c0]
+                      inline <span.rank> 84,711 21x16
+                        text "20." 84,711 21x16
+                    cell <td.votelinks> 105,711 14x19 [r57 c1]
+                      block <center> 105,714 14x10
+                        block <a#up_50509980> 105,714 14x10
+                          block <div.votearrow> 107,714 10x10
+                    cell <td.title> 119,711 682x19 [r57 c2]
+                      inline <span.titleline> 119,713 332x16
+                        inline <a> 119,713 207x16
+                          text "A live service duress prototype" 119,713 207x16
+                        inline <span.sitebit.comhead> 325,715 125x12
+                          text " (" 325,715 8x12
+                          inline <a> 333,715 114x12
+                            inline <span.sitestr> 333,715 114x12
+                              text "github.com/ymsniper" 333,715 114x12
+                          text ")" 447,715 4x12
+                  row <tr> 84,730 718x11
+                    cell <td> 84,730 35x11 [r58 c0 cs2]
+                    cell <td.subtext> 119,730 682x11 [r58 c2]
+                      inline <span.subline> 119,730 225x11
+                        inline <span#score_50509980.score> 119,730 38x11
+                          text "9 points" 119,730 38x11
+                        text " by " 156,730 17x11
+                        inline <a> 174,730 44x11
+                          text "Ymsniper" 174,730 44x11
+                        text " " 217,730 3x11
+                        inline <span.age> 220,730 51x11
+                          inline <a> 220,730 51x11
+                            text "1 hour ago" 220,730 51x11
+                        text " " 271,730 3x11
+                        inline <span#unv_50509980> 274,730 0x11
+                        text "| " 274,730 6x11
+                        inline <a> 280,730 20x11
+                          text "hide" 280,730 20x11
+                        text " | " 300,730 9x11
+                        inline <a> 309,730 34x11
+                          text "discuss" 309,730 34x11
+                  row <tr.spacer> 84,741 718x5
+                  row <tr#50546967.athing.submission> 84,746 718x19
+                    cell <td.title> 84,746 21x19 [r60 c0]
+                      inline <span.rank> 84,746 21x16
+                        text "21." 84,746 21x16
+                    cell <td.votelinks> 105,746 14x19 [r60 c1]
+                      block <center> 105,749 14x10
+                        block <a#up_50546967> 105,749 14x10
+                          block <div.votearrow> 107,749 10x10
+                    cell <td.title> 119,746 682x19 [r60 c2]
+                      inline <span.titleline> 119,748 290x16
+                        inline <a> 119,748 212x16
+                          text "The x86 CPU: From 4004 to 486" 119,748 212x16
+                        inline <span.sitebit.comhead> 331,750 77x12
+                          text " (" 331,750 8x12
+                          inline <a> 339,750 65x12
+                            inline <span.sitestr> 339,750 65x12
+                              text "pikuma.com" 339,750 65x12
+                          text ")" 404,750 4x12
+                  row <tr> 84,765 718x11
+                    cell <td> 84,765 35x11 [r61 c0 cs2]
+                    cell <td.subtext> 119,765 682x11 [r61 c2]
+                      inline <span.subline> 119,765 259x11
+                        inline <span#score_50546967.score> 119,765 49x11
+                          text "113 points" 119,765 49x11
+                        text " by " 168,765 17x11
+                        inline <a> 186,765 31x11
+                          text "ibobev" 186,765 31x11
+                        text " " 217,765 3x11
+                        inline <span.age> 220,765 55x11
+                          inline <a> 220,765 55x11
+                            text "6 hours ago" 220,765 55x11
+                        text " " 275,765 3x11
+                        inline <span#unv_50546967> 278,765 0x11
+                        text "| " 278,765 6x11
+                        inline <a> 285,765 20x11
+                          text "hide" 285,765 20x11
+                        text " | " 305,765 9x11
+                        inline <a> 314,765 64x11
+                          text "30 comments" 314,765 64x11
+                  row <tr.spacer> 84,776 718x5
+                  row <tr#50548991.athing.submission> 84,781 718x19
+                    cell <td.title> 84,781 21x19 [r63 c0]
+                      inline <span.rank> 84,781 21x16
+                        text "22." 84,781 21x16
+                    cell <td.votelinks> 105,781 14x19 [r63 c1]
+                      block <center> 105,784 14x10
+                        block <a#up_50548991> 105,784 14x10
+                          block <div.votearrow> 107,784 10x10
+                    cell <td.title> 119,781 682x19 [r63 c2]
+                      inline <span.titleline> 119,783 248x16
+                        inline <a> 119,783 121x16
+                          text "CrossPoint Reader" 119,783 121x16
+                        inline <span.sitebit.comhead> 240,785 127x12
+                          text " (" 240,785 8x12
+                          inline <a> 247,785 115x12
+                            inline <span.sitestr> 247,785 115x12
+                              text "crosspointreader.com" 247,785 115x12
+                          text ")" 362,785 4x12
+                  row <tr> 84,800 718x11
+                    cell <td> 84,800 35x11 [r64 c0 cs2]
+                    cell <td.subtext> 119,800 682x11 [r64 c2]
+                      inline <span.subline> 119,800 276x11
+                        inline <span#score_50548991.score> 119,800 44x11
+                          text "59 points" 119,800 44x11
+                        text " by " 162,800 17x11
+                        inline <a> 180,800 55x11
+                          text "kristianpaul" 180,800 55x11
+                        text " " 234,800 3x11
+                        inline <span.age> 237,800 55x11
+                          inline <a> 237,800 55x11
+                            text "4 hours ago" 237,800 55x11
+                        text " " 293,800 3x11
+                        inline <span#unv_50548991> 296,800 0x11
+                        text "| " 296,800 6x11
+                        inline <a> 302,800 20x11
+                          text "hide" 302,800 20x11
+                        text " | " 322,800 9x11
+                        inline <a> 331,800 64x11
+                          text "34 comments" 331,800 64x11
+                  row <tr.spacer> 84,811 718x5
+                  row <tr#50550264.athing.submission> 84,816 718x19
+                    cell <td.title> 84,816 21x19 [r66 c0]
+                      inline <span.rank> 84,817 21x16
+                        text "23." 84,817 21x16
+                    cell <td.votelinks> 105,816 14x19 [r66 c1]
+                      block <center> 105,819 14x10
+                        block <a#up_50550264> 105,819 14x10
+                          block <div.votearrow> 107,819 10x10
+                    cell <td.title> 119,816 682x19 [r66 c2]
+                      inline <span.titleline> 119,818 306x16
+                        inline <a> 119,818 253x16
+                          text "When Free Software Isn't Free Enough" 119,818 253x16
+                        inline <span.sitebit.comhead> 372,821 53x12
+                          text " (" 372,821 8x12
+                          inline <a> 380,821 41x12
+                            inline <span.sitestr> 380,821 41x12
+                              text "foss.life" 380,821 41x12
+                          text ")" 421,821 4x12
+                  row <tr> 84,835 718x11
+                    cell <td> 84,835 35x11 [r67 c0 cs2]
+                    cell <td.subtext> 119,835 682x11 [r67 c2]
+                      inline <span.subline> 119,836 258x11
+                        inline <span#score_50550264.score> 119,836 44x11
+                          text "25 points" 119,836 44x11
+                        text " by " 162,836 17x11
+                        inline <a> 180,836 42x11
+                          text "hn_acker" 180,836 42x11
+                        text " " 222,836 3x11
+                        inline <span.age> 225,836 55x11
+                          inline <a> 225,836 55x11
+                            text "2 hours ago" 225,836 55x11
+                        text " " 280,836 3x11
+                        inline <span#unv_50550264> 283,836 0x11
+                        text "| " 283,836 6x11
+                        inline <a> 289,836 20x11
+                          text "hide" 289,836 20x11
+                        text " | " 309,836 9x11
+                        inline <a> 318,836 58x11
+                          text "9 comments" 318,836 58x11
+                  row <tr.spacer> 84,847 718x5
+                  row <tr#50549188.athing.submission> 84,852 718x19
+                    cell <td.title> 84,852 21x19 [r69 c0]
+                      inline <span.rank> 84,852 21x16
+                        text "24." 84,852 21x16
+                    cell <td.votelinks> 105,852 14x19 [r69 c1]
+                      block <center> 105,855 14x10
+                        block <a#up_50549188> 105,855 14x10
+                          block <div.votearrow> 107,855 10x10
+                    cell <td.title> 119,852 682x19 [r69 c2]
+                      inline <span.titleline> 119,853 498x16
+                        inline <a> 119,853 498x16
+                          text "Launch HN: Maritime (YC F26) – A managed..." 119,853 498x16
+                  row <tr> 84,871 718x11
+                    cell <td> 84,871 35x11 [r70 c0 cs2]
+                    cell <td.subtext> 119,871 682x11 [r70 c2]
+                      inline <span.subline> 119,871 250x11
+                        inline <span#score_50549188.score> 119,871 44x11
+                          text "29 points" 119,871 44x11
+                        text " by " 162,871 17x11
+                        inline <a> 180,871 28x11
+                          text "ashriv" 180,871 28x11
+                        text " " 208,871 3x11
+                        inline <span.age> 211,871 55x11
+                          inline <a> 211,871 55x11
+                            text "3 hours ago" 211,871 55x11
+                        text " " 267,871 3x11
+                        inline <span#unv_50549188> 270,871 0x11
+                        text "| " 270,871 6x11
+                        inline <a> 276,871 20x11
+                          text "hide" 276,871 20x11
+                        text " | " 296,871 9x11
+                        inline <a> 305,871 64x11
+                          text "25 comments" 305,871 64x11
+                  row <tr.spacer> 84,882 718x5
+                  row <tr#50545238.athing.submission> 84,887 718x16
+                    cell <td.title> 84,887 21x16 [r72 c0]
+                      inline <span.rank> 84,887 21x16
+                        text "25." 84,887 21x16
+                    cell <td> 105,887 14x16 [r72 c1]
+                      replaced <img> 105,898 14x1
+                    cell <td.title> 119,887 682x16 [r72 c2]
+                      inline <span.titleline> 119,887 285x16
+                        inline <a> 119,887 181x16
+                          text "Evidence (YC S21) Is Hiring" 119,887 181x16
+                        inline <span.sitebit.comhead> 300,890 104x12
+                          text " (" 300,890 8x12
+                          inline <a> 307,890 92x12
+                            inline <span.sitestr> 307,890 92x12
+                              text "ycombinator.com" 307,890 92x12
+                          text ")" 400,890 4x12
+                  row <tr> 84,903 718x11
+                    cell <td> 84,903 35x11 [r73 c0 cs2]
+                    cell <td.subtext> 119,903 682x11 [r73 c2]
+                      inline <span.age> 119,903 55x11
+                        inline <a> 119,903 55x11
+                          text "9 hours ago" 119,903 55x11
+                      text " | " 174,903 9x11
+                      inline <a> 183,903 20x11
+                        text "hide" 183,903 20x11
+                  row <tr.spacer> 84,914 718x5
+                  row <tr#50551601.athing.submission> 84,919 718x19
+                    cell <td.title> 84,919 21x19 [r75 c0]
+                      inline <span.rank> 84,919 21x16
+                        text "26." 84,919 21x16
+                    cell <td.votelinks> 105,919 14x19 [r75 c1]
+                      block <center> 105,922 14x10
+                        block <a#up_50551601> 105,922 14x10
+                          block <div.votearrow> 107,922 10x10
+                    cell <td.title> 119,919 682x19 [r75 c2]
+                      inline <span.titleline> 119,921 443x16
+                        inline <a> 119,921 368x16
+                          text "Google Gemini's \"Tasks\" Personal Assista..." 119,921 368x16
+                        inline <span.sitebit.comhead> 487,923 74x12
+                          text " (" 487,923 8x12
+                          inline <a> 495,923 63x12
+                            inline <span.sitestr> 495,923 63x12
+                              text "blog.google" 495,923 63x12
+                          text ")" 557,923 4x12
+                  row <tr> 84,938 718x11
+                    cell <td> 84,938 35x11 [r76 c0 cs2]
+                    cell <td.subtext> 119,938 682x11 [r76 c2]
+                      inline <span.subline> 119,938 288x11
+                        inline <span#score_50551601.score> 119,938 44x11
+                          text "14 points" 119,938 44x11
+                        text " by " 162,938 17x11
+                        inline <a> 180,938 77x11
+                          text "hackeratrandom" 180,938 77x11
+                        text " " 257,938 3x11
+                        inline <span.age> 260,938 51x11
+                          inline <a> 260,938 51x11
+                            text "1 hour ago" 260,938 51x11
+                        text " " 310,938 3x11
+                        inline <span#unv_50551601> 313,938 0x11
+                        text "| " 313,938 6x11
+                        inline <a> 319,938 20x11
+                          text "hide" 319,938 20x11
+                        text " | " 340,938 9x11
+                        inline <a> 349,938 58x11
+                          text "5 comments" 349,938 58x11
+                  row <tr.spacer> 84,949 718x5
+                  row <tr#50543989.athing.submission> 84,954 718x19
+                    cell <td.title> 84,954 21x19 [r78 c0]
+                      inline <span.rank> 84,954 21x16
+                        text "27." 84,954 21x16
+                    cell <td.votelinks> 105,954 14x19 [r78 c1]
+                      block <center> 105,957 14x10
+                        block <a#up_50543989> 105,957 14x10
+                          block <div.votearrow> 107,957 10x10
+                    cell <td.title> 119,954 682x19 [r78 c2]
+                      inline <span.titleline> 119,956 563x16
+                        inline <a> 119,956 371x16
+                          text "Energy-Based Reasoners: 385x more effici..." 119,956 371x16
+                        inline <span.sitebit.comhead> 490,958 192x12
+                          text " (" 490,958 8x12
+                          inline <a> 497,958 180x12
+                            inline <span.sitestr> 497,958 180x12
+                              text "energy-based-reasoners.github.io" 497,958 180x12
+                          text ")" 677,958 4x12
+                  row <tr> 84,973 718x11
+                    cell <td> 84,973 35x11 [r79 c0 cs2]
+                    cell <td.subtext> 119,973 682x11 [r79 c2]
+                      inline <span.subline> 119,973 300x11
+                        inline <span#score_50543989.score> 119,973 49x11
+                          text "286 points" 119,973 49x11
+                        text " by " 168,973 17x11
+                        inline <a> 186,973 67x11
+                          text "frenchmajesty" 186,973 67x11
+                        text " " 252,973 3x11
+                        inline <span.age> 255,973 61x11
+                          inline <a> 255,973 61x11
+                            text "11 hours ago" 255,973 61x11
+                        text " " 317,973 3x11
+                        inline <span#unv_50543989> 320,973 0x11
+                        text "| " 320,973 6x11
+                        inline <a> 326,973 20x11
+                          text "hide" 326,973 20x11
+                        text " | " 346,973 9x11
+                        inline <a> 355,973 64x11
+                          text "46 comments" 355,973 64x11
+                  row <tr.spacer> 84,984 718x5
+                  row <tr#50546922.athing.submission> 84,989 718x19
+                    cell <td.title> 84,989 21x19 [r81 c0]
+                      inline <span.rank> 84,990 21x16
+                        text "28." 84,990 21x16
+                    cell <td.votelinks> 105,989 14x19 [r81 c1]
+                      block <center> 105,992 14x10
+                        block <a#up_50546922> 105,992 14x10
+                          block <div.votearrow> 107,992 10x10
+                    cell <td.title> 119,989 682x19 [r81 c2]
+                      inline <span.titleline> 119,991 281x16
+                        inline <a> 119,991 223x16
+                          text "A Primer on Fourier Series (2025)" 119,991 223x16
+                        inline <span.sitebit.comhead> 341,994 58x12
+                          text " (" 341,994 8x12
+                          inline <a> 349,994 46x12
+                            inline <span.sitestr> 349,994 46x12
+                              text "arxiv.org" 349,994 46x12
+                          text ")" 395,994 4x12
+                  row <tr> 84,1008 718x11
+                    cell <td> 84,1008 35x11 [r82 c0 cs2]
+                    cell <td.subtext> 119,1008 682x11 [r82 c2]
+                      inline <span.subline> 119,1009 263x11
+                        inline <span#score_50546922.score> 119,1009 44x11
+                          text "87 points" 119,1009 44x11
+                        text " by " 162,1009 17x11
+                        inline <a> 180,1009 41x11
+                          text "teleforce" 180,1009 41x11
+                        text " " 221,1009 3x11
+                        inline <span.age> 224,1009 55x11
+                          inline <a> 224,1009 55x11
+                            text "6 hours ago" 224,1009 55x11
+                        text " " 279,1009 3x11
+                        inline <span#unv_50546922> 282,1009 0x11
+                        text "| " 282,1009 6x11
+                        inline <a> 288,1009 20x11
+                          text "hide" 288,1009 20x11
+                        text " | " 309,1009 9x11
+                        inline <a> 318,1009 64x11
+                          text "22 comments" 318,1009 64x11
+                  row <tr.spacer> 84,1020 718x5
+                  row <tr#50550461.athing.submission> 84,1025 718x19
+                    cell <td.title> 84,1025 21x19 [r84 c0]
+                      inline <span.rank> 84,1025 21x16
+                        text "29." 84,1025 21x16
+                    cell <td.votelinks> 105,1025 14x19 [r84 c1]
+                      block <center> 105,1028 14x10
+                        block <a#up_50550461> 105,1028 14x10
+                          block <div.votearrow> 107,1028 10x10
+                    cell <td.title> 119,1025 682x19 [r84 c2]
+                      inline <span.titleline> 119,1026 520x16
+                        inline <a> 119,1026 439x16
+                          text "Octopus, Gecko and Tortoise: the 3 scann..." 119,1026 439x16
+                        inline <span.sitebit.comhead> 558,1029 80x12
+                          text " (" 558,1029 8x12
+                          inline <a> 566,1029 69x12
+                            inline <span.sitestr> 566,1029 69x12
+                              text "tin.computer" 566,1029 69x12
+                          text ")" 634,1029 4x12
+                  row <tr> 84,1044 718x11
+                    cell <td> 84,1044 35x11 [r85 c0 cs2]
+                    cell <td.subtext> 119,1044 682x11 [r85 c2]
+                      inline <span.subline> 119,1044 255x11
+                        inline <span#score_50550461.score> 119,1044 44x11
+                          text "15 points" 119,1044 44x11
+                        text " by " 162,1044 17x11
+                        inline <a> 180,1044 44x11
+                          text "demegire" 180,1044 44x11
+                        text " " 224,1044 3x11
+                        inline <span.age> 227,1044 55x11
+                          inline <a> 227,1044 55x11
+                            text "2 hours ago" 227,1044 55x11
+                        text " " 283,1044 3x11
+                        inline <span#unv_50550461> 285,1044 0x11
+                        text "| " 285,1044 6x11
+                        inline <a> 292,1044 20x11
+                          text "hide" 292,1044 20x11
+                        text " | " 312,1044 9x11
+                        inline <a> 321,1044 53x11
+                          text "1 comment" 321,1044 53x11
+                  row <tr.spacer> 84,1055 718x5
+                  row <tr#50549438.athing.submission> 84,1060 718x19
+                    cell <td.title> 84,1060 21x19 [r87 c0]
+                      inline <span.rank> 84,1060 21x16
+                        text "30." 84,1060 21x16
+                    cell <td.votelinks> 105,1060 14x19 [r87 c1]
+                      block <center> 105,1063 14x10
+                        block <a#up_50549438> 105,1063 14x10
+                          block <div.votearrow> 107,1063 10x10
+                    cell <td.title> 119,1060 682x19 [r87 c2]
+                      inline <span.titleline> 119,1062 488x16
+                        inline <a> 119,1062 411x16
+                          text "Lakegres: Vector search on existing Open..." 119,1062 411x16
+                        inline <span.sitebit.comhead> 530,1064 77x12
+                          text " (" 530,1064 8x12
+                          inline <a> 538,1064 65x12
+                            inline <span.sitestr> 538,1064 65x12
+                              text "onehouse.ai" 538,1064 65x12
+                          text ")" 603,1064 4x12
+                  row <tr> 84,1079 718x11
+                    cell <td> 84,1079 35x11 [r88 c0 cs2]
+                    cell <td.subtext> 119,1079 682x11 [r88 c2]
+                      inline <span.subline> 119,1079 264x11
+                        inline <span#score_50549438.score> 119,1079 44x11
+                          text "35 points" 119,1079 44x11
+                        text " by " 162,1079 17x11
+                        inline <a> 180,1079 48x11
+                          text "cloud8bits" 180,1079 48x11
+                        text " " 228,1079 3x11
+                        inline <span.age> 231,1079 55x11
+                          inline <a> 231,1079 55x11
+                            text "3 hours ago" 231,1079 55x11
+                        text " " 286,1079 3x11
+                        inline <span#unv_50549438> 289,1079 0x11
+                        text "| " 289,1079 6x11
+                        inline <a> 295,1079 20x11
+                          text "hide" 295,1079 20x11
+                        text " | " 316,1079 9x11
+                        inline <a> 325,1079 58x11
+                          text "6 comments" 325,1079 58x11
+                  row <tr.spacer> 84,1090 718x5
+                  row <tr.morespace> 84,1095 718x10
+                  row <tr> 84,1105 718x16
+                    cell <td> 84,1105 35x16 [r91 c0 cs2]
+                    cell <td.title> 119,1105 682x16 [r91 c2]
+                      inline <a.morelink> 119,1105 33x16
+                        text "More" 119,1105 33x16
+          row <tr> 84,1121 857x91
+            cell <td> 84,1121 857x91 [r3 c0]
+              anon-block 84,1121 857x16
+                replaced <img> 84,1124 0x10
+              table <table> 84,1137 857x2
+                row-group <tbody> 84,1137 857x2
+                  row <tr> 84,1137 857x2
+                    cell <td> 84,1137 857x2 [r0 c0]
+              anon-block 84,1139 857x16
+              block <center> 84,1155 857x57
+                anon-block 84,1155 857x32
+                  inline <span.yclinks> 329,1158 365x12
+                    inline <a> 329,1158 56x12
+                      text "Guidelines" 329,1158 56x12
+                    text " | " 385,1158 10x12
+                    inline <a> 396,1158 21x12
+                      text "FAQ" 396,1158 21x12
+                    text " | " 416,1158 10x12
+                    inline <a> 427,1158 24x12
+                      text "Lists" 427,1158 24x12
+                    text " | " 451,1158 10x12
+                    inline <a> 461,1158 17x12
+                      text "API" 461,1158 17x12
+                    text " | " 478,1158 10x12
+                    inline <a> 489,1158 44x12
+                      text "Security" 489,1158 44x12
+                    text " | " 532,1158 10x12
+                    inline <a> 543,1158 29x12
+                      text "Legal" 543,1158 29x12
+                    text " | " 571,1158 10x12
+                    inline <a> 582,1158 61x12
+                      text "Apply to YC" 582,1158 61x12
+                    text " | " 643,1158 10x12
+                    inline <a> 653,1158 42x12
+                      text "Contact" 653,1158 42x12
+                block <form> 84,1187 857x25
+                  text "Search: " 412,1197 55x16
+                  replaced <input> 467,1187 144x22

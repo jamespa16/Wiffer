@@ -1,0 +1,34 @@
+block <html> 0,0 400x297
+  block <body> 8,8 384x281
+    block <center> 8,8 384x25
+      table <table> 104,8 192x25
+        row-group <tbody> 104,10 192x21
+          row <tr> 104,10 192x21
+            cell <td> 106,10 188x21 [r0 c0]
+              text "centered table" 107,11 118x19
+    table <table> 150,33 100x25
+      row-group <tbody> 150,35 100x21
+        row <tr> 150,35 100x21
+          cell <td> 152,35 96x21 [r0 c0]
+            text "right" 207,36 40x19
+    table <table> 232,58 160x40 float-right
+      row-group <tbody> 232,60 160x36
+        row <tr> 232,60 160x36
+          cell <td> 234,60 156x36 [r0 c0]
+            text "no wrap at all here" 235,76 154x19
+    block <div> 8,58 384x19
+      text "centered div text" 51,59 138x19
+    block <p> 8,94 384x48
+      inline <font> 8,94 217x28
+        text "big red courier" 8,94 217x28
+      inline <font> 8,125 35x15
+        text "small" 8,125 35x15
+    anon-block 8,142 384x78
+      replaced <img> 13,147 64x64
+      text " " 82,201 5x19
+    block <hr> 103,228 194x4
+    table <table> 8,240 60x49
+      row-group <tbody> 8,245 60x39
+        row <tr> 8,245 60x39
+          cell <td> 13,245 50x39 [r0 c0]
+            text "pad" 23,255 30x19
