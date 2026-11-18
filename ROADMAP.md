@@ -443,3 +443,205 @@ Pick and choose. Each is independent.
 - Run `./run.sh --test` and `./run.sh --test --uefi` after every phase.
   Expect merge hot spots in `build.sh`, `kernel.swift` init order, the
   `selftest.swift` call list and the harness.
+
+---
+
+# Part 4: SMP
+
+Goal: every CPU QEMU (or the machine) has runs kernel tasks. The desktop
+keeps working unchanged, and compute tasks spread across all CPUs.
+
+```
+P atomics, spinlocks, per-CPU data ─┐
+                                    ├─→ R AP bring-up ─→ S SMP scheduler ─→ T demo, tests, docs
+Q x2APIC, IPIs, more IDT vectors ───┘
+(harness: -smp N plumbing, alongside P/Q)
+```
+
+P and Q don't depend on each other.
+
+## Design decisions
+
+- **Affinity instead of locking everything.** The window manager,
+  compositor, consoles, shells and RAM fs stay unlocked and **pinned to
+  CPU 0** (the BSP). A task has `affinity: .cpu(n)` or `.any`. Every
+  existing task (shells, terminals, task 0) is `.cpu(0)`. Only `.any` tasks
+  migrate, and they may touch only SMP-safe code: the heap, frame
+  allocator, scheduler, inboxes, `print`/`puts`, and their own data. A
+  task that needs the UI posts an event to a CPU 0 task.
+- **Device IRQs stay on the BSP.** Keep the 8259 PIC and the PIT (100 Hz,
+  `ticks`) on CPU 0, delivered through the BSP's LAPIC LINT0 in
+  virtual-wire mode. There's no IOAPIC. APs get IPIs only.
+- **x2APIC only (MSRs, no MMIO mapping).** Ask Limine's MP request for
+  x2APIC (`LIMINE_MP_REQUEST_X86_64_X2APIC`). QEMU runs with
+  `-cpu max` (TCG has x2APIC). If x2APIC or the MP response is missing,
+  run single-CPU exactly as today. That's a supported configuration, so
+  test it.
+- **Cooperative still.** There's no preemption and no APIC timer.
+  Idle CPUs `hlt` and are woken by a reschedule IPI when a task they may
+  run becomes ready.
+- **Swift runtime is already SMP-safe:** refcounts are atomic, and
+  `swift_once` is a cmpxchg plus spin (checked in build/kernel.raw.ll). The
+  `Synchronization` module (`Atomic`) is available in Embedded Swift, as
+  are clang `__atomic_*` builtins through bridge.h.
+- **Stacks and per-CPU blocks** live at identity-mapped (lower-half)
+  addresses, as the ground rules already require.
+
+## Phase P: atomics, spinlocks, per-CPU data
+
+**P1. Spinlock.** `struct SpinLock` (test-and-test-and-set with `pause`)
+and an IRQ-saving variant, `lock.withIRQsOff { }`, which does
+`irq_save` → acquire … release → `irq_restore`. It records the owning CPU
+and panics on a recursive acquire. It also counts contended acquires, for
+the `cpus` command. Add a recursive variant for stdout.
+
+**P2. Per-CPU block.** `final class`-free plain storage: a fixed
+`InlineArray` of `PerCPU` structs (max 64 CPUs), indexed by CPU index
+(0 = BSP). Fields:
+
+- index and APIC id
+- `current` task and `idle` task, with the zombies list
+- GDT, TSS and double-fault IST stack
+- stats: switches, idle ticks, IPIs received
+
+Point `IA32_GS_BASE` (MSR `0xC0000101`) at the CPU's entry, so
+`thisCPU()` is a `%gs:0` load (C helper in bridge.h). Give each CPU its
+own GDT and TSS. A TSS descriptor's busy bit means two CPUs can't `ltr`
+the same one, so `gdtInit()` becomes `gdtInit(cpu:)`. The IDT stays
+shared.
+
+**P3. Lock the shared allocators and output.**
+
+- heap and pmm: `irq_save` becomes the IRQ-saving spinlock.
+- `_swift_lockStandardOutput`/`unlock`: the recursive spinlock.
+- `puts`/`printHex`/`printDec` raw paths: the same lock.
+- Exception and panic paths try the lock with a bounded spin, then write
+  anyway (the kernel is dying).
+
+**Done when:** a single-CPU build passes `./run.sh --test`. New
+selftests cover lock/unlock, the recursion panic path (as a test
+predicate, not a real panic), `thisCPU().index == 0`, and that GS base
+matches the BSP's block.
+
+## Phase Q: x2APIC, IPIs, more vectors
+
+**Q1. MSR helpers** in bridge.h (`rdmsr`/`wrmsr`) and `cpuid`. Detect
+x2APIC (CPUID.1:ECX bit 21).
+
+**Q2. `apic.swift`.**
+
+- Enable x2APIC: `IA32_APIC_BASE` (MSR `0x1B`) bits 10 and 11, and the
+  spurious-vector register (MSR `0x80F`) = `0x1FF`.
+- Read the id from MSR `0x802`.
+- EOI: MSR `0x80B` ← 0.
+- ICR is MSR `0x830`, a single 64-bit write in x2APIC.
+- `sendIPI(apicID, vector)`, `broadcastIPI(vector, excludingSelf)`, and an
+  NMI IPI for panics.
+- On the BSP, program LINT0 as ExtINT and LINT1 as NMI, so the 8259
+  keeps delivering IRQs through the LAPIC. On APs, mask both.
+
+**Q3. Vectors.** Extend the cpu.S stub table to all 256 vectors. Generate
+it with `.irp`/`.rept`, keeping the error-code list correct. Reserve:
+
+- `0xF0` reschedule (wake)
+- `0xF1` halt (panic: stop this CPU)
+- `0xF2` test/ping (counts per CPU, for selftests)
+- `0xFF` spurious (no EOI)
+
+`interrupt_dispatch` sends LAPIC EOI for `0xF0`–`0xFE` and PIC EOI for
+32–47, as now.
+
+**Done when:** on one CPU, a selftest sends a self-IPI (`0xF2`, ICR
+destination shorthand "self") and sees the counter tick. Single-CPU
+`./run.sh --test` still passes.
+
+## Harness: `-smp N`
+
+`./run.sh` and `tests/serial_session.py` pass `-cpu max -smp N`. N
+comes from `--smp N` or `WIFFER_SMP` and defaults to 4. `./run.sh --test`
+runs with 4, and `./run.sh --test --smp 1` with 1.
+
+## Phase R: AP bring-up
+
+- Add a `limine_mp_request` (flags: x2APIC) in boot.c. Read its response
+  after pmm and heap init.
+- For each AP, allocate its stack (64 KiB, identity-mapped) and fill in
+  its `PerCPU` entry on the BSP. Then write `extra_argument` = CPU index
+  and `goto_address` = `ap_entry` (a `@_cdecl` that enables SSE first,
+  exactly like `kernel_main`). Extend build.sh's no-SSE check to cover
+  it.
+- On the AP:
+  1. Switch to its own stack (`switch_stack`).
+  2. `gdtInit(cpu:)`, `lidt` (shared IDT), set GS base.
+  3. Enable x2APIC and mask LINTs.
+  4. Mark itself online (an atomic counter), `sti`, then enter the
+     per-CPU idle loop (`hlt` until there's work).
+- The BSP waits, with a timeout, until all APs are online, then
+  `print`s `smp: N CPUs online`.
+- Limine's page tables are shared. mapLowerHalf patches the live PML4
+  before APs start, so they see the lower-half aliases. Check that each
+  AP's CR3 equals the BSP's.
+- `cpus` shell command: per CPU, show the index, APIC id, online, current
+  task, switches, idle %, IPIs and lock contention.
+
+**Done when:** with `-smp 4`, boot prints 4 CPUs online and `cpus` lists
+them. A selftest pings each AP with `0xF2` and sees each counter advance.
+Both `--smp 1` and `--smp 4` pass `./run.sh --test` (BIOS and UEFI).
+
+## Phase S: SMP scheduler
+
+- `scheduler.current` becomes `thisCPU().current`. The scheduler's
+  shared state (run queue, `all`, `nextID`) sits behind one IRQ-saving
+  spinlock, as do task state changes and `Task.post` (the inbox is
+  touched by a poster on CPU 0 and an owner elsewhere).
+- **One shared run queue,** filtered by affinity: a CPU takes the first
+  task it may run. That's fine at this size. Per-CPU queues and work
+  stealing are a stretch.
+- **Cross-CPU handoff.** A task switched out on CPU A must not be resumed
+  on CPU B until A has finished saving its rsp. Give `Task` an `onCPU`
+  word. `context_switch` gets a third argument, a pointer to the outgoing
+  task's flag, and clears it (`movq $0`, a release store on x86) after
+  saving rsp and before loading the new one. `prepareSwitch` takes the
+  lock and dequeues; then, after unlocking, it spins until
+  `next.onCPU == 0` and sets it to 1.
+- **Lock across the switch:** don't. Drop the lock before
+  `context_switch`. The `onCPU` flag covers the race.
+- **Each AP has an idle task** (its boot stack). Idle loop: take the
+  lock, dequeue a runnable task or `hlt` with interrupts on. Use the
+  `sti; hlt` pair to avoid the lost-wakeup race, after re-checking the
+  queue with IRQs off.
+- **Wakeups.** When a task becomes ready (`spawn`, `post`, `yield`), if
+  some idle CPU may run it, send `0xF0` to one idle CPU. Track idle CPUs
+  in an atomic bitmask. CPU 0 keeps its current `hlt`-in-`idleStep` loop;
+  the PIT wakes it.
+- **Zombies** are per-CPU, freed by the next task that runs on that CPU.
+- **Watchdog** stays on CPU 0's `ticks`. Track a mark per CPU; the BSP's
+  timer IRQ checks all of them.
+- **Panics on any CPU:** take a panic flag (first CPU wins), send `0xF1`
+  to the others (NMI if they don't stop within 10 ms), then report as
+  today. `exceptionReport` prints the CPU index.
+- `spawn(name, affinity: .any, …)`. The default stays `.cpu(0)`, so
+  nothing existing changes behaviour.
+
+**Done when:** these selftests pass with `-smp 4`:
+
+- 4 × `.any` tasks hammer a shared spinlocked counter and the heap
+  (allocate/free arrays) for 100k iterations each. The count is exact and
+  the heap's live count returns to baseline.
+- Two `.any` tasks ping-pong 10,000 messages and are seen running on
+  different CPUs.
+- `check_callee_saved` passes across migrations.
+- A task pinned to `.cpu(2)` only ever runs on CPU 2.
+
+The whole existing suite still passes on `--smp 1` and `--smp 4`.
+
+## Phase T: demo, tests, docs
+
+- Shell command `par <n>`: count primes below `n` with one `.any` task per
+  CPU, then print each CPU's share and the wall time (in ticks) against
+  a one-task run. Results come back to the shell's task through its
+  inbox.
+- Taskbar: show the CPU count, plus a busy dot per CPU (idle or not).
+- Harness: `smp_checks` boots with `-smp 4`, runs `cpus` and `par`, and
+  checks the result.
+- Update "Where we are" and README.md's Wiffer entry.
