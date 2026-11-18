@@ -170,6 +170,9 @@ func programTests(_ t: inout SelfTest) {
             let p = try spawnProcess(path: "/bin/spin", argv: ["spin"], output: channel, waiter: me, affinity: .cpu(1))
             let begin = ticks
             var sent = false
+            // Nothing wakes the pump while the spin runs (a real shell is
+            // woken by keys): a helper task does it after a while.
+            spawn("ctrlc-wake", affinity: .cpu(0), { sleepMilliseconds(150); unpark(me) })
             let s = waitProcesses([p], console: channel, keys: {
                 if !sent && ticks - begin >= 10 { sent = true; return ([.char(0x03)], false) }
                 return ([], false)
