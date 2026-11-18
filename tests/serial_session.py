@@ -1132,6 +1132,183 @@ def tcp_checks(s: Session, timeout: float, check):
     got = s.command("netstat", timeout)
     check("segments in" in got, "net: netstat lists TCP state", repr(got))
 
+def fetch_server(files, tls=None):
+    """Part 7F: an HTTP (or, with tls=(chain, key), HTTPS) server on
+    127.0.0.1 for /bin/fetch. `files` maps a path to (body, headers) or to
+    ("redirect", status, location). HTTP/1.1 with Connection: close. Returns
+    (port, stop)."""
+    import http.server, ssl, threading
+    class Handler(http.server.BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+        def do_GET(self):
+            f = files.get(self.path)
+            if f is None:
+                self.send_error(404)
+                return
+            if f[0] == "redirect":
+                self.send_response(f[1])
+                self.send_header("Location", f[2])
+                self.send_header("Content-Length", "0")
+                self.send_header("Connection", "close")
+                self.end_headers()
+                return
+            body, headers = f
+            self.send_response(200)
+            for k, v in headers:
+                self.send_header(k, v)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(body)
+        def log_message(self, *args):
+            pass
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    if tls:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_3
+        ctx.load_cert_chain(tls[0], tls[1])
+        srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    def stop():
+        srv.shutdown()
+        srv.server_close()
+    return srv.server_address[1], stop
+
+FETCH_RE = re.compile(r"fetch: (\d+) [^,]*, (\d+) bytes, fnv1a ([0-9a-f]{16}), (\d+) ms, (\d+) KiB/s")
+
+def fetch_checks(s: Session, timeout: float, check):
+    """Part 7F: /bin/fetch over HTTP (1 MiB with a hash, gzip, a redirect
+    chain, a 404, 10 MiB for throughput) and HTTPS (a local Python ssl server
+    with the test PKI from tests/certs/: trusted via --ca, refused without
+    it); /bin/nc both ways; /bin/ping."""
+    import gzip, random, threading
+    body = random.Random(9).randbytes(1 << 20)
+    big = random.Random(10).randbytes(10 << 20)
+    text = b"".join(b"line %d of a compressible page\n" % i for i in range(20000))
+    certs = os.path.join(ROOT, "tests", "certs")
+    with open(os.path.join(certs, "roots.der"), "rb") as f:
+        ca = f.read()
+    files = {
+        "/data": (body, [("Content-Type", "application/octet-stream")]),
+        "/big": (big, []),
+        "/page": (gzip.compress(text), [("Content-Type", "text/plain"), ("Content-Encoding", "gzip")]),
+        "/hop1": ("redirect", 301, "/hop2"),
+        "/hop2": ("redirect", 302, "/data"),
+        "/testca.der": (ca, []),
+    }
+    port, stop = fetch_server(files)
+    tport, tstop = fetch_server({"/data": (body, []), "/": (b"hello over TLS\n", [])},
+                                tls=(os.path.join(certs, "leaf-ec.chain.pem"), os.path.join(certs, "leaf-ec.key.pem")))
+    want = f"{fnv1a64(body):016x}"
+    try:
+        url = f"http://10.0.2.2:{port}"
+        got = s.command(f"fetch -v -q {url}/data", 60.0)
+        m = FETCH_RE.search(got)
+        check(m is not None and m.group(1) == "200" and m.group(2) == str(len(body)) and m.group(3) == want,
+              "fetch: 1 MiB over HTTP, hash matches", repr(got[-600:]))
+        got = s.command(f"fetch -v -q {url}/big", 90.0)
+        m = FETCH_RE.search(got)
+        ok = check(m is not None and m.group(2) == str(len(big)) and m.group(3) == f"{fnv1a64(big):016x}",
+                   "fetch: 10 MiB over HTTP, hash matches", repr(got[-600:]))
+        if ok:
+            ms = int(m.group(4))
+            print(f"harness: 10 MiB through SLIRP (MSI-X) in {ms} ms ({len(big) / 1e6 / (ms / 1000):.1f} MB/s)")
+        got = s.command(f"fetch -v -q {url}/page", 60.0)
+        m = FETCH_RE.search(got)
+        check("Content-Encoding: gzip" in got and m is not None and m.group(2) == str(len(text))
+              and m.group(3) == f"{fnv1a64(text):016x}", "fetch: a gzip response is decoded", repr(got[-600:]))
+        got = s.command(f"fetch -v -q {url}/hop1", 60.0)
+        m = FETCH_RE.search(got)
+        check("301 redirect to" in got and "302 redirect to" in got and m is not None and m.group(3) == want,
+              "fetch: follows a 301 and a 302 to the data", repr(got[-600:]))
+        got = s.command(f"fetch {url}/nothing", 30.0)
+        check("exit status 3" in got, "fetch: a 404 exits with status 3", repr(got))
+        got = s.command(f"fetch -o /testca.der {url}/testca.der", 30.0)
+        got += s.command("/bin/wc /testca.der", timeout)
+        check(f" {len(ca)} /testca.der" in got, "fetch -o writes the test CA to a file", repr(got))
+        turl = f"https://localhost:{tport}"
+        got = s.command(f"fetch -v -q --ca /testca.der --resolve localhost:10.0.2.2 {turl}/data", 60.0)
+        m = FETCH_RE.search(got)
+        check(m is not None and m.group(1) == "200" and m.group(3) == want,
+              "fetch: 1 MiB over HTTPS (TLS 1.3, test CA via --ca), hash matches", repr(got[-600:]))
+        got = s.command(f"fetch --resolve localhost:10.0.2.2 {turl}/", 60.0)
+        check("TLS:" in got and "exit status 1" in got, "fetch: the test server's certificate is refused with /etc/roots.der",
+              repr(got[-400:]))
+        got = s.command(f"fetch --ca /testca.der https://10.0.2.2:{tport}/", 60.0)
+        check("TLS:" in got and "exit status 1" in got, "fetch: a name the certificate doesn't cover is refused",
+              repr(got[-400:]))
+        got = s.command(f"fetch -k https://10.0.2.2:{tport}/", 60.0)
+        check("hello over TLS" in got, "fetch -k skips the certificate check", repr(got[-400:]))
+        got = s.command(f"fetch http://10.0.2.2:{free_port()}/", 30.0)
+        check("connection refused" in got, "fetch: a closed port is refused", repr(got))
+    finally:
+        stop()
+        tstop()
+
+    # nc -l in the guest, reached from the host through hostfwd.
+    s.send(f"nc -l {TCP_FWD_GUEST}")
+    time.sleep(1.0)
+    got_host = b""
+    err = None
+    try:
+        with socket.create_connection(("127.0.0.1", TCP_FWD_HOST), timeout=20) as so:
+            so.sendall(b"from the host\n")
+            s.read_until(b"from the host", 20.0)
+            s.send("from the guest")
+            time.sleep(0.5)
+            s.p.stdin.write(b"\x04")  # Ctrl-D: end of input, nc half-closes
+            s.p.stdin.flush()
+            while True:
+                chunk = so.recv(4096)
+                if not chunk:
+                    break
+                got_host += chunk
+    except OSError as e:
+        err = e
+    got = s.read_prompt(20.0).decode(errors="replace")
+    check(err is None and got_host == b"from the guest\n", "nc -l: host to guest and guest to host through hostfwd",
+          f"{err!r} {got_host!r} {got!r}")
+
+    # nc in the guest connecting out to a host listener.
+    lsock = socket.socket()
+    lsock.bind(("127.0.0.1", 0))
+    lsock.listen(1)
+    lsock.settimeout(20)
+    received = []
+    def serve():
+        try:
+            c, _ = lsock.accept()
+            with c:
+                c.sendall(b"hello guest\n")
+                data = b""
+                while True:
+                    chunk = c.recv(4096)
+                    if not chunk:
+                        break
+                    data += chunk
+                received.append(data)
+        except OSError:
+            pass
+    th = threading.Thread(target=serve, daemon=True)
+    th.start()
+    s.send(f"nc 10.0.2.2 {lsock.getsockname()[1]}")
+    out = s.read_until(b"hello guest", 20.0).decode(errors="replace")
+    s.send("hello host")
+    time.sleep(0.5)
+    s.p.stdin.write(b"\x04")
+    s.p.stdin.flush()
+    out += s.read_prompt(20.0).decode(errors="replace")
+    th.join(5)
+    lsock.close()
+    check("hello guest" in out and received == [b"hello host\n"], "nc: connects out, both directions, Ctrl-D closes",
+          f"{received!r} {out!r}")
+
+    got = s.command("/bin/ping -c 3 10.0.2.2", 20.0)
+    check("3 packets transmitted, 3 received, 0% packet loss" in got and "icmp_seq=3" in got,
+          "net: /bin/ping -c 3 10.0.2.2 (ICMP socket)", repr(got))
+    got = s.command("ifconfig", timeout)
+    check("irq: msi-x vector 0x50 on cpu 0" in got, "net: virtio-net interrupts through MSI-X", repr(got))
+
 def net_checks(s: Session, timeout: float) -> int:
     """Part 7 (7A-7C) on the machine: virtio-net comes up, DHCP gives
     10.0.2.15, the gateway answers ping, and the resolver talks to a fake DNS
@@ -1165,22 +1342,25 @@ def net_checks(s: Session, timeout: float) -> int:
     port, stop = fake_dns_server()
     try:
         srv = f"10.0.2.2:{port}"
-        got = s.command(f"host test.wiffer.example {srv}", 20.0)
-        check("test.wiffer.example has address 192.0.2.77" in got, "net: host resolves through the fake DNS server", repr(got))
-        got = s.command(f"host www.wiffer.example {srv}", 20.0)
-        check("www.wiffer.example is an alias for test.wiffer.example." in got
-              and "test.wiffer.example has address 192.0.2.77" in got, "net: host follows a CNAME", repr(got))
-        got = s.command(f"host nx.wiffer.example {srv}", 20.0)
-        check("not found: NXDOMAIN" in got, "net: host reports NXDOMAIN", repr(got))
-        for name in ("loop", "trunc", "huge"):
-            # Hostile replies are ignored; the query times out (3 x 2 s) and the kernel lives on.
-            got = s.command(f"host {name}.wiffer.example {srv}", 30.0)
-            check("not found" in got and "timed out" in got, f"net: a hostile '{name}' reply fails cleanly", repr(got))
+        # Phase 7F: the built-in `host` and /bin/host (the resolve call) give the same answers.
+        for host in ("host", "/bin/host"):
+            got = s.command(f"{host} test.wiffer.example {srv}", 20.0)
+            check("test.wiffer.example has address 192.0.2.77" in got, f"net: {host} resolves through the fake DNS server", repr(got))
+            got = s.command(f"{host} www.wiffer.example {srv}", 20.0)
+            check("www.wiffer.example is an alias for test.wiffer.example." in got
+                  and "test.wiffer.example has address 192.0.2.77" in got, f"net: {host} follows a CNAME", repr(got))
+            got = s.command(f"{host} nx.wiffer.example {srv}", 20.0)
+            check("not found: NXDOMAIN" in got, f"net: {host} reports NXDOMAIN", repr(got))
+            for name in ("loop", "trunc", "huge"):
+                # Hostile replies are ignored; the query times out (3 x 2 s) and the kernel lives on.
+                got = s.command(f"{host} {name}.wiffer.example {srv}", 30.0)
+                check("not found" in got and "timed out" in got, f"net: {host}: a hostile '{name}' reply fails cleanly", repr(got))
         got = s.command("ping -c 1 10.0.2.2", 20.0)
         check("1 packets transmitted, 1 received" in got, "net: the stack still answers after hostile DNS replies", repr(got))
     finally:
         stop()
     tcp_checks(s, timeout, check)
+    fetch_checks(s, timeout, check)
     return failures
 
 

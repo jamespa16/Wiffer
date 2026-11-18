@@ -132,3 +132,41 @@ wiffer_fault_in:
     ret
 
     .section .note.GNU-stack, "", @progbits
+
+// 128-bit shifts (compiler-rt builtins LLVM calls for UInt128 shifts by a
+// variable amount; lib/crypto's Poly1305 and X25519 use them). SysV: the
+// value in rdi (low) and rsi (high), the count in edx; result in rax:rdx.
+    .text
+    .globl __lshrti3
+    .type __lshrti3, @function
+__lshrti3:
+    movl %edx, %ecx
+    movq %rdi, %rax
+    movq %rsi, %rdx
+    testb $64, %cl
+    jnz 1f
+    shrdq %cl, %rdx, %rax
+    shrq %cl, %rdx
+    ret
+1:  movq %rdx, %rax
+    shrq %cl, %rax
+    xorl %edx, %edx
+    ret
+    .size __lshrti3, . - __lshrti3
+
+    .globl __ashlti3
+    .type __ashlti3, @function
+__ashlti3:
+    movl %edx, %ecx
+    movq %rdi, %rax
+    movq %rsi, %rdx
+    testb $64, %cl
+    jnz 1f
+    shldq %cl, %rax, %rdx
+    shlq %cl, %rax
+    ret
+1:  movq %rax, %rdx
+    shlq %cl, %rdx
+    xorl %eax, %eax
+    ret
+    .size __ashlti3, . - __ashlti3
