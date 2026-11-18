@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<style>
+body { margin: 0; font: 14px sans-serif; width: 400px }
+.f { display: flex; background: #eee; margin-bottom: 4px }
+.f > div { background: #aaa; height: 20px }
+.w50 > div { width: 50px }
+.between { justify-content: space-between }
+.center { justify-content: center; align-items: center; height: 40px }
+.end { justify-content: flex-end }
+.around { justify-content: space-around }
+.grow > div { flex: 1 }
+.grow2 > div:first-child { flex-grow: 2 }
+.shrink > div { width: 200px }
+.wrap { flex-wrap: wrap }
+.wrap > div { width: 150px }
+.col { flex-direction: column; height: 100px }
+.gap { gap: 10px }
+.auto > div:last-child { margin-left: auto }
+.rev { flex-direction: row-reverse }
+.stretch { height: 50px }
+.stretch > div { height: auto }
+</style>
+<div class="f w50 between"><div>a</div><div>b</div><div>c</div></div>
+<div class="f w50 center"><div>a</div><div>b</div></div>
+<div class="f w50 end"><div>a</div><div>b</div></div>
+<div class="f w50 around"><div>a</div><div>b</div></div>
+<div class="f grow"><div>a</div><div>b</div><div>c</div></div>
+<div class="f grow grow2"><div>a</div><div>b</div></div>
+<div class="f shrink"><div>a</div><div>b</div><div>c</div></div>
+<div class="f wrap"><div>1</div><div>2</div><div>3</div><div>4</div></div>
+<div class="f col w50"><div>a</div><div style="flex:1">grows</div></div>
+<div class="f w50 gap"><div>a</div><div>b</div></div>
+<div class="f w50 auto"><div>a</div><div>b</div></div>
+<div class="f w50 rev"><div>a</div><div>b</div></div>
+<div class="f stretch"><div>stretched</div><div style="align-self:flex-end;height:10px">end</div></div>
+<div class=f>text <b>bold</b> <div>item</div></div>

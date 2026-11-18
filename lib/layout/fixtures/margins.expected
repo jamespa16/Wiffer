@@ -1,0 +1,17 @@
+block <html> 0,0 400x381
+  block <body> 0,20 400x341
+    block <div.a> 0,20 400x10
+    block <div.b> 0,60 400x10
+    block <div.neg> 0,65 400x10
+    block <div.parent> 0,100 400x20
+      block <div.first> 0,100 400x10
+      block <div.last> 0,110 400x10
+    block <div.a> 0,155 400x10
+    block <div.empty> 0,185 400x0
+    block <div.a> 0,185 400x10
+    block <div.bordered> 0,215 400x36
+      block <div.first> 0,241 400x10
+    block <div.bfc> 0,251 400x80
+      block <div.first> 0,276 400x10
+      block <div.last> 0,286 400x10
+    block <div.a> 0,351 400x10

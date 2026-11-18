@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<style>
+body { margin: 0; font: 14px sans-serif; width: 200px }
+div { margin-bottom: 4px }
+.nowrap { white-space: nowrap }
+.pre { white-space: pre; font-family: monospace }
+.prewrap { white-space: pre-wrap }
+.preline { white-space: pre-line }
+.up { text-transform: uppercase }
+.cap { text-transform: capitalize }
+</style>
+<div>   collapse     these
+   spaces   <b> and </b>   across   boxes   </div>
+<div class=nowrap>this text does not wrap even though it is far too long for the box</div>
+<div class=pre>pre  keeps   spaces
+and	tabs
+  and newlines</div>
+<div class=prewrap>pre-wrap keeps   spaces but wraps long lines when needed here</div>
+<div class=preline>pre-line   collapses   spaces
+but keeps newlines</div>
+<div class=up>upper case</div>
+<div class=cap>capitalize every word</div>
+<div>   </div>
+<div>a<span> </span>b</div>

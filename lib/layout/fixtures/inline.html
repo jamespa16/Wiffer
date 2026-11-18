@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<style>
+body { margin: 8px; font: 16px sans-serif; width: 300px }
+span.box { padding: 2px 6px; border: 1px solid; margin: 0 4px; background: yellow }
+.center { text-align: center }
+.right { text-align: right }
+.justify { text-align: justify }
+.indent { text-indent: 30px }
+.lh { line-height: 30px }
+.big { font-size: 32px }
+p { margin: 0 0 8px }
+</style>
+<p>Plain text that wraps across more than one line in a three hundred pixel wide body.</p>
+<p>Some <span class=box>boxed inline text that wraps onto the next line</span> after.</p>
+<p class=center>Centered text that also wraps over two lines here.</p>
+<p class=right>Right aligned text.</p>
+<p class=justify>Justified text spreads its words so that every line except the last one is flush on both sides.</p>
+<p class=indent>Indented first line of a paragraph that wraps.</p>
+<p>Line<br>breaks<br><br>here</p>
+<p class=lh>Tall line height text that wraps over two lines of text.</p>
+<p>Mixed <span class=big>BIG</span> sizes on a line.</p>
+<p>averyveryveryveryveryverylongwordthatcannotbreakanywhere next</p>

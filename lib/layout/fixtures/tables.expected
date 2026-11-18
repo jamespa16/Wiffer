@@ -1,0 +1,81 @@
+block <html> 0,0 400x353
+  block <body> 0,0 400x353
+    table <table> 0,17 264x90
+      caption <caption> 0,0 264x17
+        text "Caption text" 89,0 86x16
+      row-group <tbody> 1,20 262x84
+        row <tr> 1,20 262x27
+          cell <th> 3,20 66x27 [r0 c0]
+            text "Head A" 8,25 56x16
+          cell <th> 71,20 115x27 [r0 c1]
+            text "Head B wider" 76,25 105x16
+          cell <th> 189,20 73x27 [r0 c2]
+            text "C" 220,25 10x16
+        row <tr> 1,49 262x27
+          cell <td> 3,49 184x27 [r1 c0 cs2]
+            text "spans two columns" 8,54 134x16
+          cell <td> 189,49 73x56 [r1 c2 rs2]
+            text "two rows" 194,68 63x16
+        row <tr> 1,77 262x27
+          cell <td> 3,77 66x27 [r2 c0]
+            text "a" 8,83 9x16
+          cell <td> 71,77 115x27 [r2 c1]
+            text "b" 76,83 9x16
+    table <table> 0,113 400x17
+      row-group <tbody> 0,113 400x17
+        row <tr> 0,113 400x17
+          cell <td> 0,113 100x17 [r0 c0]
+            text "quarter" 0,113 52x16
+          cell <td> 100,113 250x17 [r0 c1]
+            text "rest of the row" 100,113 102x16
+          cell <td> 350,113 50x17 [r0 c2]
+            text "50px" 350,113 35x16
+    table <table.collapse> 0,136 27x41
+      row-group <tbody> 0,136 27x41
+        row <tr> 0,136 27x21
+          cell <td> 0,136 12x21 [r0 c0]
+            text "x" 2,138 8x16
+          cell <td> 12,136 14x21 [r0 c1]
+            text "y" 13,138 8x16
+        row <tr> 0,157 27x20
+          cell <td> 0,157 12x20 [r1 c0]
+            text "z" 2,158 7x16
+          cell <td> 12,157 14x20 [r1 c1]
+            text "w" 13,158 11x16
+    table <table.fixed> 0,183 300x23
+      row-group <tbody> 0,185 300x19
+        row <tr> 0,185 300x19
+          cell <td> 2,185 102x19 [r0 c0]
+            text "100" 3,186 27x16
+          cell <td> 106,185 95x19 [r0 c1]
+            text "auto" 107,186 32x16
+          cell <td> 203,185 95x19 [r0 c2]
+            text "auto" 204,186 32x16
+    table <table> 0,211 151x56
+      row-group <tbody> 0,213 151x52
+        row <tr> 0,213 151x52
+          cell <td> 2,213 25x52 [r0 c0]
+            text "top" 3,215 23x16
+          cell <td> 29,213 28x52 [r0 c1]
+            text "mid" 30,231 26x16
+          cell <td> 59,213 53x52 [r0 c2]
+            text "bottom" 60,248 51x16
+          cell <td> 114,213 35x52 [r0 c3]
+            text "base" 115,215 33x16
+            text "line" 115,231 25x16
+    table <table> 0,273 200x56
+      row-group <tbody> 0,275 200x52
+        row <tr> 0,275 200x52
+          cell <td> 2,275 156x52 [r0 c0]
+            text "A long cell text that" 3,277 138x16
+            text "must wrap inside a" 3,293 133x16
+            text "narrow table" 3,310 88x16
+          cell <td> 160,275 38x52 [r0 c1]
+            text "short" 161,293 36x16
+    table <div> 0,336 95x17
+      anon-row-group 0,336 95x17
+        anon-row 0,336 95x17
+          cell <div> 0,336 60x17 [r0 c0]
+            text "css" 0,336 22x16
+          cell <div> 60,336 35x17 [r0 c1]
+            text "table" 60,336 35x16

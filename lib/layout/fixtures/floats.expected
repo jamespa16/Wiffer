@@ -1,0 +1,29 @@
+block <html> 0,0 400x285
+  block <body> 0,0 300x284
+    block <div.l> 0,0 80x60 float-left
+    block <div.r> 240,0 60x40 float-right
+    block <p> 0,0 300x96
+      text "Text flows around" 80,0 140x19
+      text "the two floats and" 80,19 145x19
+      text "then continues" 80,39 119x19
+      text "below them once it runs" 80,58 194x19
+      text "out of room beside them." 0,77 203x19
+    block <div.clear> 0,96 300x10
+    block <div.l> 0,106 80x60 float-left
+    block <div.bfc> 80,106 220x58
+      text "A new block formatting" 80,106 186x19
+      text "context sits beside the" 80,125 182x19
+      text "float." 80,145 41x19
+    block <div.clear> 0,166 300x10
+    block <div.contain> 0,176 300x60
+      block <div.l> 0,176 80x60 float-left
+      text "contained" 80,176 79x19
+    block <div.shrink> 0,236 91x19 float-left
+      text "shrink to fit" 0,236 91x19
+    block <div.shrink> 91,236 98x19 float-left
+      text "second float" 91,236 98x19
+    block <div.clear> 0,255 300x10
+    block <p> 0,265 300x19
+      text "inline " 0,265 49x19
+      block <span.r> 240,265 60x20 float-right
+      text "float inside a line" 49,265 137x19
