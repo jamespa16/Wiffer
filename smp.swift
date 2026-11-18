@@ -161,6 +161,21 @@ func panicHaltThisCPU() -> Never {
 
 // MARK: cpus command, selftests
 
+/// Bit i set if CPU i is running a non-idle task, for the taskbar. Lock-free
+/// word reads (a stale answer is fine). An AP is busy while its watchdog is
+/// active (it runs a real task, not its idle task). CPU 0 is the one reading
+/// this, from the main loop, so it counts as busy if its switch count moved
+/// since the last call (some task ran there in between).
+var lastCPU0Switches: UInt64 = 0
+func cpuBusyMask() -> UInt64 {
+    var mask: UInt64 = 0
+    for i in 1..<max(smpStarted, 1) where perCPUEntry(i).pointee.watchdogActive != 0 { mask |= 1 << UInt64(i) }
+    let sw = perCPUEntry(0).pointee.switches
+    if sw != lastCPU0Switches { mask |= 1 }
+    lastCPU0Switches = sw
+    return mask
+}
+
 func cpusInfo() -> [String] {
     var lines = ["cpu  apic  online  task  switches  wakeups  ipis  contention"]
     let names = currentTaskNames()

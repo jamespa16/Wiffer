@@ -427,7 +427,9 @@ final class WindowManager {
 
     /// Clock and memory in the taskbar (statusBarRefresh, twice a second).
     func refreshStatus(_ text: String) {
-        guard let tb = taskbar, tb.setStatus(text) else { return }
+        guard let tb = taskbar else { return }
+        let cpusChanged = tb.setCPUs(count: onlineCPUCount(), busy: cpuBusyMask())
+        guard tb.setStatus(text) || cpusChanged else { return }
         compositor.damage(tb)
     }
 

@@ -84,6 +84,7 @@ func runSelfTests() -> Never {
 
     // Phase S: the SMP scheduler.
     schedTests(&t)
+    parTests(&t)
 
     // Phase M: RAM filesystem, ustar, file commands.
     fsTests(&t)

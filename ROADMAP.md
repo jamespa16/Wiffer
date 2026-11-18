@@ -698,4 +698,27 @@ The whole existing suite still passes on `--smp 1` and `--smp 4`.
 - Taskbar: show the CPU count, plus a busy dot per CPU (idle or not).
 - Harness: `smp_checks` boots with `-smp 4`, runs `cpus` and `par`, and
   checks the result.
+
+**Done** (par.swift, shell.swift, taskbar.swift, wm.swift, smp.swift,
+selftest.swift, tests/serial_session.py; the docs bullet below is still
+open). `par [n]` (default 3,000,000, 2..100,000,000) spawns one `.any`
+worker per online CPU, each trial-dividing strided 4096-number chunks of
+[0, n) (yielding per chunk so the watchdog stays quiet), then repeats with
+one worker. Workers never print: each posts `.message(worker << 48 | cpu << 40
+| count)` to the shell task, which gathers them with `waitEvent()`; any
+other event that arrives meanwhile (keys) is stashed and re-posted to the
+shell task afterwards. Output: a line per worker (id, cpu, primes), the
+parallel and single totals with ticks and ms, "ERROR totals differ" on a
+mismatch, and the speedup. Measured under QEMU TCG (MTTCG is already the
+default; no `-accel` change needed): default n at `-smp 4` 13 vs 55 ticks
+for 2M (4.2x); `-smp 2` 2.0x; `-smp 1` 1.0x. Taskbar: "cpu N" plus one dot per
+CPU left of the status text (filled = busy, outlined = idle); an AP is busy
+while its `watchdogActive` word is set, CPU 0 (which does the reading) while
+its switch count moved since the last refresh. Updated with the clock, twice
+a second; the existing taskbar pixel checks needed no change. Harness:
+`smp_checks` (run in the main session) checks `cpus` row count, `par 1000000`
+(78498) and `par 200000` (17984) totals, the worker count, more than one CPU
+used when `-smp` >= 2, the speedup line and bad input; a `help` line check
+for `par`; selftests cover `countPrimes` (pi(10)=4, pi(100)=25,
+pi(10000)=1229) and the strided split.
 - Update "Where we are" and README.md's Wiffer entry.

@@ -56,6 +56,7 @@ CHECKS = [
     ("clear", "\x1b[2J"),
     ("fault", "usage: fault"),
     ("help", "uptime"),
+    ("help", "count primes below n"),
     # Phase D: [String: Int] shell variables.
     ("help", "set <name> <n>"),
     ("set answer 42", "> "),
@@ -610,6 +611,8 @@ def main():
         failures += not ok
         print(f"{'PASS' if ok else 'FAIL'}: uptime advances (ticks {samples})")
 
+        failures += smp_checks(s, opts.timeout)
+
         # fault <kind>: a report, then QEMU exits via isa-debug-exit.
         for kind, want, fs in faults:
             got = fs.read_prompt(opts.timeout)
@@ -769,6 +772,41 @@ def main():
             ed.close()
         if term:
             term.close()
+
+
+def smp_checks(s: Session, timeout: float) -> int:
+    """Phase T: `cpus` and `par` agree with the -smp count; `par` finds the
+    right number of primes, spread over more than one CPU when there is one."""
+    failures = 0
+    def check(ok, label, detail=""):
+        nonlocal failures
+        failures += not ok
+        print(f"{'PASS' if ok else 'FAIL'}: {label}" + ("" if ok else f"\n  {detail}"))
+        return ok
+    n_cpus = int(SMP)
+    got = s.command("cpus", timeout)
+    rows = re.findall(r"^(\d+)  \d+  yes  ", got, re.M)
+    check(len(rows) == n_cpus, f"smp: `cpus` lists {n_cpus} online CPU(s)", repr(got))
+    got = s.command("par 1000000", 60.0)
+    workers = [(int(w), int(c), int(p)) for w, c, p in
+               re.findall(r"worker (\d+)  cpu (\d+)  primes (\d+)", got)]
+    total = re.search(r"parallel: (\d+) primes in (\d+) ticks", got)
+    single = re.search(r"single:\s+(\d+) primes in (\d+) ticks", got)
+    # pi(1000000) = 78498
+    check(total and single and int(total.group(1)) == 78498 and int(single.group(1)) == 78498
+          and sum(p for _, _, p in workers) == 78498 and "ERROR" not in got,
+          "smp: par 1000000 finds 78498 primes in parallel and single", repr(got))
+    check(len(workers) == n_cpus, f"smp: par runs {n_cpus} worker(s)", repr(got))
+    cpus_used = {c for _, c, _ in workers}
+    if n_cpus >= 2:
+        check(len(cpus_used) > 1, f"smp: par workers ran on several CPUs ({sorted(cpus_used)})", repr(got))
+    check(re.search(r"speedup: \d+\.\d\d", got) is not None,
+          "smp: par prints a speedup line", repr(got))
+    got = s.command("par 200000", 60.0)
+    check("parallel: 17984 primes" in got and "single:   17984 primes" in got, "smp: par 200000 finds 17984 primes", repr(got))
+    got = s.command("par x", timeout)
+    check("usage: par" in got, "smp: par rejects a bad count", repr(got))
+    return failures
 
 
 def desktop_checks(s: Session, timeout: float) -> int:

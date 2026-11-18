@@ -31,12 +31,25 @@ final class Taskbar: Layer {
     /// Clock and memory, right-aligned.
     private(set) var status = ""
     var theme: WindowTheme
+    /// Online CPUs and a bit per busy one (Phase T), left of the status text.
+    private(set) var cpuCount = onlineCPUCount()
+    private(set) var cpuBusy: UInt64 = 0
+    static let dotSize = 8
+    static let dotGap = 4
 
     init(screen: Rect, theme: WindowTheme) {
         self.theme = theme
         super.init(frame: Rect(screen.x, screen.maxY - Taskbar.height, screen.w, Taskbar.height),
                    band: .panel, opaque: true)
     }
+
+    /// Width of the CPU widget: "cpu N" and one dot per CPU.
+    var cpuWidth: Int {
+        theme.font.textWidth("cpu \(cpuCount)") + 6 + cpuCount * (Taskbar.dotSize + Taskbar.dotGap) + 8
+    }
+
+    /// Where the CPU widget starts.
+    var cpuX: Int { statusX - cpuWidth }
 
     /// Where the status text starts.
     var statusX: Int { frame.maxX - theme.font.textWidth(status) - 6 }
@@ -57,7 +70,7 @@ final class Taskbar: Layer {
         let sorted = windows.sorted { $0.id < $1.id }
         guard !sorted.isEmpty else { return }
         // Leave room for the status text (up to 48 cells, or half the bar).
-        let room = max(frame.maxX - min(48 * fw, frame.w / 2) - x, 0)
+        let room = max(frame.maxX - min(48 * fw + cpuWidth, frame.w / 2) - x, 0)
         let each = min(Taskbar.buttonWidth, room / sorted.count)
         guard each >= 3 * fw else { return }
         for w in sorted {
@@ -70,6 +83,14 @@ final class Taskbar: Layer {
     func setStatus(_ text: String) -> Bool {
         guard text != status else { return false }
         status = text
+        return true
+    }
+
+    /// Set the CPU widget's state; true if it changed (the caller damages).
+    func setCPUs(count: Int, busy: UInt64) -> Bool {
+        guard count != cpuCount || busy != cpuBusy else { return false }
+        cpuCount = count
+        cpuBusy = busy
         return true
     }
 
@@ -106,6 +127,22 @@ final class Taskbar: Layer {
             s.withClip(Rect(i.rect.x + 2, i.rect.y, i.rect.w - 4, i.rect.h)) {
                 s.drawText(label, font: th.font, at: Point(i.rect.x + th.font.width, ty), fg: th.buttonText, bg: nil)
             }
+        }
+        // CPU widget: busy CPUs are filled, idle ones are outlined.
+        let label = "cpu \(cpuCount)"
+        var dx = cpuX
+        s.drawText(label, font: th.font, at: Point(dx, ty), fg: th.taskbarText, bg: nil)
+        dx += th.font.textWidth(label) + 6
+        let dy = frame.y + (frame.h - Taskbar.dotSize) / 2
+        for i in 0..<cpuCount {
+            let r = Rect(dx, dy, Taskbar.dotSize, Taskbar.dotSize)
+            if cpuBusy & (1 << UInt64(i)) != 0 {
+                s.fill(r, th.buttonFocusedBG)
+            } else {
+                s.fill(r, th.borderUnfocused)
+                s.fill(Rect(r.x + 1, r.y + 1, r.w - 2, r.h - 2), th.taskbarBG)
+            }
+            dx += Taskbar.dotSize + Taskbar.dotGap
         }
         s.drawText(status, font: th.font, at: Point(statusX, ty), fg: th.taskbarText, bg: nil)
     }
