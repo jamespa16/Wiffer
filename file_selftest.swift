@@ -187,5 +187,10 @@ func programTests(_ t: inout SelfTest) {
     let leaked = frames - pmm.freeFrames - (splitPages - splits)
     if leaked != 0 { print("  pmm: \(leaked) frames leaked by the 6E tests") }
     t.check("6E: no frames leaked by files, pipes and programs", leaked == 0)
-    t.check("6E: no heap leaked by files, pipes and programs", HeapUsage() == heap0 || heapWithin(heap0))
+    // (A scheduler or wait-list array may grow once, first time through: allow a
+    // couple of blocks, not a block per run; frames are exact above.)
+    let heapNow = HeapUsage()
+    if heapNow.blocks > heap0.blocks + 2 { print("  heap: \(heap0.blocks) -> \(heapNow.blocks) blocks") }
+    t.check("6E: no heap leaked by files, pipes and programs", heapNow.blocks <= heap0.blocks + 2
+            && heapNow.largeFrames == heap0.largeFrames)
 }
