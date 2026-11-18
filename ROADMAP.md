@@ -962,6 +962,56 @@ It also produces a small fixture image for W's selftest. That fixture is
 `tests/fixtures/fat32-lfn.img.gz`, or a generator in build.sh: whichever
 keeps the ISO small. The kernel would read it as a Limine module.
 
+**Done** (tests/fat32.py, tests/test_fat32.py, tests/fixtures/). Written
+from fatgen103 without looking at fat32.swift.
+- **mkfs** follows the spec: the sectors/cluster table (64 MiB gives 1,
+  so 512-byte clusters), its FATSz formula (64 MiB: 1016-sector FATs,
+  129,008 clusters), 32 reserved sectors, FSInfo at 1/7 and the backup
+  boot sector at 6. It refuses anything up to 66,600 sectors and anything
+  under 65,525 clusters. The smallest volume it accepts is 33 MiB (66,504
+  clusters). The image is created sparse with `truncate`.
+- **Volume** API: `list/read/write/mkdir/remove(recursive)/stat/walk/tree/check`.
+  The FAT is held in memory as an `array('I')` and written to both copies
+  per dirty sector. Everything else is seek/read on the image. Writes are
+  crash-safe in the order the design asks for: new chain, then entry, then
+  free the old chain. Each call syncs FSInfo, and the free count is always
+  recomputed on open.
+- **Names:** exact uppercase 8.3 names get no LFN. All-lowercase base
+  and/or extension use the NT bits 0x08/0x10. Mixed-case 8.3 names
+  (`Readme.txt`) get an LFN with no tail. Anything else gets the spec's
+  basis name (spaces and embedded dots stripped, `+,;=[]` and non-ASCII
+  become `_`) plus `~N`, with N counting up past collisions
+  (`LONGF~10`).
+- **fsck** checks:
+  - the BPB, both signatures, the backup boot sector and both FSInfo
+    sectors
+  - that the FAT copies match, plus FAT[0]/FAT[1] and the dirty bit
+  - the whole directory tree: loops, cross-links, chains that run into
+    free/bad/out-of-range clusters, size against chain length
+  - LFN sequences: orphans, ordinal breaks, checksum mismatch
+  - `.`/`..` position and targets, duplicate names, lost clusters, and the
+    FSInfo free count
+- **Gotcha: no gzip in the kernel.** Raw, the fixture would put 33 MiB in
+  the ISO, and the kernel has no inflate. So there are two copies:
+  `fat32-lfn.img.gz` (35 KB, for the host) and `fat32-lfn.sparse` (15 KB).
+  The sparse file is "FATSPRS1", then u32 total sectors and u32 extent
+  count, then per extent u32 LBA, u32 count and the sectors. The kernel can
+  copy it straight into a `RamDisk(sectorCount:)`.
+  - The expected tree is `FIXTURE_TREE`, documented in
+    `build_fixture`'s docstring: LFN names, NT case bits, a `~2` tail, a
+    lossy name, an empty file, a 10-cluster file, nested dirs, a deleted
+    run, and a root spanning 2 clusters.
+  - A test checks that the committed files match the generator, which is
+    deterministic: fixed volume id and timestamps.
+- **Cross-checks:** macOS `fsck_msdos -n` works on plain image files, and
+  it runs on the images the tests write. `hdiutil attach -nomount` plus
+  `diskutil mount` works without sudo (plain `mount -t msdos` needs root
+  to load the kext). With `FAT32_MOUNT_TEST=1`, the tests mount images
+  both ways: macOS reads our writes, and macOS's writes (with `._` files)
+  fsck clean here. Tests for `mkfs.fat`/`fsck.fat`/mtools are written but
+  skipped here: those tools aren't installed.
+- Not done: rename (the kernel has it; the harness only needs host reads).
+
 ## Phase Y: /disk
 
 - **VFS mounts** (`fs.swift`): `FileSystem.mount(volume, at:)` loads the
