@@ -1854,6 +1854,35 @@ check).
   understands (8F). Media queries: `screen`, `min-width`, `max-width`,
   `prefers-color-scheme: light`. Everything else is parsed and ignored.
 
+**Status: done (host-tested, `./run.sh --hosttest css`).** Decisions:
+
+- **Generic over the element, no existentials.** `CSSElement` is a protocol
+  (tag, id, classes, attribute, parent, previous/next element sibling, root,
+  hover/link/checked/disabled/empty flags, sibling index and count with
+  walking defaults); matching and the cascade are generic functions, and the
+  DOM conforms in the integration step.
+- **Declarations are expanded at parse time** into typed longhands
+  (`CSSDeclaration`), so invalid values drop the whole declaration and the
+  cascade keeps the earlier one. Declarations containing `var()` stay
+  pending and are substituted and expanded per element.
+- **Rule index** by the rightmost compound's id, first class or tag, in three
+  sets (element, `::before`, `::after`); matching has a step budget.
+  `@media` is evaluated when a sheet is added (`CSSStyleResolver.setContext`
+  re-evaluates after a resize); `@supports` is evaluated at parse time
+  (`display: grid` reports unsupported, so pages use their fallbacks).
+- **Computed values:** em/rem/vw/vh/pt/... resolve to px; percentages and
+  calc() stay a `CSSLP` (px + pct%, with optional min/max/clamp bounds) or a
+  `CSSDimension` (auto/none/keyword/length) for layout to resolve.
+  `display: grid` parses as block, `inline-grid` as inline-block.
+- **Not done / known gaps:** `:has()`, `:lang()`, `::first-line`-style
+  pseudo-elements never match; `@font-face`, `@keyframes`, `@container`
+  ignored; `@layer` ordering ignored (contents are plain rules);
+  `url()` values are resolved at parse time through an optional closure
+  (pending `var()` urls are not); `text-decoration` is not inherited by the
+  cascade (layout propagates it); no `counter()`, no `border-radius`,
+  `outline`, `box-shadow`, `letter-spacing` or grid properties.
+
+
 ## Phase 8E: fonts and text (`lib/font`)
 
 - **TrueType reader:** `cmap` (format 4 and 12), `glyf`/`loca`, `hmtx`,
