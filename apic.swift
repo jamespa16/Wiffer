@@ -4,6 +4,8 @@
 // default CPU) everything here is a no-op and the kernel runs on the PIC alone.
 
 enum Vector {
+    /// Phase 6D: the LAPIC timer (APs; preemption only).
+    static let timer: UInt8 = 0xEF
     static let reschedule: UInt8 = 0xF0
     static let halt: UInt8 = 0xF1
     static let ping: UInt8 = 0xF2
@@ -19,6 +21,10 @@ enum APICReg { // x2APIC MSRs
     static let icr: UInt32 = 0x830
     static let lint0: UInt32 = 0x835
     static let lint1: UInt32 = 0x836
+    static let lvtTimer: UInt32 = 0x832
+    static let timerInitial: UInt32 = 0x838
+    static let timerCurrent: UInt32 = 0x839
+    static let timerDivide: UInt32 = 0x83E
 }
 
 /// Set by apicInit when x2APIC was found and enabled on this (boot) CPU.
@@ -104,6 +110,53 @@ func apicInterrupt(_ vector: UInt8) {
     // idle loop then rechecks the run queue).
 }
 
+// MARK: LAPIC timer (Phase 6D1)
+//
+// Every AP runs its LAPIC timer periodically at timerHz, on vector 0xEF, to
+// preempt ring 3 (preempt.swift). CPU 0 keeps the PIT: it is the clock
+// (`ticks`), it preempts CPU 0, and it measures the LAPIC timer once at
+// boot (apicTimerCalibrate): QEMU's LAPICs all count at the same rate.
+
+/// LAPIC timer counts per timer tick (divide by 16); 0 until calibrated
+/// (no x2APIC: no AP timers, and no APs either).
+var apicTimerCountPerTick: UInt64 = 0
+/// Divide configuration 0b0011: divide by 16.
+let apicTimerDivide: UInt64 = 0x3
+
+/// Count the BSP's LAPIC timer over `calibrationTicks` PIT ticks. Needs
+/// interrupts on (the PIT advancing `ticks`). Leaves the BSP's timer off.
+func apicTimerCalibrate() {
+    guard x2apicEnabled, interruptsEnabled else { return }
+    let calibrationTicks: UInt64 = 5
+    wrmsr(APICReg.timerDivide, apicTimerDivide)
+    wrmsr(APICReg.lvtTimer, 0x10000 | UInt64(Vector.timer)) // masked, one-shot
+    let edge = ticks
+    while ticks == edge { hlt() } // start on a tick edge
+    let start = ticks
+    wrmsr(APICReg.timerInitial, 0xFFFF_FFFF)
+    while ticks < start + calibrationTicks { hlt() }
+    let left = rdmsr(APICReg.timerCurrent)
+    wrmsr(APICReg.timerInitial, 0)
+    apicTimerCountPerTick = max((0xFFFF_FFFF - left) / calibrationTicks, 1)
+    puts("apic: LAPIC timer "); printDec(apicTimerCountPerTick); puts(" counts per tick (/16)\n")
+}
+
+/// Start this CPU's LAPIC timer: periodic, unmasked, every tick. An AP, in
+/// apMain, once its IDT is loaded.
+func apicTimerStart() {
+    guard x2apicEnabled, apicTimerCountPerTick != 0 else { return }
+    wrmsr(APICReg.timerDivide, apicTimerDivide)
+    wrmsr(APICReg.lvtTimer, 0x20000 | UInt64(Vector.timer)) // periodic
+    wrmsr(APICReg.timerInitial, apicTimerCountPerTick)
+}
+
+/// Vector 0xEF: EOI, then count the tick for the slice (preempt.swift).
+func apicTimerInterrupt() {
+    apicEOI()
+    thisCPU().pointee.lapicTicks &+= 1
+    sliceTick()
+}
+
 func apicTests(_ t: inout SelfTest) {
     t.check("IDT: all 256 vectors present", (idt[0xF0 * 2] >> 47) & 1 == 1 && (idt[255 * 2] >> 47) & 1 == 1)
     if !x2apicEnabled {
@@ -128,4 +181,7 @@ func apicTests(_ t: inout SelfTest) {
     let tk = ticks
     while ticks < tk + 3 { hlt() }
     t.check("PIC timer ticks through LINT0", ticks >= tk + 3)
+    // 6D1: the BSP's LAPIC timer was measured (and left off).
+    t.check("6D: LAPIC timer calibrated, BSP timer off", apicTimerCountPerTick > 0
+            && rdmsr(APICReg.timerInitial) == 0)
 }

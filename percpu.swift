@@ -78,6 +78,13 @@ struct PerCPU {
     /// 1 while the task running here is a process's thread. The watchdog
     /// leaves those alone: ring-3 code is preempted (6D), not trusted to yield.
     var processRunning: UInt64 = 0
+
+    // Phase 6D (preempt.swift): timer ticks (PIT on CPU 0, LAPIC timer on
+    // the APs) since the running task was switched in; LAPIC timer
+    // interrupts taken; times ring-3 code was preempted here.
+    var sliceTicks: UInt64 = 0
+    var lapicTicks: UInt64 = 0
+    var preemptions: UInt64 = 0
 }
 
 var perCPU = InlineArray<64, PerCPU>(repeating: PerCPU())

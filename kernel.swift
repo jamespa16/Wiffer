@@ -74,6 +74,7 @@ func kernelMain() -> Never {
     ps2Init() // unmasks IRQ1/IRQ2/IRQ12 if the devices answer
     sti()
     puts("GDT, IDT, PIC, PIT and PS/2 ready; interrupts on.\n")
+    apicTimerCalibrate() // Phase 6D1: LAPIC timer counts per PIT tick (for the APs)
 
     // Phase R: start the other CPUs (needs pmm, heap, ticks and the IDT).
     smpInit()

@@ -9,8 +9,8 @@
 - **Part 5: Writing to disk.** Done (Phases U–Z): a FAT32 virtio disk at /disk.
 - **Parts 6–8: Toward a web browser.** Planned: user space (6A–6G),
   networking (7A–7F), and a browser (8A–8I). See the end of this document.
-  Part 6: 6A–6C done (page tables, ring 3 and syscalls, processes, ELF
-  programs in /bin, libwiffer); 6D–6G open.
+  Part 6: 6A–6D done (page tables, ring 3 and syscalls, processes, ELF
+  programs in /bin, libwiffer, preemption and timed sleeps); 6E–6G open.
   Part 7: 7A–7C done (virtio-net, Ethernet/ARP/IPv4/ICMP, UDP, DHCP, DNS);
   7D–7F open.
 
@@ -1612,10 +1612,10 @@ abi/syscalls.swift, user/):
   Ctrl-C or closing the window kills it; a trailing `&` runs it in the
   background. `ps`, `kill <pid>`. Programs: hello, args, alloc, crash
   (null write exec kernel ident ud trap de bp hlt cli io stack exit), spin.
-- Known limit until 6D: a process spinning in ring 3 on CPU 0 can't be
-  killed (nothing else runs there); `kill` reaches other CPUs by IPI.
+- Known limit until 6D (fixed there): a process spinning in ring 3 on
+  CPU 0 couldn't be killed; `kill` reaches other CPUs by IPI.
 
-## Phase 6D: preemption
+## Phase 6D: preemption (done)
 
 **6D1. LAPIC timer on every CPU** (x2APIC MSRs, periodic, calibrated
 against the PIT at boot), vector 0xEF. CPU 0 keeps the PIT for `ticks`.
@@ -1636,6 +1636,73 @@ shell run. `sleep 500` takes 500 ms ± a tick. A preempted `alloc` still
 gets the right checksum.
 
 **Done when:** no user program can stall the desktop by spinning.
+
+**As built** (preempt.swift, apic.swift, task.swift, user/sleep):
+- **Timers.** `apicTimerCalibrate()` (kernelMain, right after the first
+  `sti`) counts the BSP's LAPIC timer (divide 16) over 5 PIT ticks and
+  leaves it off. Each AP's apMain calls `apicTimerStart()`: periodic,
+  vector 0xEF (`Vector.timer`), at the PIT's rate (`cpus` stats:
+  `PerCPU.lapicTicks`). **Decision:** CPU 0 runs no LAPIC timer; the PIT
+  is its clock *and* its preemption tick (the roadmap's "PIT on CPU 0,
+  LAPIC on the APs"), so there's one tick source per CPU. Without
+  x2APIC there are no APs, and the PIT alone preempts CPU 0.
+- **Preemption.** Every tick bumps `PerCPU.sliceTicks` (reset in
+  switchedIn). After the EOI, interrupt_dispatch calls
+  `preemptIfSliceUsed()` for a timer vector (32 or 0xEF) that came from
+  ring 3: with the slice (`sliceLength` = 2) used up, `sti`,
+  `reschedule(.preempt)`, `cli`. **Decision: every switch happens with
+  interrupts on**, the preemption one included, so a task switched in from
+  the IRQ path never inherits IF=0 (and the preempted task, resumed from
+  a normal switch, returns through the stub's `cli; swapgs; iretq`). Ring
+  3 holds no kernel lock or state, so the preempt path is task context and
+  may allocate. A resumed task may be on another CPU: swapgs balances
+  because the user GS is always 0, and switchedIn reloads CR3 / rsp0.
+- **Null SS.** An interrupt from ring 3 loads SS with the null selector;
+  interrupt_dispatch now reloads the kernel's (`load_ss`, bridge.h) on
+  entry from ring 3, else every kernel task switched to from the preempt
+  path ran on with SS = 0 (caught by the "CS/SS are kernel selectors"
+  selftest).
+- `.preempt` is a yield (requeued, `wakeIdleCPU`), except that besides
+  tasks homed here it may take one that has waited `stealDelayTicks`
+  (`takeLongWaiting`), so a new process can't starve while every CPU runs
+  ring-3 code. `PerCPU.preemptions` counts real switches.
+- **Timed waits.** `sleepers: DeadlineList<Task>` (sorted, ties FIFO),
+  behind schedLock, with `nextSleeperDeadline` as a lock-free fast path.
+  CPU 0's IRQ0 runs `expireDeadlines()`: pops expired tasks and
+  `unparkLocked`s them. Allocation-free: popping never allocates, and
+  `ensureRunQueueRoom()` (in spawn) keeps the run queue's capacity above
+  the task count, so enqueue never grows it (a task is queued at most
+  once). Expiry and unpark both just unpark under schedLock, so an early
+  unpark and the deadline can race from any CPUs: the first wakes the
+  task, the second at most leaves a spurious wakeup.
+- **API for 6E `wait` and 7E sockets** (deadlines are absolute `ticks`):
+  `parkUntil(_ deadline: UInt64) -> Bool` (`@discardableResult`; parks
+  until `unpark(task)` or the deadline; true once the deadline passed;
+  `.max` = plain park; spurious wakeups possible, so loop on your own
+  condition and register as a waiter *before* checking it);
+  `sleepUntil(_ deadline: UInt64, interrupted: () -> Bool = { false })
+  -> Bool`; `sleepMilliseconds(_ ms: UInt64, interrupted:) -> Bool`;
+  `deadlineAfter(ms: UInt64) -> UInt64` (rounded up to a tick). Task 0
+  can't block: it gets an immediate return (sleep* busy-wait there).
+- Syscalls 4 `sleep(ms)` (0, or -EINTR when killed; 0 ms yields) and 5
+  `now()` (ms since boot, 10 ms steps). libwiffer `Time.now`,
+  `Time.sleep(ms)`. `/bin/sleep [-v] <ms>` (`-v` prints `slept N ms`).
+- Tests: `preemptTests` (deadline list unit tests; timed park timeout,
+  early unpark from another CPU, a sleeper per CPU, an unpark/deadline
+  race loop; AP LAPIC rate; a spin on CPU 0 beside the selftest task, a
+  preempted `alloc`'s checksum, kill of the CPU-0 spin, a spin per CPU
+  with a pinned task still running on each, `sleep -v 500` within a
+  tick, kill of a sleeper). Harness: N background spins (N = -smp) with
+  the shell, `hello` and `ps` still working, then killed; `sleep -v 500`;
+  Ctrl-C of a foreground spin; and a desktop session where keys typed on
+  the PS/2 keyboard beside N spins echo and are redrawn (OCR). The
+  process checks now run with `--smp 1` too.
+- Known gaps: the slice is per-CPU ticks, not time used, so a task
+  switched in just before a tick gets a short first slice. The MXCSR
+  seen by an IRQ handler is the interrupted user's (pre-existing; no
+  kernel IRQ code uses floating point). Idle APs now wake 100 times a
+  second for their timer (no tickless idle). Kernel code that never
+  yields still freezes its CPU, by design.
 
 ## Phase 6E: files, stdio and wait
 
