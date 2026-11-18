@@ -67,6 +67,7 @@ func terminalWindowTests(_ t: inout SelfTest) {
     t.check("terminal: no other tasks busy", settleTasks())
     let tasksBefore = scheduler.taskCount
     let before = HeapUsage(), frames = pmm.freeFrames, chunks = heap.chunkFrames
+    let splits = splitPages // Phase 6A: guard-page splits keep their page table
     // Measured while the font (its 128 KiB glyph map) is still alive.
     let (after, framesAfter, chunksAfter) = withExtendedLifetime(font) {
         terminalScenario(&t, font)
@@ -75,7 +76,7 @@ func terminalWindowTests(_ t: inout SelfTest) {
     }
     t.check("terminal: every task ended", scheduler.taskCount == tasksBefore)
     t.check("terminal: heap back to baseline (windows, consoles, shells freed)", after == before)
-    t.check("terminal: task stacks returned to the frame allocator", framesAfter + (chunksAfter - chunks) == frames)
+    t.check("terminal: task stacks returned to the frame allocator", framesAfter + (chunksAfter - chunks) + (splitPages - splits) == frames)
     if framesAfter + (chunksAfter - chunks) != frames {
         print("  frames: free \(frames) -> \(framesAfter), heap chunks \(chunks) -> \(chunksAfter)")
     }

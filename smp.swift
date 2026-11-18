@@ -100,6 +100,7 @@ func apEnterStack(_ info: UnsafeMutablePointer<limine_mp_info>) -> Never {
 func apMain(_ cpu: Int) -> Never {
     gdtInit(cpu: cpu) // first: builds this CPU's GDT/TSS, loads them and GS base
     idtLoad()
+    cpuProtectionInit() // Phase 6A: SMEP/SMAP in this CPU's CR4
     apicEnableThisCPU(bsp: false)
     let e = thisCPU()
     e.pointee.cr3 = read_cr3()

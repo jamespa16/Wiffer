@@ -189,7 +189,25 @@ CHECKS = [
     ("cat moved", "\r\nhello  file\r\n"),
     ("rm moved tmp", "> "),
     ("cat /moved", "cat: /moved: no such file or directory"),
-    ("df", "bytes in 3 files, 2 directories"),
+    # README, motd, src/hello.swift, 13 files in /fonts (Part 8), and
+    # Phase 6C's 5 programs in /bin.
+    ("df", "bytes in 21 files, 4 directories"),
+    # Phase 6C: programs from /bin run in ring 3; crashes are reported and
+    # the shell carries on.
+    ("ls /bin", "  hello\r\n"),
+    ("hello", "\r\nHello from ring 3!\r\n"),
+    ("args one two", "argc=3\r\nargv[0]=args\r\nargv[1]=one\r\nargv[2]=two\r\n"),
+    ("alloc", "alloc: checksum 67415360436"),
+    ("crash null", "(crash): page fault at 0x8, rip 0x100_0000_"),
+    ("crash ud", "(crash): invalid opcode, rip 0x100_0000_"),
+    ("crash hlt", "(crash): general protection fault, rip 0x100_0000_"),
+    ("crash stack", "(crash): page fault at 0x7f7f_ffef_f"),
+    ("crash exit", "crash: exit status 3"),
+    ("echo still here", "\r\nstill here\r\n"),
+    ("/bin/hello", "Hello from ring 3!"),
+    ("nosuchprog", "unknown command: nosuchprog"),
+    ("help", "ps              list processes"),
+    ("kill 9999", "kill: no such process: 9999"),
 ]
 
 MOUSE_RE = re.compile(r"mouse: x=(\d+) y=(\d+) buttons=(\d+)")
@@ -718,6 +736,7 @@ def main():
         print(f"{'PASS' if ok else 'FAIL'}: uptime advances (ticks {samples})")
 
         failures += smp_checks(s, opts.timeout)
+        failures += process_checks(s, opts.timeout)
         failures += net_checks(s, opts.timeout)
 
         # fault <kind>: a report, then QEMU exits via isa-debug-exit.
@@ -1031,6 +1050,40 @@ def net_checks(s: Session, timeout: float) -> int:
         check("1 packets transmitted, 1 received" in got, "net: the stack still answers after hostile DNS replies", repr(got))
     finally:
         stop()
+    return failures
+
+
+def process_checks(s: Session, timeout: float) -> int:
+    """Phase 6C: a background `spin` shows in `ps` and `kill` stops it (it
+    runs on an AP: without 6D's preemption a spin on CPU 0 can't be killed)."""
+    failures = 0
+    def check(ok, label, detail=""):
+        nonlocal failures
+        failures += not ok
+        print(f"{'PASS' if ok else 'FAIL'}: {label}" + ("" if ok else f"\n  {detail}"))
+        return ok
+    if int(SMP) < 2:
+        return 0
+    got = s.command("spin &", timeout)
+    m = re.search(r"\[(\d+)\]", got)
+    if not check(m is not None, "6C: spin & prints its pid", repr(got)):
+        return failures
+    pid = m.group(1)
+    time.sleep(0.3)
+    got = s.command("ps", timeout)
+    check(re.search(rf"^\s*{pid}\s+0\s+running\s+\d+\s+spin\r?$", got, re.M) is not None,
+          "6C: ps lists the running spin", repr(got))
+    s.command(f"kill {pid}", timeout)
+    gone = False
+    for _ in range(20):
+        got = s.command("ps", timeout)
+        if not re.search(rf"^\s*{pid}\s", got, re.M):
+            gone = True
+            break
+        time.sleep(0.1)
+    check(gone, "6C: kill stops it (gone from ps)", repr(got))
+    got = s.command("hello", timeout)
+    check("Hello from ring 3!" in got, "6C: the shell still runs programs after kill", repr(got))
     return failures
 
 

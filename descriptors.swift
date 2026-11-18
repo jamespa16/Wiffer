@@ -63,6 +63,7 @@ func gdtInit(cpu: Int) {
     var gdtr = descriptor_ptr(limit: UInt16(e.pointee.gdt.count * 8 - 1), base: address(of: &e.pointee.gdt))
     gdt_load(&gdtr, Selector.kernelCode, Selector.kernelData, Selector.tss)
     perCPUBind(cpu: cpu) // after gdt_load: reloading GS cleared its base
+    syscallInit(cpu: cpu) // Phase 6B: SYSCALL MSRs, KERNEL_GS_BASE
 }
 
 // MARK: IDT
@@ -71,13 +72,15 @@ func gdtInit(cpu: Int) {
 var idt = InlineArray<512, UInt64>(repeating: 0)
 let idtVectors = 256
 let doubleFaultVector = 8
+let breakpointVector = 3
 
-func setGate(_ vector: Int, handler: UInt64, ist: UInt64 = 0) {
+func setGate(_ vector: Int, handler: UInt64, ist: UInt64 = 0, user: Bool = false) {
     // Present, DPL0, type 0xE (64-bit interrupt gate: IF is cleared on entry).
+    // Phase 6B: DPL3 (`user`) lets ring 3 raise it with an `int` instruction.
     idt[vector * 2] = (handler & 0xFFFF)
         | UInt64(Selector.kernelCode) << 16
         | ist << 32
-        | 0x8E << 40
+        | (user ? 0xEE : 0x8E) << 40
         | (handler >> 16 & 0xFFFF) << 48
     idt[vector * 2 + 1] = handler >> 32
 }
@@ -85,7 +88,8 @@ func setGate(_ vector: Int, handler: UInt64, ist: UInt64 = 0) {
 func idtInit() {
     let stubs = isr_stubs()! // a pointer: no copy of the 2 KiB table onto the boot stack
     for v in 0..<idtVectors {
-        setGate(v, handler: stubs[v], ist: v == doubleFaultVector ? 1 : 0)
+        // #BP (int3) is DPL3, so a user int3 is a breakpoint, not a #GP.
+        setGate(v, handler: stubs[v], ist: v == doubleFaultVector ? 1 : 0, user: v == breakpointVector)
     }
     idtLoad()
 }

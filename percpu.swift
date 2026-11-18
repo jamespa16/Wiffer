@@ -17,6 +17,13 @@ struct PerCPU {
     var selfAddress: UInt64 = 0
     /// Word 1 (%gs:8): CPU index, 0 = BSP.
     var index: UInt64 = 0
+    /// Words 2-4 (Phase 6B), used by cpu.S at these fixed offsets (checked
+    /// by perCPUOffsetsOK): the user rsp while the syscall stub switches
+    /// stacks; the kernel stack top for syscalls (the running process's
+    /// user_run point); the address of this CPU's TSS rsp0 field.
+    var syscallUserRSP: UInt64 = 0
+    var syscallKernelRSP: UInt64 = 0
+    var tssRSP0Address: UInt64 = 0
     var apicID: UInt64 = 0
     var online = false
 
@@ -59,6 +66,18 @@ struct PerCPU {
     /// running a real task: off its idle task (APs), or not in idleStep's
     /// hlt (CPU 0). The taskbar's usage meters are deltas of it.
     var busyTicks: UInt64 = 0
+
+    // Phase 6B stats (selftests, `cpus`): syscalls made on this CPU;
+    // interrupts that arrived in ring 3; interrupts that arrived in ring 0
+    // while a syscall was running here (inSyscall: depth, set by
+    // syscall_dispatch).
+    var syscalls: UInt64 = 0
+    var userInterrupts: UInt64 = 0
+    var syscallInterrupts: UInt64 = 0
+    var inSyscall: UInt64 = 0
+    /// 1 while the task running here is a process's thread. The watchdog
+    /// leaves those alone: ring-3 code is preempted (6D), not trusted to yield.
+    var processRunning: UInt64 = 0
 }
 
 var perCPU = InlineArray<64, PerCPU>(repeating: PerCPU())

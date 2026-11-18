@@ -9,6 +9,8 @@
 - **Part 5: Writing to disk.** Done (Phases U–Z): a FAT32 virtio disk at /disk.
 - **Parts 6–8: Toward a web browser.** Planned: user space (6A–6G),
   networking (7A–7F), and a browser (8A–8I). See the end of this document.
+  Part 6: 6A–6C done (page tables, ring 3 and syscalls, processes, ELF
+  programs in /bin, libwiffer); 6D–6G open.
   Part 7: 7A–7C done (virtio-net, Ethernet/ARP/IPv4/ICMP, UDP, DHCP, DNS);
   7D–7F open.
 
@@ -1413,7 +1415,7 @@ address space. A crashing or spinning program is killed or preempted while
 the desktop keeps running. Programs can read and write files, print to the
 terminal that started them, and open their own windows.
 
-## Phase 6A: page tables
+## Phase 6A: page tables (done)
 
 **6A1. `AddressSpace`** (`vmm.swift`). Owns a PML4 frame and the page
 table frames under slots 1–254. `map(virt, phys, count, flags)`,
@@ -1444,7 +1446,29 @@ MMIO map of the framebuffer compared through both mappings.
 **Done when:** the kernel runs unchanged on its own boot PML4, and an
 `AddressSpace` can be created, entered, left and freed with no leaks.
 
-## Phase 6B: ring 3 and syscalls
+**As built** (vmm.swift, vmm_selftest.swift):
+- `PageFlags` are the PTE bits themselves (`.write`, `.user`, `.noExec`,
+  `.uncached` = PCD|PWT) plus software bit 9, `.owned`. `AddressSpace()`
+  copies PML4 slots 0 and 255–511 from the boot PML4; `AddressSpace.kernel`
+  wraps it (`kernelCR3`). `write(virt, bytes)` fills pages of a space that
+  isn't loaded, through the identity map (the ELF loader uses it).
+- `vmmInit()` (kernel.swift, after the heap) preallocates PDPTs for every
+  empty slot 256–511 (254 frames), and `cpuProtectionInit()` (every CPU)
+  checks NXE and sets SMEP/SMAP from CPUID. `userAccessBegin/End` wrap
+  stac/clac.
+- `mapMMIO` maps into PML4 slot 384 (0xffff_c000_0000_0000), with an
+  unmapped page after each mapping.
+- Guard pages: `spawn` allocates one extra frame below each stack and
+  clears its present bit in the identity map (`setGuardPage`), splitting
+  Limine's huge pages as needed. **Decision:** a split costs a page-table
+  frame that is never returned (`splitPages` counts them), so the existing
+  task/terminal leak checks allow exactly that many frames. The HHDM shares
+  the tables, so the guard is absent there too.
+- TLB: a user space is live on one CPU at a time (switchedIn reloads CR3
+  for every task, the kernel's for kernel tasks), so only local invlpg is
+  needed. Kernel-half changes are new mappings or present → absent.
+
+## Phase 6B: ring 3 and syscalls (done)
 
 **6B1. Entry stubs** (cpu.S, kept tiny). The `syscall` entry: swapgs,
 save the user rsp in per-CPU scratch, load the kernel stack from per-CPU,
@@ -1476,7 +1500,36 @@ blob on every CPU.
 **Done when:** a user blob runs, makes syscalls, and exits or is killed
 on every CPU, with the desktop unaffected.
 
-## Phase 6C: processes, ELF and libwiffer
+**As built** (cpu.S, syscall.swift, user_selftest.swift):
+- PerCPU words 2–4 (offsets 16, 24, 32, checked by `perCPUOffsetsOK`) are
+  the syscall stub's user-rsp scratch, the kernel stack for syscalls, and
+  the address of the TSS rsp0 field. `syscallInit(cpu:)` runs at the end
+  of `gdtInit`.
+- **Decision: leaving ring 3 unwinds instead of abandoning the stack.**
+  `user_run(rip, rsp, slot)` pushes the callee-saved state, stores that
+  stack point in `Task.userEntry` (rspSlot[2]), the per-CPU syscall stack
+  and TSS rsp0, and iretqs to ring 3 with clean registers and FPU state.
+  When a process exits, faults or is killed, `syscall_dispatch` /
+  `interrupt_dispatch` (which now return a UInt64) return that point
+  instead of 0, and the stub's `user_leave` makes `user_run` return. Every
+  Swift frame therefore returns normally and releases what it holds; a
+  process that never comes back leaks nothing.
+- Syscall frames are `interrupt_frame`s with vector 0x100. Syscalls run
+  with interrupts on. The #BP gate is DPL 3 (else a user int3 is a #GP).
+- `copyIn`, `copyOut`, `withUserBuffer` check each page (user, writable for
+  copyOut), fault in absent pages of mapped regions first, then stac/clac.
+- User faults give `pid 7 (crash): page fault at 0x8, rip
+  0x100_0000_0a48` (`groupedHex`). The report goes to the process's output
+  (the waiting shell's terminal), or the kernel log if it has none.
+- Interrupt stats per CPU: `userInterrupts`, `syscallInterrupts`,
+  `syscalls`. Test-only syscall 99 (`testWaitIRQs`) waits in the kernel for
+  interrupts, for the nested-IRQ test; APs get them as ping IPIs (they have
+  no timer until 6D).
+- The watchdog ignores CPUs running a process's thread
+  (`PerCPU.processRunning`): ring-3 code is to be preempted (6D), not
+  trusted to yield.
+
+## Phase 6C: processes, ELF and libwiffer (done)
 
 **6C1. ELF loader** (`elf.swift`). Static x86-64 `ET_EXEC`. Check the
 magic, class, machine and that every PT_LOAD is inside slots 1–254. Map
@@ -1518,6 +1571,49 @@ kills one.
 **Done when:** `hello` prints from ring 3, `alloc` does real Swift
 allocation, each `crash` kind is reported and the shell carries on, and
 pmm/heap usage returns to baseline after 100 spawns.
+
+**As built** (process.swift, elf.swift, process_commands.swift,
+abi/syscalls.swift, user/):
+- **ABI** (`abi/syscalls.swift`, in the kernel build and every program):
+  `SyscallNumber` 0 exit, 1 yield, 2 debugWrite, 3 getpid, 10 map, 11
+  unmap, 12 protect, 23 write (fds 1/2 only), 99 testWaitIRQs (selftests).
+  Reserved, returning -ENOSYS: 4 sleep, 5 now (6D); 6 spawn, 7 waitpid,
+  8 kill, 20–35 files/pipes/wait/consoleMode (6E); 40–43 windows (6F); 50
+  sockets (7E); 60 getrandom (8A). Also `Errno`, `MapProt` (W|X refused),
+  `AuxKey`, `UserLayout` (image base, mapBase 0x4000_0000_0000, stack top
+  0x7f80_0000_0000, 1 MiB stack).
+- `Process` (pid, parent pid, child pids, regions, output, waiter, status
+  `.exited(n)/.faulted(vector)/.killed`) and its thread, a `.any` Task with
+  `task.process` and `task.cr3`. The process table is CPU 0 data. A kernel
+  task that spawns and will wait names itself the `waiter` (unparked at
+  exit; it reaps with `waitProcess`). New scheduler primitives in task.swift:
+  `park()`/`unpark(task)` (a wake flag, so no lost wakeups),
+  `spawn(…, setup:)`, a mutable `Task.affinity`, and **`onCPU0 { }`** (pin
+  to CPU 0, yield until there, run, restore; a yield by a task that may no
+  longer run on its CPU now always leaves it).
+- Memory: regions (`MemoryRegion`) are demand-zero; `map` is first-fit from
+  mapBase. ELF segments and the top of the stack are mapped eagerly.
+- **Decision (6C output):** without fds yet, `write(1|2)` appends to a
+  `ProcessOutput` buffer (64 KiB cap, the writer parks when full) that the
+  waiting shell copies to its terminal. With no output (a background job)
+  it goes to the kernel log. 6E replaces this with `ConsoleFile`.
+- libwiffer: `start.S` (`_start`, `wiffer_syscall`, mem*, rdtsc/pause and
+  the deliberate faults), `runtime.swift` (Embedded hooks; heap.swift's
+  `pmm`/`heapLock`/`puts` shims over map/unmap), `wiffer.swift`
+  (`Process.args/pid/exit/yield`, `File.stdout.write`, `Memory.map`,
+  `debugPrint`), `libwiffer.h`. Programs have a `main.swift` with top-level
+  code (no `-parse-as-library`); `_start` calls its `main`.
+- Build: build.sh step 5b. **Decision:** user code is LTO-linked with
+  `-mllvm -relocation-model=pic` (a static ET_EXEC, but position-independent
+  code: the small code model's 32-bit absolute relocations can't reach
+  0x100_0000_0000). `user/<prog>/LIBS` pulls in lib/ sources with
+  transitive DEPS. The rootfs is staged in build/rootfs with /bin added.
+- Shell: an unknown word runs `/bin/<word>` (or a path with `/`) and waits;
+  Ctrl-C or closing the window kills it; a trailing `&` runs it in the
+  background. `ps`, `kill <pid>`. Programs: hello, args, alloc, crash
+  (null write exec kernel ident ud trap de bp hlt cli io stack exit), spin.
+- Known limit until 6D: a process spinning in ring 3 on CPU 0 can't be
+  killed (nothing else runs there); `kill` reaches other CPUs by IPI.
 
 ## Phase 6D: preemption
 
