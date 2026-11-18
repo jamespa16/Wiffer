@@ -9,8 +9,9 @@
 - **Part 5: Writing to disk.** Done (Phases U–Z): a FAT32 virtio disk at /disk.
 - **Parts 6–8: Toward a web browser.** Planned: user space (6A–6G),
   networking (7A–7F), and a browser (8A–8I). See the end of this document.
-  Part 6: 6A–6D done (page tables, ring 3 and syscalls, processes, ELF
-  programs in /bin, libwiffer, preemption and timed sleeps); 6E–6G open.
+  Part 6: 6A–6E done (page tables, ring 3 and syscalls, processes, ELF
+  programs in /bin, libwiffer, preemption and timed sleeps, fds, pipes,
+  wait); 6F–6G open.
   Part 7: 7A–7C done (virtio-net, Ethernet/ARP/IPv4/ICMP, UDP, DHCP, DNS);
   7D–7F open.
 
@@ -1704,7 +1705,7 @@ gets the right checksum.
   second for their timer (no tickless idle). Kernel code that never
   yields still freezes its CPU, by design.
 
-## Phase 6E: files, stdio and wait
+## Phase 6E: files, stdio and wait (done)
 
 **6E1. File descriptors.** Each process has an fd table of `FileObject`
 (a class hierarchy: `VFSFile`, `ConsoleFile`, `PipeEnd`, and later
@@ -1735,6 +1736,66 @@ proves the file API on real use.
 **Done when:** `/bin/cat /disk/README.TXT | /bin/wc` works in a
 terminal window, Ctrl-C kills a `spin`, and the shell harness checks
 pass with the ported commands.
+
+**As built** (fileobject.swift, sysfile.swift, process_commands.swift,
+user/libwiffer/files.swift, user/{cat,ls,wc,hexdump,echo,iotest},
+file_selftest.swift):
+- **Ground rule: the kernel never dereferences a user pointer outside
+  `copyIn`/`copyOut`/`withUserBuffer`, and trusts no syscall value.** Every
+  fd, length, count, flag and path is checked (paths: 1...4096 bytes, no
+  NUL; wait: at most 64 fds). `read` validates the destination with
+  `userRangeReady` before taking data from a pipe, so a bad pointer loses
+  nothing. `iotest` (ring 3) covers null, kernel, unmapped, read-only and
+  page-straddling pointers and pointer+length overflow.
+- **FileObject** (`class`, any CPU unless `needsCPU0`): `tryRead(max) ->
+  IOResult`, `tryWrite([UInt8]) -> IOResult` (`.data/.count/.wouldBlock/
+  .error(errno)`; empty `.data` is EOF), `ready() -> Int16` (WaitEvent
+  readable/writable/hangup), `waits: WaitList` (`add/remove/wake`; call
+  `notify()` when readiness may change), `seek`, `stat`, `readdir`,
+  `lastClose()`, `needsCPU0`, `consoleChannel`. Methods never block: the
+  syscall layer (`blockingIO`, `sysWait`) registers on `waits`, re-checks
+  `ready()`, then `park()`s (a kill unparks: -EINTR). Subclasses for 6F
+  windows and 7E sockets override these. Reference counting is explicit:
+  `FdTable.install/set/close` call `addRef/dropRef`; the last drop runs
+  `lastClose` (how a pipe sees its last writer go). The shell holds a count
+  on both ends of each pipe until every stage has its fds.
+- **Decision (console):** a command line's programs share a
+  `ConsoleChannel`; the waiting shell is the pump (`waitProcesses`): it
+  drains output to its terminal, feeds keys from its inbox to the channel's
+  line discipline and kills the programs on Ctrl-C or window close. (Not a
+  post to the terminal's inbox: the shell is already the task that owns the
+  terminal.) Cooked mode (default): echo, Backspace, Ctrl-U, one line per
+  read, Ctrl-D on an empty line is EOF. `console_mode(fd, ConsoleMode.raw
+  [| .passInterrupt])`: keys as bytes (arrows as ESC [ A..D), no echo;
+  Ctrl-C still kills unless `passInterrupt`. Background jobs and a channel
+  after its command ended log to the kernel log and read EOF.
+- **VFSFile** works on a private copy when opened for writing and writes it
+  through (`vfs.write`, so /disk too) when its last fd closes; other opens
+  see the new bytes then. Known gap: a large file written in pieces is
+  rewritten whole at close (FAT write-through is whole-file).
+- **Syscalls:** spawn 6 `(path,len,argv blob,len,fds)`, waitpid 7, kill 8
+  (children or self), open 20, close 21, read 22, write 23, seek 24, stat
+  25, readdir 26 (DirRecord stream), mkdir 27, unlink 28 (file or empty
+  dir), rename 29, getcwd 30, chdir 31, dup2 32, pipe 33, wait 34
+  `(WaitFD array, count, timeoutMs)`, consoleMode 35, fstat 36.
+  `handleSyscall` now takes a fifth argument (r8). `wait` uses 6D's
+  `parkUntil`/`deadlineAfter`.
+- **Shell:** `a | b | c` runs programs only (a bare name is /bin/name).
+  **Resolution order:** built-in commands first (`cat`, `ls`, `echo` stay
+  built in: the in-kernel selftests and many serial checks use their exact
+  output), then /bin/<word>; a word with `/` always runs the program, so
+  `/bin/cat` is the port. The ports (cat, ls, wc, hexdump, echo) pass the
+  same harness checks; removing the built-ins was left out of scope.
+  `set affinity <cpu>` pins started programs to a CPU.
+- **libwiffer:** `File.open/read/readAll/write/writeAll/seek/stat/close/
+  dup2/pipe/readDirectory`, `File.stdin`, `FS.list/stat/mkdir/unlink/
+  rename/getcwd/chdir`, `wait(&[WaitFD], timeoutMs:)`, `Console.setMode`,
+  `Process.spawn/waitpid/kill`, `SysError(errno).message`.
+- Known gaps: no redirection (`>`), no fd inheritance flags (spawn
+  inherits 0-2 or three chosen fds), no `O_NONBLOCK`, pipes have no
+  `SIGPIPE` (-EPIPE only), processes are limited to 256 and 64 children,
+  and a program's output to a terminal window is copied by the shell task
+  on CPU 0 (a flood is bounded by the channel's 64 KiB).
 
 ## Phase 6F: windows for processes
 
@@ -2519,6 +2580,113 @@ Pure Swift, host-tested (`./run.sh --hosttest font`, 516 checks).
   no hinting, no CFF/WOFF. The taskbar and window titles do not use it yet.
 
 ## Phase 8F: layout and paint (`lib/layout`)
+
+**Status: done** (`./run.sh --hosttest layout`, 139 checks; DEPS html css
+font image). Decisions and results:
+
+- **API (`LayoutEngine`)**: built from a parsed document and a configured
+  `TextEngine` (fonts are loaded by the caller; the library does no I/O).
+  `styleSources` lists `<style>` and `<link rel=stylesheet>` in document
+  order; inline sheets are parsed at once (`resolveURL` resolves their
+  url()s), linked ones are supplied later with `setStyleSheets(slot:_:)`
+  (imports first); `addStyleSheet` appends a user sheet. `imageSize`
+  (a closure, url as written -> (w, h) or nil) gives intrinsic sizes;
+  `imagesChanged()` relayouts without restyling. `setViewport`,
+  `setHover(node) -> needsRepaint`, `invalidateStyle`, then `update()`
+  does only what is dirty. `paint(into:stride:width:height:scrollX:scrollY:
+  images:controlPainter:)` rasterizes the display list into an XRGB buffer
+  (images closure returns natural-size `ImageBitmap`s; scaled copies are
+  cached); `hitTest(x:y:scrollX:scrollY:)` -> `LayoutHit` (deepest element,
+  link + href, control, cursor, title), `linkAt`, `rect(of:)`,
+  `fragmentY(_:)`, `formControls` (rects for the browser to draw over and
+  route input to; `controlValues`/`controlChecked` override the drawn
+  state), `title`, `imageURLs`, `documentWidth/Height`, `canvasColor`,
+  `quirksMode`, `dump()`.
+- **Styling**: `LayoutElement` wraps `HTMLNode` as a `CSSElement` (hover
+  set, cached class lists, sibling index from `HTMLNode.index`). HTML
+  presentational hints (bgcolor, text, width/height, align, valign, nowrap,
+  cellpadding/cellspacing/border, `<font>`, hspace/vspace, `br clear`, hr)
+  are generated as CSS and passed through a new `hints:` parameter of
+  `CSSStyleResolver.computeStyle`, which cascades them below every author
+  rule (the one change in lib/css). Attribute values are filtered so they
+  cannot inject CSS. `<center>`/`align=center` also centers block children
+  (the legacy `-webkit-center` behavior). Quirks mode (no/legacy doctype)
+  adds the spec's `table { font-size/text-align/...: initial }` rules.
+- **Box tree**: one `LayoutBox` class with a kind; anonymous blocks around
+  inline runs, block-in-inline turns the inline into a block (simplified),
+  anonymous table parts (CSS tables work), blockified flex items,
+  `display: contents`, `::before/::after` with string and `attr()` content,
+  outside/inside list markers (disc/circle/square as glyphs, decimal, alpha,
+  roman, greek; `start`, `value`), replaced elements (img, input, select,
+  textarea, iframe/video/canvas/svg as 300x150, meter/progress). Whitespace
+  collapses across boxes per `white-space`; text-transform; text is shaped
+  once per box tree.
+- **Layout**: block widths (auto/fixed/%/min/max/box-sizing/auto margins),
+  margin collapsing (siblings, parent/first child via a pre-walk, parent/last
+  child, empty blocks), floats with line shortening and clearance, BFC roots
+  avoid and contain floats; inline line breaking at break opportunities with
+  inline box edges, vertical-align (all keywords and lengths), text-align
+  incl. justify, text-indent, line-height struts, atomic inlines; tables
+  (grid with colspan/rowspan, auto layout from min/max content with fixed and
+  percentage columns and spanning cells, fixed layout, `<col width>`,
+  border-spacing, simplified border-collapse that drops shared edges,
+  captions, row heights, cell vertical-align incl. baseline); flexbox (row,
+  column, wrap, basis/grow/shrink with the freeze loop and min-content
+  automatic minimum, justify-content, align-items/self, auto margins, gaps,
+  reverse); relative/absolute/fixed positioning (static positions, auto
+  margin centering), sticky = relative with zero offset. BFC-root layouts
+  are cached per pass (key: widths/forced size), and intrinsic widths are
+  cached, so nested shrink-to-fit/flex/table layouts stay linear.
+- **Paint**: display list in CSS 2.1 Appendix E order (own background,
+  negative z, block backgrounds, floats, inline content, z auto/0, positive
+  z), each item with its overflow clip and opacity-multiplied alpha; fixed
+  subtrees are viewport-relative. Borders solid/dashed/dotted/double/
+  inset/outset approximations, text-decoration lines, background colors and
+  images (repeat/repeat-x/-y/no-repeat from the padding-box origin), images,
+  default form control appearance (or the browser's painter callback), alt
+  text. Root/body background becomes the canvas. Painting skips items
+  outside the viewport.
+- **Hover**: a hover change only restyles if a :hover compound matches an
+  element entering/leaving the chain; paint-only changes are applied in
+  place (styles, propagated decorations, display list), layout-affecting
+  ones fall back to a full restyle.
+- **Limits and recursion**: box depth `LayoutLimits.maxDepth` = 200 (deeper
+  elements get no boxes), 400k boxes, 1000 table columns, 20k rows, 1000
+  floats per context, font-size 512. All numbers pass through `layoutSan`
+  (NaN -> 0, clamp +-1e7). Layout recurses once per box level; the recursive
+  frames hold no `CSSComputedStyle` (944 bytes) copies (style work is out of
+  line), so all robustness cases (5000-deep divs/spans, 600 nested tables,
+  floats, flex, lists) pass with a 256 KB stack on the host. The browser
+  should run with at least 512 KB of stack.
+- **Tests**: 15 fixture pages (`lib/layout/fixtures/*.html` with `.expected`
+  dumps; `WIFFER_LAYOUT_REGEN=1` rewrites them) incl. a saved Hacker News
+  front page with its CSS; paint pixel checks (boxes, scrolling, fixed, text
+  ink inside its box, clipping, z-order, float over block, opacity, borders,
+  dashes, canvas, images, background tiles, visibility, control painter);
+  hit tests; API tests (hover in place and fallback, late images, resize with
+  media queries, link slots, quirks, hint injection, control state);
+  robustness; a 400-mutant pipeline fuzz (parse, layout, paint, hit, hover,
+  resize). `WIFFER_LAYOUT_RENDER=page.html[:sheet.css]` paints any saved page
+  to `build/hosttest/render.ppm` (DDG lite, text.npr.org, lite.cnn.com,
+  Wikipedia and HN all render recognizably).
+- **Timings** (host, -Osize, Apple silicon, CPU time, varies 2x with load):
+  Wikipedia article (783 KB + 228 KB of its real CSS): style 120-240 ms,
+  layout 20-35 ms, display list 3 ms (style+layout 140-290 ms); relayout
+  only 11-20 ms; paint about 1 ms per 1024x768 frame; resize 160-250 ms;
+  hover over a link 170 ms (in place, but a large subtree). Hacker News:
+  5-14 ms. Style time is dominated by lib/css selector matching.
+- **Known gaps**: no outlines, border-radius, box-shadow, gradients, masks
+  (Wikipedia's mask-image icons paint as dark squares), letter-spacing,
+  `order`, align-content, grid (block); block-in-inline is not split; abspos
+  inside a positioned inline uses the line's container; sticky does not
+  stick; only the viewport scrolls (overflow: auto/scroll clip like hidden);
+  border-collapse is a simplification (no conflict resolution); table
+  baseline alignment is per row only; percentage heights need a definite
+  container; quirks-mode line-height rules are not emulated; text boxes
+  carry a full style copy (memory); hover restyle still walks the hovered
+  element's parent subtree; `style=""` url()s are not resolved (the browser
+  resolves every URL it is given against the base); no bidi/vertical text.
+
 
 - **Box tree** from the DOM and computed styles: `display` (none, block,
   inline, inline-block, list-item, table parts, flex), anonymous block

@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<style>
+body { margin: 0; font: 16px sans-serif }
+.q::before { content: "[" }
+.q::after { content: "]" attr(data-x) }
+.blk::before { content: "block before"; display: block; background: #ccc }
+.none { display: none }
+.contents { display: contents }
+.contents > span { color: red }
+</style>
+<p class=q data-x="!">quoted</p>
+<div class=blk>after the block</div>
+<div>visible <span class=none>hidden</span> text</div>
+<div><div class=contents><span>a</span> <span>b</span></div></div>
+<div style="visibility:hidden">invisible but laid out</div>

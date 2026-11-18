@@ -1,0 +1,24 @@
+block <html> 0,0 400x131
+  block <body> 0,16 400x115
+    block <p.q> 0,16 400x19
+      inline <p.q>::before 0,16 6x19
+        text "[" 0,16 6x19
+      text "quoted" 6,16 56x19
+      inline <p.q>::after 63,16 13x19
+        text "]!" 63,16 13x19
+    block <div.blk> 0,35 400x38
+      block <div.blk>::before 0,35 400x19
+        text "block before" 0,35 99x19
+      anon-block 0,54 400x19
+        text "after the block" 0,55 117x19
+    block <div> 0,74 400x19
+      text "visible " 0,74 56x19
+      text "text" 56,74 32x19
+    block <div> 0,93 400x19
+      inline <span> 0,93 10x19
+        text "a" 0,93 10x19
+      text " " 10,93 5x19
+      inline <span> 15,93 10x19
+        text "b" 15,93 10x19
+    block <div> 0,112 400x19
+      text "invisible but laid out" 0,112 163x19

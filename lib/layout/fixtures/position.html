@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<style>
+body { margin: 0; font: 16px sans-serif }
+.rel { position: relative; top: 10px; left: 20px; height: 30px; background: #ccc }
+.cb { position: relative; height: 100px; margin: 10px; background: #eee }
+.abs { position: absolute; top: 5px; right: 10px; width: 50px; height: 20px; background: red }
+.abs2 { position: absolute; left: 10px; right: 10px; bottom: 0; height: 15px; background: blue }
+.abs3 { position: absolute; background: green }
+.fixed { position: fixed; bottom: 0; left: 0; width: 100px; height: 20px; background: black }
+.z1 { position: absolute; top: 0; left: 0; width: 40px; height: 40px; background: #f00; z-index: 2 }
+.z2 { position: absolute; top: 10px; left: 10px; width: 40px; height: 40px; background: #0f0; z-index: 1 }
+.center { position: absolute; left: 0; right: 0; width: 100px; margin: auto; top: 50px; height: 10px; background: #00f }
+.sticky { position: sticky; top: 0; height: 10px; background: #888 }
+</style>
+<div class=rel>relative <span style="position:relative; top:-5px">up</span></div>
+<div class=cb>
+  <div class=abs></div>
+  <div class=abs2></div>
+  <span>static position: <span class=abs3>abs</span></span>
+  <div class=z1></div><div class=z2></div>
+  <div class=center></div>
+</div>
+<div class=sticky>sticky</div>
+<div class=fixed>fixed</div>

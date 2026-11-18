@@ -1,0 +1,45 @@
+block <html> 0,0 400x288
+  block <body> 0,0 400x288
+    block <p> 0,0 400x44
+      text "base " 0,25 43x19
+      inline-block <span.ib> 43,0 20x40
+      text " line" 63,25 34x19
+    block <p> 0,44 400x44
+      text "mid " 0,70 35x19
+      inline-block <span.sm> 35,75 10x10
+      text " " 45,70 5x19
+      inline-block <span.ib> 50,44 20x40
+    block <p> 0,89 400x44
+      text "top " 0,114 31x19
+      inline-block <span.sm> 31,89 10x10
+      text " " 41,114 5x19
+      inline-block <span.ib> 46,89 20x40
+    block <p> 0,133 400x44
+      text "bottom " 0,159 63x19
+      inline-block <span.sm> 63,168 10x10
+      text " " 73,159 5x19
+      inline-block <span.ib> 78,133 20x40
+    block <p> 0,178 400x20
+      text "text-top " 0,179 69x19
+      inline-block <span.sm> 69,179 10x10
+      text " text-bottom " 79,179 105x19
+      inline-block <span.sm> 184,187 10x10
+    block <p> 0,198 400x30
+      text "x" 0,204 9x19
+      inline <sub> 9,210 24x16
+        text "sub" 9,210 24x16
+      text " y" 33,204 15x19
+      inline <sup> 48,200 24x16
+        text "sup" 48,200 24x16
+      text " z" 72,204 13x19
+      inline <span> 85,199 30x19
+        text "up5" 85,199 30x19
+    block <p> 0,227 400x41
+      text "img " 0,243 35x19
+      replaced <img> 35,227 40x30
+      text " " 75,243 5x19
+      replaced <img> 80,238 40x30
+    block <p> 0,268 400x20
+      inline-block <span.ib> 0,268 167x20
+        text "inline-block with text" 0,269 167x19
+      text " after" 167,269 43x19

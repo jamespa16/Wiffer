@@ -306,6 +306,10 @@ struct Shell<T: Terminal> {
     mutating func execute(_ text: String) {
         let words = text.split(separator: " ")
         guard let name = words.first else { return }
+        if words.contains("|") { // Phase 6E3: a pipeline runs programs only
+            if !runProgram(words) { say("unknown command: \(name)") }
+            return
+        }
         guard let command = commands.first(where: { $0.name == name }) else {
             if runProgram(words) { return } // Phase 6C: /bin/<name>
             say("unknown command: \(name)")

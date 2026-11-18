@@ -208,7 +208,7 @@ func preemptWord(_ i: Int) -> UnsafeMutablePointer<UInt64> {
 /// Spawn a program as the caller's child (it waits) on `affinity`.
 func spawnForTest(_ argv: [String], affinity: Affinity) -> Process? {
     guard let me = scheduler.current, let name = argv.first else { return nil }
-    return try? spawnProcess(path: "/bin/" + name, argv: argv, output: ProcessOutput(reader: me), waiter: me,
+    return try? spawnProcess(path: "/bin/" + name, argv: argv, output: ConsoleChannel(reader: me), waiter: me,
                              affinity: affinity)
 }
 

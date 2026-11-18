@@ -19,7 +19,7 @@ func syscall(_ n: UInt64, _ a1: UInt64 = 0, _ a2: UInt64 = 0, _ a3: UInt64 = 0, 
 }
 
 func sysWrite(_ fd: Int, _ buffer: UnsafeRawPointer, _ count: Int) -> Int {
-    syscall(SyscallNumber.write, UInt64(fd), UInt64(UInt(bitPattern: buffer)), UInt64(count))
+    syscall(SyscallNumber.write, UInt64(bitPattern: Int64(fd)), UInt64(UInt(bitPattern: buffer)), UInt64(count))
 }
 
 func sysMap(_ hint: UInt64, _ length: UInt64, _ prot: UInt64) -> Int {

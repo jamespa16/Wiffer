@@ -45,7 +45,7 @@ func runBlob(_ name: String, _ code: [UInt8], data: [UInt8] = [], cpu: Int? = ni
     guard let me = scheduler.current else { return BlobRun() }
     let affinity: Affinity = cpu.map { .cpu($0) } ?? .any
     do throws(ExecError) {
-        let p = try spawnBlob(name, code: code, data: data, output: ProcessOutput(reader: me), waiter: me,
+        let p = try spawnBlob(name, code: code, data: data, output: ConsoleChannel(reader: me), waiter: me,
                               affinity: affinity)
         return runToExit(p, during: during)
     } catch {
@@ -57,7 +57,7 @@ func runBlob(_ name: String, _ code: [UInt8], data: [UInt8] = [], cpu: Int? = ni
 func runProgramForTest(_ argv: [String]) -> BlobRun {
     guard let me = scheduler.current, let name = argv.first else { return BlobRun() }
     do throws(ExecError) {
-        let p = try spawnProcess(path: "/bin/" + name, argv: argv, output: ProcessOutput(reader: me), waiter: me)
+        let p = try spawnProcess(path: "/bin/" + name, argv: argv, output: ConsoleChannel(reader: me), waiter: me)
         return runToExit(p)
     } catch {
         print("  \(name): \(error.message)")
@@ -270,7 +270,7 @@ func processTests(_ t: inout SelfTest) {
     // kill: a spinning process on another CPU is stopped (IPI).
     if onlineCPUCount() > 1, let me = scheduler.current {
         do throws(ExecError) {
-            let p = try spawnProcess(path: "/bin/spin", argv: ["spin"], output: ProcessOutput(reader: me), waiter: me,
+            let p = try spawnProcess(path: "/bin/spin", argv: ["spin"], output: ConsoleChannel(reader: me), waiter: me,
                                      affinity: .cpu(1))
             let start = ticks
             while ticks - start < 10 { yield(); cpu_pause() }
