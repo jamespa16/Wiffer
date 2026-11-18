@@ -83,15 +83,21 @@ func netRandom() -> UInt64 {
 /// requests add nothing.
 func csumAdd(_ sum: UInt32, _ buf: [UInt8], _ from: Int, _ count: Int) -> UInt32 {
     guard from >= 0, count > 0, from <= buf.count, count <= buf.count - from else { return sum }
-    var s = sum
-    var i = from
-    let end = from + count
-    while i + 1 < end {
-        s &+= UInt32(buf[i]) << 8 | UInt32(buf[i + 1])
-        i += 2
+    // Unchecked reads (the range was checked above) into a 64-bit
+    // accumulator, folded back to 32 bits: 2^32 = 1 mod 0xFFFF, so the
+    // one's-complement sum is unchanged. TCP checksums every segment twice.
+    return buf.withUnsafeBufferPointer { b -> UInt32 in
+        var s = UInt64(sum)
+        var i = from
+        let end = from + count
+        while i + 1 < end {
+            s &+= UInt64(b[i]) << 8 | UInt64(b[i + 1])
+            i += 2
+        }
+        if i < end { s &+= UInt64(b[i]) << 8 }
+        while s >> 32 != 0 { s = (s & 0xFFFF_FFFF) &+ (s >> 32) }
+        return UInt32(truncatingIfNeeded: s)
     }
-    if i < end { s &+= UInt32(buf[i]) << 8 }
-    return s
 }
 
 func csumFold(_ sum: UInt32) -> UInt16 {
@@ -242,7 +248,13 @@ final class Packet {
     /// Append bytes; false (nothing written) if the buffer is full.
     @discardableResult func append(_ bytes: [UInt8]) -> Bool {
         guard bytes.count <= buf.count - end else { return false }
-        for b in bytes { buf[end] = b; end += 1 }
+        let at = end
+        if !bytes.isEmpty {
+            buf.withUnsafeMutableBytes { dst in
+                bytes.withUnsafeBytes { src in (dst.baseAddress! + at).copyMemory(from: src.baseAddress!, byteCount: src.count) }
+            }
+        }
+        end += bytes.count
         return true
     }
 

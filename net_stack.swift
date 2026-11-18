@@ -207,6 +207,8 @@ final class NetStack {
     var nextEphemeral: UInt16 = 0
     var dhcp: DHCPClient?
     var resolver: DNSResolver?
+    /// TCP (net_tcp.swift): registers protocol 6 and its ICMP error handler.
+    var tcp: TCPLayer!
 
     init(device: NetDevice) {
         dev = device
@@ -217,6 +219,7 @@ final class NetStack {
         errorHandlers[17] = { [self] e in
             if let s = udpSockets.first(where: { $0.port == e.srcPort }) { s.lastError = e }
         }
+        tcp = TCPLayer(stack: self)
     }
 
     func configure(ip: IPv4Addr, mask: IPv4Addr, gateway: IPv4Addr, dns: IPv4Addr = 0) {
