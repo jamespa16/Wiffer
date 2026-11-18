@@ -250,6 +250,7 @@ func prepareExit() -> (UnsafeMutablePointer<UInt64>, UInt64) {
 }
 
 func taskPanic(_ why: StaticString) -> Never {
+    _ = stdoutLock.acquireForPanic() // bounded spin, then write anyway
     statusBarAlert(" *** TASK PANIC: system halted (see serial) ***")
     puts("\ntask panic: ")
     puts(why)

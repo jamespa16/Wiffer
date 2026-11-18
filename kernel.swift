@@ -13,6 +13,9 @@ public func kernelEntry() -> Never {
     enterBootStack()
 }
 
+/// Set once the kernel image's lower-half alias (PML4[255]) is installed.
+var kernelAliasMapped = false
+
 /// 64 KiB kernel stack in .bss, used through its lower-half alias.
 var bootStack = InlineArray<65536, UInt8>(repeating: 0)
 
@@ -29,6 +32,7 @@ func enterBootStack() -> Never {
     if let hhdm = hhdm_request.response {
         pmm.hhdmOffset = UInt(hhdm.pointee.offset)
         if pmm.mapLowerHalf() {
+            kernelAliasMapped = true
             let top = (UInt(address(of: &bootStack)) + UInt(bootStack.count) - kernelAliasOffset) & ~15
             switch_stack(UInt64(top)) { kernelMain() }
         }
@@ -48,7 +52,7 @@ func kernelMain() -> Never {
     puts("Hello from Embedded Swift!\n")
 
     // Descriptor tables first so any fault after this point gets a report.
-    gdtInit()
+    gdtInit(cpu: 0) // also points GS base at perCPU[0] (Phase P)
     idtInit()
 
     // Frame allocator next: the Swift heap draws its memory from it, so no

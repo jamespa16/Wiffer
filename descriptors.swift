@@ -14,45 +14,55 @@ enum Selector {
     static let tss: UInt16 = 0x28
 }
 
-/// null, kernel code64, kernel data, user data, user code64, TSS (2 slots).
-var gdt = InlineArray<7, UInt64>(repeating: 0)
+// The GDT and TSS are per CPU (PerCPU.gdt/.tss, percpu.swift): a TSS
+// descriptor's busy bit means two CPUs can't ltr the same one.
 
-/// The 104-byte 64-bit TSS, as 32-bit words because its 64-bit fields are
-/// only 4-byte aligned. Word 1-2: rsp0, 9-10: ist1, 25 (high half): I/O map base.
-var tss = InlineArray<26, UInt32>(repeating: 0)
-let tssSize = 104
-
-/// Stack for the double-fault handler, selected through TSS.ist1. The CPU
-/// aligns rsp down to 16 bytes on entry, so the array needs no extra alignment.
+/// Stack for the BSP's double-fault handler, selected through TSS.ist1. The
+/// CPU aligns rsp down to 16 bytes on entry, so the array needs no extra
+/// alignment. APs get theirs from PerCPU.doubleFaultStackTop (Phase R).
 var doubleFaultStack = InlineArray<16384, UInt8>(repeating: 0)
+let tssSize = 104
 
 func address<T>(of value: inout T) -> UInt64 {
     withUnsafeMutablePointer(to: &value) { UInt64(UInt(bitPattern: $0)) }
 }
 
-func gdtInit() {
-    gdt[1] = 0x00AF_9A00_0000_FFFF // kernel code: present, DPL0, exec/read, L=1
-    gdt[2] = 0x00CF_9200_0000_FFFF // kernel data: present, DPL0, read/write
-    gdt[3] = 0x00CF_F200_0000_FFFF // user data:   present, DPL3, read/write
-    gdt[4] = 0x00AF_FA00_0000_FFFF // user code:   present, DPL3, exec/read, L=1
+/// Load CPU `cpu`'s own GDT and TSS (lgdt, segment reload, ltr), then point
+/// its GS base at its PerCPU entry. Runs on that CPU. For an AP, set
+/// perCPU[cpu].doubleFaultStackTop first.
+func gdtInit(cpu: Int) {
+    let e = perCPUEntry(cpu)
+    if e.pointee.doubleFaultStackTop == 0 {
+        guard cpu == 0 else {
+            puts("gdtInit: no double-fault stack for this CPU\n")
+            hcf()
+        }
+        e.pointee.doubleFaultStackTop = address(of: &doubleFaultStack) + UInt64(doubleFaultStack.count)
+    }
+    e.pointee.gdt[0] = 0
+    e.pointee.gdt[1] = 0x00AF_9A00_0000_FFFF // kernel code: present, DPL0, exec/read, L=1
+    e.pointee.gdt[2] = 0x00CF_9200_0000_FFFF // kernel data: present, DPL0, read/write
+    e.pointee.gdt[3] = 0x00CF_F200_0000_FFFF // user data:   present, DPL3, read/write
+    e.pointee.gdt[4] = 0x00AF_FA00_0000_FFFF // user code:   present, DPL3, exec/read, L=1
 
-    let ist1 = address(of: &doubleFaultStack) + UInt64(doubleFaultStack.count)
-    tss[9] = UInt32(truncatingIfNeeded: ist1)
-    tss[10] = UInt32(truncatingIfNeeded: ist1 >> 32)
-    tss[25] = UInt32(tssSize) << 16 // I/O map base past the limit: no I/O bitmap
+    let ist1 = e.pointee.doubleFaultStackTop
+    e.pointee.tss[9] = UInt32(truncatingIfNeeded: ist1)
+    e.pointee.tss[10] = UInt32(truncatingIfNeeded: ist1 >> 32)
+    e.pointee.tss[25] = UInt32(tssSize) << 16 // I/O map base past the limit: no I/O bitmap
 
     // 16-byte system descriptor: type 0x9 (available 64-bit TSS), present.
-    let base = address(of: &tss)
+    let base = address(of: &e.pointee.tss)
     let limit = UInt64(tssSize - 1)
-    gdt[5] = (limit & 0xFFFF)
+    e.pointee.gdt[5] = (limit & 0xFFFF)
         | (base & 0xFF_FFFF) << 16
         | 0x89 << 40
         | (limit >> 16 & 0xF) << 48
         | (base >> 24 & 0xFF) << 56
-    gdt[6] = base >> 32
+    e.pointee.gdt[6] = base >> 32
 
-    var gdtr = descriptor_ptr(limit: UInt16(gdt.count * 8 - 1), base: address(of: &gdt))
+    var gdtr = descriptor_ptr(limit: UInt16(e.pointee.gdt.count * 8 - 1), base: address(of: &e.pointee.gdt))
     gdt_load(&gdtr, Selector.kernelCode, Selector.kernelData, Selector.tss)
+    perCPUBind(cpu: cpu) // after gdt_load: reloading GS cleared its base
 }
 
 // MARK: IDT

@@ -4,6 +4,8 @@
 @_cdecl("_swift_writeToStandardOutput")
 public func swiftWriteToStandardOutput(_ chars: UnsafePointer<UInt8>?, _ count: UInt) -> UInt {
     guard let chars else { return 0 }
+    stdoutLock.acquire()
+    defer { stdoutLock.release() }
     for i in 0..<Int(count) {
         if chars[i] == 0x0A { putc(0x0D) } // terminals need \r\n
         putc(chars[i])
@@ -11,10 +13,11 @@ public func swiftWriteToStandardOutput(_ chars: UnsafePointer<UInt8>?, _ count: 
     return count
 }
 
-// One CPU, and nothing prints from interrupt handlers, so the (recursive)
-// stdout lock can be a no-op.
+// The recursive stdout lock (spinlock.swift), shared with puts/printHex/
+// printDec. Nothing prints from interrupt handlers except the dying paths,
+// which take it with acquireForPanic.
 @_cdecl("_swift_lockStandardOutput")
-public func swiftLockStandardOutput() {}
+public func swiftLockStandardOutput() { stdoutLock.acquire() }
 
 @_cdecl("_swift_unlockStandardOutput")
-public func swiftUnlockStandardOutput() {}
+public func swiftUnlockStandardOutput() { stdoutLock.release() }
