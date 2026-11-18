@@ -97,6 +97,9 @@ func runSelfTests() -> Never {
     rtcTests(&t)
     virtioTests(&t)
 
+    // Phases W and X: FAT32.
+    fatTests(&t)
+
     // Phase N: text buffer and editor key model.
     editorTests(&t)
 
