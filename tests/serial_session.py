@@ -1072,8 +1072,15 @@ def tcp_checks(s: Session, timeout: float, check):
     err = None
     try:
         with socket.create_connection(("127.0.0.1", TCP_FWD_HOST), timeout=30) as so:
-            so.sendall(data)
-            so.shutdown(socket.SHUT_WR)
+            import threading
+            def feed():  # send while reading, so neither side's buffers deadlock
+                try:
+                    so.sendall(data)
+                    so.shutdown(socket.SHUT_WR)
+                except OSError:
+                    pass
+            sender = threading.Thread(target=feed, daemon=True)
+            sender.start()
             while True:
                 chunk = so.recv(65536)
                 if not chunk:

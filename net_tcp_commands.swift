@@ -128,7 +128,13 @@ func tcplistenCommand(_ args: [Substring], say: (String) -> Void) {
         }
         if let e = c.error { problem = e.message; break }
         if c.eof && pending.isEmpty { break }
-        if !progress && !netBlock(timeout: 3000, { c.readable || (c.writable && !pending.isEmpty) }) {
+        // Wait only for what makes progress now: bytes to read with room for
+        // them, or send space for what is pending. (`readable` alone stays
+        // true at EOF, and the loop would spin without yielding to netd.)
+        if !progress && !netBlock(timeout: 3000, {
+            c.error != nil || (pending.count < 65536 && c.available > 0) || (!pending.isEmpty && c.sendSpace > 0)
+                || (pending.isEmpty && c.eof)
+        }) {
             problem = netInterrupted ? "interrupted" : "timed out"
             break
         }
