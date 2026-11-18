@@ -38,11 +38,7 @@ func wmType(_ wm: WindowManager, _ text: StaticString) {
 func settleTasks() -> Bool {
     let deadline = ticks + 5 * timerHz
     while ticks < deadline {
-        var busy = !scheduler.zombies.isEmpty
-        for task in scheduler.all where !task.isMain && task !== scheduler.current {
-            if task.state != .blocked || !task.inbox.isEmpty { busy = true }
-        }
-        if !busy { return true }
+        if otherTasksSettled() { return true }
         yield()
     }
     return false
@@ -69,7 +65,7 @@ func terminalWindowTests(_ t: inout SelfTest) {
         return
     }
     t.check("terminal: no other tasks busy", settleTasks())
-    let tasksBefore = scheduler.all.count
+    let tasksBefore = scheduler.taskCount
     let before = HeapUsage(), frames = pmm.freeFrames, chunks = heap.chunkFrames
     // Measured while the font (its 128 KiB glyph map) is still alive.
     let (after, framesAfter, chunksAfter) = withExtendedLifetime(font) {
@@ -77,7 +73,7 @@ func terminalWindowTests(_ t: inout SelfTest) {
         _ = settleTasks()
         return (HeapUsage(), pmm.freeFrames, heap.chunkFrames)
     }
-    t.check("terminal: every task ended", scheduler.all.count == tasksBefore)
+    t.check("terminal: every task ended", scheduler.taskCount == tasksBefore)
     t.check("terminal: heap back to baseline (windows, consoles, shells freed)", after == before)
     t.check("terminal: task stacks returned to the frame allocator", framesAfter + (chunksAfter - chunks) == frames)
     if framesAfter + (chunksAfter - chunks) != frames {

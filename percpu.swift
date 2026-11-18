@@ -44,7 +44,17 @@ struct PerCPU {
     var stackTop: UInt64 = 0
     var cr3: UInt64 = 0
 
-    // Phase S adds the scheduler fields here: current and idle task, zombies.
+    // Phase S. `sched` is an Unmanaged<CPUSched> (task.swift: current and
+    // idle task, zombies), kept as raw bits so PerCPU stays plain storage;
+    // set once (CPU 0 in scheduler.start, an AP in apMain before it counts
+    // itself online) and never freed.
+    var sched: UInt64 = 0
+    /// Watchdog (task.swift): `ticks` when the running task was switched in
+    /// or last cooperated; 1 while a real task (not the idle task) runs; 1
+    /// once the BSP's timer IRQ has warned about this CPU.
+    var watchdogMark: UInt64 = 0
+    var watchdogActive: UInt64 = 0
+    var watchdogTripped: UInt64 = 0
 }
 
 var perCPU = InlineArray<64, PerCPU>(repeating: PerCPU())

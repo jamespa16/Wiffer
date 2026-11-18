@@ -99,7 +99,9 @@ func apicInterrupt(_ vector: UInt8) {
     if vector == Vector.spurious { return } // spurious: no EOI
     if vector == Vector.ping { thisCPU().pointee.ipisReceived &+= 1 }
     if x2apicEnabled { apicEOI() }
-    if vector == Vector.halt { hcf() } // 0xF0 (reschedule) needs nothing else: waking from hlt is the point
+    if vector == Vector.halt { panicHaltThisCPU() }
+    // 0xF0 (reschedule) needs nothing else: waking from hlt is the point (the
+    // idle loop then rechecks the run queue).
 }
 
 func apicTests(_ t: inout SelfTest) {

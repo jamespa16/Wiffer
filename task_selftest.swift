@@ -56,34 +56,56 @@ func eventQueueTests(_ t: inout SelfTest) {
 
 // MARK: Ping-pong
 
+/// One ping-pong task's own counters (never written by the other task,
+/// which may be running at the same time on another CPU).
+final class WaitStats {
+    var errors = 0
+    /// OR of check_callee_saved results: which registers didn't survive.
+    var clobbered: UInt32 = 0
+    /// Waits that returned on a different CPU from the one they started on.
+    var migrations = 0
+    /// Bit i: ran on CPU i.
+    var cpus: UInt64 = 0
+}
+
 /// Shared by the two ping-pong tasks (and the test that waits for them).
 final class PingPong {
     var ping: Task? = nil
     var pong: Task? = nil
     var rounds = 0
-    var errors = 0
-    /// OR of check_callee_saved results: which registers didn't survive.
-    var clobbered: UInt32 = 0
+    let pingStats = WaitStats()
+    let pongStats = WaitStats()
     var pingSum: Double = 0
     var pongSum: Double = 0
 }
 
-/// What the last pingPongWait received. Read straight after it returns, by
-/// the same task, so one global is enough.
-var pingPongLast: Event? = nil
+/// What the last pingPongWait received, per CPU: stored right after
+/// waitEvent returns and read right after check_callee_saved returns, with
+/// no switch in between, so the slot of the CPU we're on is ours.
+let pingPongLast: UnsafeMutablePointer<Event?> = {
+    let p = UnsafeMutablePointer<Event?>.allocate(capacity: maxCPUs)
+    p.initialize(repeating: nil, count: maxCPUs)
+    return p
+}()
 
 /// Called through check_callee_saved, which holds known values in every
 /// callee-saved register (and MXCSR/FCW) across this wait, i.e. across a
-/// task switch.
+/// task switch (and, for `.any` tasks, maybe a move to another CPU).
 func pingPongWait() {
-    pingPongLast = waitEvent()
+    let e = waitEvent()
+    pingPongLast[currentCPU()] = e
 }
 
 @inline(never)
-func checkedWait(_ seed: UInt64, mxcsr: UInt32, fcw: UInt32, _ box: PingPong) -> Event? {
-    box.clobbered |= check_callee_saved(pingPongWait, seed, mxcsr, fcw)
-    defer { pingPongLast = nil }
-    return pingPongLast
+func checkedWait(_ seed: UInt64, mxcsr: UInt32, fcw: UInt32, _ stats: WaitStats) -> Event? {
+    let before = currentCPU()
+    stats.cpus |= 1 << UInt64(before)
+    stats.clobbered |= check_callee_saved(pingPongWait, seed, mxcsr, fcw)
+    let after = currentCPU()
+    stats.cpus |= 1 << UInt64(after)
+    if after != before { stats.migrations += 1 }
+    defer { pingPongLast[after] = nil }
+    return pingPongLast[after]
 }
 
 // Different control values in each task, so a switch that didn't save them
@@ -102,45 +124,54 @@ struct PingPongResult {
     var switches = 0
     var stacksLow = false
     var bothRan = false
+    var pingCPUs: UInt64 = 0
+    var pongCPUs: UInt64 = 0
+    var migrations = 0
 }
 
 @inline(never)
-func runPingPong(_ n: Int) -> PingPongResult {
+func runPingPong(_ n: Int, affinity: Affinity = .cpu(0)) -> PingPongResult {
     var r = PingPongResult()
     let box = PingPong()
     let switchesBefore = scheduler.switches
-    box.ping = spawn("ping") {
+    // Both tasks exist before either sends: ping waits for a go message.
+    box.ping = spawn("ping", affinity: affinity) {
+        _ = waitEvent()
         for i in 0..<n {
             box.pong?.post(.message(2 * i))
-            let reply = checkedWait(UInt64(i) << 8, mxcsr: pingMXCSR, fcw: pingFCW, box)
-            if reply != .message(2 * i + 1) { box.errors += 1 }
+            let reply = checkedWait(UInt64(i) << 8, mxcsr: pingMXCSR, fcw: pingFCW, box.pingStats)
+            if reply != .message(2 * i + 1) { box.pingStats.errors += 1 }
             box.pingSum += Double(opaque(i)) * 0.5
         }
         box.pong?.post(.close)
     }
-    box.pong = spawn("pong") {
+    box.pong = spawn("pong", affinity: affinity) {
         var k: UInt64 = 0x1_0000_0000
         while true {
             k += 1
-            switch checkedWait(k << 8, mxcsr: pongMXCSR, fcw: pongFCW, box) {
+            switch checkedWait(k << 8, mxcsr: pongMXCSR, fcw: pongFCW, box.pongStats) {
             case .message(let v)?:
                 box.rounds += 1
                 box.pongSum += Double(opaque(v)) / 2
                 box.ping?.post(.message(v + 1))
             case .close?: return
-            default: box.errors += 1
+            default: box.pongStats.errors += 1
             }
         }
     }
     guard let ping = box.ping, let pong = box.pong else { return r }
+    ping.post(.message(-1))
     r.stacksLow = ping.stackTop < 1 << 47 && pong.stackTop < 1 << 47 && ping.stackBottom & 0xFFF == 0
     let deadline = ticks + 60 * timerHz
     while (ping.state != .finished || pong.state != .finished) && ticks < deadline { yield() }
     r.finished = ping.state == .finished && pong.state == .finished
     r.bothRan = ping.runs > 0 && pong.runs > 0
     r.rounds = box.rounds
-    r.errors = box.errors
-    r.clobbered = box.clobbered
+    r.errors = box.pingStats.errors + box.pongStats.errors
+    r.clobbered = box.pingStats.clobbered | box.pongStats.clobbered
+    r.pingCPUs = box.pingStats.cpus
+    r.pongCPUs = box.pongStats.cpus
+    r.migrations = box.pingStats.migrations + box.pongStats.migrations
     // sum(i/2) over 0..<n, both ways (pong sees 2i, halves it to i, so its
     // sum is 2 * pingSum's).
     let want = Double(n - 1) * Double(n) / 4
@@ -183,6 +214,7 @@ func taskTests(_ t: inout SelfTest) {
     t.check("tasks: main task's canary intact", scheduler.main?.canaryIntact == true)
     t.check("tasks: current task's canary intact", scheduler.current?.canaryIntact == true)
 
+    _ = pingPongLast // allocated once, before the baseline
     let base = HeapUsage(), frames = pmm.freeFrames
     let r = runPingPong(10_000)
     t.check("tasks: ping-pong 10,000 messages finished", r.finished && r.rounds == 10_000 && r.bothRan)

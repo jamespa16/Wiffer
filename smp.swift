@@ -60,6 +60,7 @@ func smpInit() {
         e.pointee.stackBase = UInt64(stack)
         e.pointee.stackTop = UInt64(stack) + UInt64(apStackSize)
         e.pointee.doubleFaultStackTop = UInt64(df) + UInt64(apDoubleFaultStackSize)
+        apSchedInit(cpu: next) // Phase S: its boot context will be its idle task
         mp_start(info, UInt64(next), apEntry) // last: the AP starts now
         next += 1
     }
@@ -107,21 +108,65 @@ func apMain(_ cpu: Int) -> Never {
     apIdleLoop()
 }
 
-/// The AP's idle loop. Phase S replaces this with the scheduler's idle task.
-func apIdleLoop() -> Never {
-    while true {
-        sti_hlt()
-        thisCPU().pointee.idleWakeups &+= 1
+// apIdleLoop (the AP's idle task) is in task.swift.
+
+// MARK: Panics on any CPU
+
+/// 0 = no panic, else the panicking CPU's index + 1 (first CPU wins).
+var panicOwner: UInt64 = 0
+/// CPUs that stopped for a panic (halt IPI or NMI).
+var cpusHalted: UInt64 = 0
+
+/// Start a panic or exception report. The first CPU to get here stops every
+/// other online CPU (halt IPI 0xF1; an NMI for those that haven't stopped
+/// within ~10 ms, e.g. spinning with interrupts off) and returns to write
+/// its report. A CPU that loses the race (or an NMI'd one) just halts. A
+/// nested panic on the winning CPU carries on. Allocation-free, no locks.
+func panicBegin() {
+    let me = cpuIndex() + 1
+    let won = withUnsafeMutablePointer(to: &panicOwner) { atomic_cas64($0, 0, me) } != 0
+    if !won {
+        if withUnsafeMutablePointer(to: &panicOwner, { atomic_load64($0) }) == me { return }
+        panicHaltThisCPU()
     }
+    guard x2apicEnabled, smpStarted > 1 else { return }
+    let others = UInt64(onlineCPUCount() - 1)
+    guard others > 0 else { return }
+    broadcastIPI(vector: Vector.halt, excludingSelf: true)
+    if !waitForHalted(others) {
+        sendNMI(apicID: nil)
+        _ = waitForHalted(others)
+    }
+}
+
+/// Spin up to ~10 ms (by the TSC, assuming >= 1 GHz; capped in spins too)
+/// for `n` CPUs to report themselves halted.
+func waitForHalted(_ n: UInt64) -> Bool {
+    let start = rdtsc()
+    var spins = 0
+    while withUnsafeMutablePointer(to: &cpusHalted, { atomic_load64($0) }) < n {
+        if rdtsc() &- start > 10_000_000 || spins > 50_000_000 { return false }
+        cpu_pause()
+        spins += 1
+    }
+    return true
+}
+
+/// Stop this CPU for good (another CPU is panicking).
+func panicHaltThisCPU() -> Never {
+    cli()
+    _ = withUnsafeMutablePointer(to: &cpusHalted) { atomic_fetch_add64($0, 1) }
+    hcf()
 }
 
 // MARK: cpus command, selftests
 
 func cpusInfo() -> [String] {
     var lines = ["cpu  apic  online  task  switches  wakeups  ipis  contention"]
+    let names = currentTaskNames()
     for i in 0..<smpStarted {
         let e = perCPUEntry(i)
-        lines.append("\(i)  \(e.pointee.apicID)  \(e.pointee.online ? "yes" : "no")  -  \(e.pointee.switches)  \(e.pointee.idleWakeups)  \(e.pointee.ipisReceived)  \(e.pointee.lockContention)")
+        lines.append("\(i)  \(e.pointee.apicID)  \(e.pointee.online ? "yes" : "no")  \(names[i])  \(e.pointee.switches)  \(e.pointee.idleWakeups)  \(e.pointee.ipisReceived)  \(e.pointee.lockContention)")
     }
     return lines
 }

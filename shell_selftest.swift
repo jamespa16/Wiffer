@@ -271,7 +271,7 @@ func shellTests(_ t: inout SelfTest) {
     t.check("dispatch: history lists numbered lines", transcript("echo x\rhistory\r") == "x\n   1  echo x\n   2  history\n")
     t.check("dispatch: peek and fault usage",
             transcript("peek\rpeek 0\rpeek 0x12345678901234567\rfault\rfault zz\r")
-            == "usage: peek <hex addr>\npeek: address must be non-null and 8-byte aligned\nusage: peek <hex addr>\nusage: fault <ud|de|pf|gp|df>\nusage: fault <ud|de|pf|gp|df>\n")
+            == "usage: peek <hex addr>\npeek: address must be non-null and 8-byte aligned\nusage: peek <hex addr>\nusage: fault <ud|de|pf|gp|df|ap>\nusage: fault <ud|de|pf|gp|df|ap>\n")
     t.check("format: hex, uptime",
             hex(0xFFA0) == "0x000000000000ffa0" && hex(UInt64.max) == "0xffffffffffffffff"
             && uptimeInfo().hasPrefix("uptime: ") && uptimeInfo().hasSuffix(" ticks)"))

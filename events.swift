@@ -144,8 +144,14 @@ func idleStep() {
     statusBarRefresh()
     if statusNextTick != statusDue { watchdogStatus() } // the status bar was redrawn
     consoleFlush()
-    if interruptsEnabled { hlt() } // hlt with IF=0 would never wake
-    watchdogPet() // sleeping isn't hogging the CPU
+    if interruptsEnabled { // hlt with IF=0 would never wake
+        // Phase S: let other CPUs' wakeups IPI us rather than wait for the
+        // PIT. Not race-free (the PIT still bounds the latency), and harmless.
+        if gsBaseReady { setIdle(true) }
+        hlt()
+        if gsBaseReady { setIdle(false) }
+    }
+    if gsBaseReady { watchdogPet() } // sleeping isn't hogging the CPU
 }
 
 /// Wait for the next key (Part 2's blocking input; LiveTerminal.read).

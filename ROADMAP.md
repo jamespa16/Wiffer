@@ -600,6 +600,50 @@ Both `--smp 1` and `--smp 4` pass `./run.sh --test` (BIOS and UEFI).
 
 ## Phase S: SMP scheduler
 
+**Done** (task.swift, sched_selftest.swift, task_selftest.swift, smp.swift,
+percpu.swift, apic.swift, interrupts.swift, events.swift, cpu.S, bridge.h,
+shell.swift, selftest.swift, terminal_window_selftest.swift,
+tests/serial_session.py). `spawn(name, affinity: .cpu(0) | .any | .cpu(n),
+stackSize:, body)`; `.cpu(n)` for a CPU that isn't online returns nil.
+`currentCPU()` gives a task its CPU; results go back with
+`shellTask.post(.message(n))` (any CPU; wakes the target, IPIs CPU 0 if it's
+in idleStep's hlt). `scheduler` is now a `final class` (no CPU ever copies the
+shared arrays); per-CPU state is a `CPUSched` object (current, idle,
+zombies) reached through `PerCPU.sched` (Unmanaged bits), built by the BSP
+in smpInit before each AP starts, so APs allocate nothing while booting.
+`cpus` shows each CPU's current task ("idle" on idle APs). `fault ap` runs a
+`#UD` in a `.cpu(1)` task; the harness checks its report (`cpu    1`, exit 5)
+when `-smp` >= 2. Lock order: **schedLock → heapLock → pmmLock →
+stdoutLock**; allocating under schedLock (run-queue appends, inbox posts, the
+watchdog's print) is allowed, nothing takes schedLock under another lock, and
+Task.deinit (heap, pmm) runs outside it (zombies are freed after the lock
+is dropped). Deviations from the plan below:
+
+- `context_switch(save, load, onCPU)` clears the outgoing task's `onCPU`
+  word *after* loading the new rsp, not between saving and loading: an
+  interrupt in between would push onto a stack another CPU may already
+  have resumed. Interrupts stay enabled across the switch.
+- `yield`'s requeue and the pick happen in one lock section (the pick
+  first, so the yielder can't be stolen by another CPU while it decides to
+  keep running); `waitEvent` re-checks the inbox under the lock before
+  blocking.
+- Wakeups prefer an idle AP (round-robin from the last one woken); CPU 0
+  is a candidate only if it's the only CPU allowed. CPU 0 marks itself idle
+  around idleStep's `hlt`; that's best-effort (the PIT still bounds it).
+- Watchdog marks are per CPU (`PerCPU.watchdogMark/Active/Tripped`); an AP
+  counts only while it runs a real task, and a yield that finds nothing
+  else to run still counts as cooperating.
+- Panics: `panicBegin()` (first CPU wins a CAS on `panicOwner`) broadcasts
+  0xF1, waits ~10 ms (TSC) for the others to count themselves halted, then
+  NMIs the stragglers; an NMI'd or losing CPU halts silently. Task-panic
+  reports now end with `(cpu N)`.
+- Known limit (not fixed here): `print` from an AP is serialised by
+  stdoutLock, but CPU 0's consoleFlush/render reads (and clears the dirty
+  state of) the kernel console without it, so the two can race. Serial
+  output is fine. Until the flush is made safe, `.any` tasks should report
+  results by posting to a CPU 0 task (as Phase T's `par` plans to) rather
+  than printing.
+
 - `scheduler.current` becomes `thisCPU().current`. The scheduler's
   shared state (run queue, `all`, `nextID`) sits behind one IRQ-saving
   spinlock, as do task state changes and `Task.post` (the inbox is

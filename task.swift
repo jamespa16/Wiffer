@@ -1,16 +1,60 @@
-// Phase H3: cooperative kernel tasks.
+// Phase H3: cooperative kernel tasks. Phase S: on every CPU.
 //
 // A Task is a stack, a saved rsp and an inbox. Switching is cooperative:
 // a task runs until it calls yield(), blocks in waitEvent() on an empty
-// inbox, or returns. The timer never switches tasks, so the heap and the
-// console need no locks. The main loop (runMainLoop) is task 0, on the boot
-// stack: it polls the devices, routes events into inboxes, runs the ready
-// tasks, and sleeps when there are none.
+// inbox, or returns. The timer never switches tasks. The main loop
+// (runMainLoop) is task 0, on the boot stack: it polls the devices, routes
+// events into inboxes, runs the ready tasks, and sleeps when there are none.
 //
 // Only the register save/restore is assembly (context_switch and the
 // first-run trampoline in cpu.S); scheduling, canaries and the watchdog are
 // here. No reference is held across the switch on a task's way out (see
-// exitCurrentTask), so a finished task is freed by whichever task runs next.
+// exitCurrentTask), so a finished task is freed by whichever task runs next
+// on that CPU.
+//
+// Phase S (SMP):
+// - Affinity. Every task is `.cpu(n)` or `.any`; spawn's default is
+//   `.cpu(0)`, so task 0, the shells, terminals, the WM and the fs (none of
+//   them locked) only ever run on CPU 0. `.any` tasks may run anywhere and
+//   may touch only SMP-safe code (heap, pmm, scheduler, inboxes, print).
+// - One shared run queue, filtered by affinity, plus `all` and `nextID`,
+//   behind `schedLock` (IRQ-saving). Task state changes and the inbox
+//   (Task.post / waitEvent) are under it too, so a wakeup can't be lost.
+// - Per CPU (CPUSched, reached through PerCPU.sched): the current task, the
+//   idle task (an AP's boot stack; CPU 0 has none: task 0 is always
+//   runnable there) and the zombies, freed by the next task on that CPU.
+// - Cross-CPU handoff. Task.onCPU (rspSlot[1]) is 1 while some CPU is on the
+//   task's stack. The picker dequeues under the lock, drops the lock, spins
+//   until onCPU == 0, sets it to 1, then switches. context_switch clears the
+//   outgoing task's word after it has saved rsp and moved to the new stack.
+// - Wakeups: a task made ready (spawn, post, yield) goes to an idle CPU that
+//   may run it: `idleCPUMask` bit cleared, reschedule IPI (0xF0) sent.
+//
+// Lock order: schedLock -> heapLock -> pmmLock -> stdoutLock. Allocating
+// (runQueue.append, inbox posts, print) under schedLock is allowed; nothing
+// takes schedLock while holding any of the others, and Task.deinit takes
+// only the heap and pmm locks. The lock is never held across context_switch.
+
+/// Where a task may run.
+enum Affinity: Equatable {
+    case any
+    case cpu(Int)
+
+    func allows(_ cpu: Int) -> Bool {
+        switch self {
+        case .any: return true
+        case .cpu(let n): return n == cpu
+        }
+    }
+
+    /// Bit i set if CPU i may run the task.
+    var mask: UInt64 {
+        switch self {
+        case .any: return ~0
+        case .cpu(let n): return n >= 0 && n < 64 ? 1 << UInt64(n) : 0
+        }
+    }
+}
 
 final class Task {
     enum State: Equatable { case running, ready, blocked, finished }
@@ -20,40 +64,54 @@ final class Task {
     /// them before anything else; they are checked on every switch.
     static let canary: UInt64 = 0x5354_4143_4B21_C0DE
 
-    let id: Int
+    /// Set once, by spawn under schedLock, before another CPU can see the task.
+    var id: Int
     let name: String
+    let affinity: Affinity
+    /// Changed only under schedLock.
     var state: State
+    /// Touched only under schedLock (Task.post, waitEvent).
     var inbox = EventQueue()
-    /// Where context_switch saves this task's rsp. Its own heap block, so the
-    /// address is stable while the task is switched out.
+    /// rspSlot[0]: where context_switch saves this task's rsp. rspSlot[1]:
+    /// onCPU, 1 while a CPU is running on (or still leaving) this stack. Its
+    /// own heap block, so the addresses are stable while the task is out.
     let rspSlot: UnsafeMutablePointer<UInt64>
     /// Lowest address of the stack (identity-mapped frames; the boot stack's
-    /// lower-half alias for task 0), its frame count (0: not ours to free).
+    /// lower-half alias for task 0, an AP's boot stack for its idle task),
+    /// its frame count (0: not ours to free).
     let stackBottom: UInt
     let stackFrames: Int
     /// Run once on the task's own stack, then dropped.
     var body: (() -> Void)?
     /// Times this task was switched in.
     var runs = 0
+    /// CPU it was last switched in on.
+    var lastCPU = -1
 
     var isMain: Bool { id == 0 }
     var stackTop: UInt { stackBottom + UInt(stackFrames * frameSize) }
+    var onCPU: UnsafeMutablePointer<UInt64> { rspSlot + 1 }
 
-    init(id: Int, name: String, stackBottom: UInt, stackFrames: Int, body: (() -> Void)?) {
+    init(id: Int, name: String, affinity: Affinity = .cpu(0), stackBottom: UInt, stackFrames: Int,
+         body: (() -> Void)?) {
         self.id = id
         self.name = name
+        self.affinity = affinity
         self.stackBottom = stackBottom
         self.stackFrames = stackFrames
         self.body = body
         state = body == nil ? .running : .ready
-        rspSlot = .allocate(capacity: 1)
+        rspSlot = .allocate(capacity: 2)
         rspSlot.initialize(to: 0)
+        // A context with no body is the one already running (task 0, idle).
+        (rspSlot + 1).initialize(to: body == nil ? 1 : 0)
         writeCanary()
     }
 
     deinit {
         rspSlot.deallocate()
         if stackFrames > 0 { pmm.free(stackBottom, count: stackFrames) }
+        _ = withUnsafeMutablePointer(to: &tasksFreed) { atomic_fetch_add64($0, 1) }
     }
 
     var canaryWords: UnsafeMutablePointer<UInt64> { UnsafeMutablePointer(bitPattern: stackBottom)! }
@@ -65,13 +123,17 @@ final class Task {
 
     var canaryIntact: Bool { canaryWords[0] == Task.canary && canaryWords[1] == ~Task.canary }
 
-    /// Queue an event; wakes the task if it is blocked waiting for one.
+    /// Queue an event; wakes the task if it is blocked waiting for one. Safe
+    /// from any CPU (not from interrupt handlers: it allocates).
     func post(_ event: Event) {
+        let flags = schedLock.acquireIRQ()
         inbox.post(event)
         if state == .blocked {
             state = .ready
             scheduler.runQueue.append(self)
+            wakeIdleCPU(for: self)
         }
+        schedLock.releaseIRQ(flags)
     }
 
     /// Pre-build the stack so the first context_switch to it "returns" into
@@ -93,63 +155,169 @@ final class Task {
     static let initialFCW: UInt16 = 0x037F
 }
 
-struct Scheduler {
-    /// The running task; nil until start() makes the boot context task 0.
-    var current: Task? = nil
-    var main: Task? = nil
-    /// Ready tasks, in the order they will run.
-    var runQueue: [Task] = []
-    /// Every task that hasn't finished (task 0 first).
-    var all: [Task] = []
-    /// Finished tasks, freed by the next task to run.
+/// One CPU's scheduler state. Only that CPU writes it, `current` only under
+/// schedLock (so other CPUs may read it under the lock: `cpus`).
+final class CPUSched {
+    let cpu: Int
+    var current: Task?
+    /// An AP's idle task (its boot stack): runs when nothing else may. Never
+    /// in the run queue. Nil on CPU 0.
+    var idle: Task?
+    /// Finished tasks, freed by the next task to run on this CPU.
     var zombies: [Task] = []
-    var nextID = 0
+
+    init(cpu: Int, current: Task, idle: Task?) {
+        self.cpu = cpu
+        self.current = current
+        self.idle = idle
+        zombies.reserveCapacity(8)
+    }
+}
+
+/// Make `sched` CPU `cpu`'s (once, never freed).
+func cpuSchedInstall(_ sched: CPUSched, cpu: Int) {
+    let bits = UInt(bitPattern: Unmanaged.passRetained(sched).toOpaque())
+    perCPUEntry(cpu).pointee.sched = UInt64(bits)
+}
+
+func cpuSched(_ cpu: Int) -> CPUSched? {
+    let bits = perCPUEntry(cpu).pointee.sched
+    guard bits != 0, let p = UnsafeRawPointer(bitPattern: UInt(bits)) else { return nil }
+    return Unmanaged<CPUSched>.fromOpaque(p).takeUnretainedValue()
+}
+
+/// This CPU's scheduler state; nil before scheduler.start (CPU 0) or apMain.
+func thisSched() -> CPUSched? {
+    guard let e = thisCPUIfReady(), e.pointee.sched != 0 else { return nil }
+    return cpuSched(Int(e.pointee.index))
+}
+
+/// The CPU the caller runs on (0 = BSP). For `.any` tasks this can change
+/// at every yield or wait.
+func currentCPU() -> Int { Int(cpuIndex()) }
+
+/// The scheduler's shared state, behind schedLock. A class (one reference,
+/// fields accessed in place) so no CPU ever copies the arrays.
+final class Scheduler {
+    var main: Task? = nil
+    /// Ready tasks, in the order they will run (each CPU takes the first it
+    /// may run).
+    var runQueue: [Task] = []
+    /// Every task that hasn't finished (task 0 first). Idle tasks aren't in it.
+    var all: [Task] = []
+    var nextID = 1
     var switches = 0
+    var started = false
 
-    var started: Bool { current != nil }
-    var hasReady: Bool { !runQueue.isEmpty }
+    /// The task running on this CPU; nil until start() makes the boot
+    /// context task 0 (on an AP, its idle task until something else runs).
+    var current: Task? { thisSched()?.current }
+    /// This CPU's zombies (a copy).
+    var zombies: [Task] { thisSched()?.zombies ?? [] }
 
-    /// Make the running context (the boot stack) task 0. Idempotent.
-    mutating func start() {
-        guard current == nil else { return }
+    /// A task this CPU may run is waiting in the run queue.
+    var hasReady: Bool {
+        let cpu = currentCPU()
+        let flags = schedLock.acquireIRQ()
+        defer { schedLock.releaseIRQ(flags) }
+        return runQueue.contains { $0.affinity.allows(cpu) }
+    }
+
+    /// Tasks not yet finished (task 0 included).
+    var taskCount: Int {
+        schedLock.withIRQsOff { all.count }
+    }
+
+    /// Make the running context (the boot stack) task 0. Idempotent. CPU 0.
+    func start() {
+        guard !started else { return }
         runQueue.reserveCapacity(32) // so the queues don't reallocate in use
         all.reserveCapacity(32)
         let bottom = UInt(address(of: &bootStack)) - kernelAliasOffset
         let boot = Task(id: 0, name: "main", stackBottom: bottom, stackFrames: 0, body: nil)
-        nextID = 1
-        current = boot
-        main = boot
-        all.append(boot)
+        boot.lastCPU = 0
+        cpuSchedInstall(CPUSched(cpu: 0, current: boot, idle: nil), cpu: 0)
+        schedLock.withIRQsOff {
+            main = boot
+            all.append(boot)
+        }
+        perCPUEntry(0).pointee.watchdogActive = 1
         watchdogPet()
         watchdogArmed = true
+        started = true
     }
 }
 
-var scheduler = Scheduler()
+let scheduler = Scheduler()
+/// Task objects freed so far, on any CPU (selftests wait on it).
+var tasksFreed: UInt64 = 0
+var schedLock = SpinLock()
+
+/// Bit i set while CPU i is idle (an AP in its idle loop's hlt, CPU 0 in
+/// idleStep's hlt). Set under schedLock after finding nothing to run;
+/// cleared by a waker (under schedLock) when it sends the IPI.
+var idleCPUMask: UInt64 = 0
+/// Where the next wakeup's search for an idle CPU starts (spreads tasks).
+var wakeCursor = 0
+
+/// After `task` became ready: wake one idle CPU (not this one) that may run
+/// it. Under schedLock, so an idle CPU either sees the task in the queue
+/// before it sleeps or has its bit set by then.
+func wakeIdleCPU(for task: Task) {
+    let me = cpuIndex()
+    let idle = withUnsafeMutablePointer(to: &idleCPUMask) { atomic_load64($0) }
+    let allowed = idle & task.affinity.mask & ~(1 << me)
+    // Prefer an idle AP; CPU 0 (the desktop) only if it's the only choice.
+    let candidates = allowed & ~1 != 0 ? allowed & ~1 : allowed
+    guard candidates != 0, x2apicEnabled else { return }
+    let n = max(smpStarted, 1)
+    for k in 0..<n {
+        let cpu = (wakeCursor + 1 + k) % n
+        guard candidates & (1 << UInt64(cpu)) != 0 else { continue }
+        wakeCursor = cpu
+        _ = withUnsafeMutablePointer(to: &idleCPUMask) { atomic_fetch_and64($0, ~(1 << UInt64(cpu))) }
+        sendIPI(apicID: UInt32(perCPUEntry(cpu).pointee.apicID), vector: Vector.reschedule)
+        return
+    }
+}
+
+func setIdle(_ on: Bool) {
+    let bit: UInt64 = 1 << cpuIndex()
+    withUnsafeMutablePointer(to: &idleCPUMask) {
+        if on { _ = atomic_fetch_or64($0, bit) } else { _ = atomic_fetch_and64($0, ~bit) }
+    }
+}
 
 /// Create a task that runs `body` on its own stack, and make it ready. It
-/// runs the next time the current task yields or blocks. Nil if there is no
-/// memory for the stack.
+/// runs the next time a CPU it may run on switches or idles. Nil if there is
+/// no memory for the stack, or `.cpu(n)` names a CPU that isn't online.
 @discardableResult
-func spawn(_ name: String, stackSize: Int = Task.defaultStackSize, _ body: @escaping () -> Void) -> Task? {
+func spawn(_ name: String, affinity: Affinity = .cpu(0), stackSize: Int = Task.defaultStackSize,
+           _ body: @escaping () -> Void) -> Task? {
     scheduler.start()
+    if case .cpu(let n) = affinity {
+        guard n >= 0 && n < smpStarted && perCPUEntry(n).pointee.online else { return nil }
+    }
     let frames = (max(stackSize, 4096) + frameSize - 1) / frameSize
     guard let bottom = pmm.allocate(count: frames) else { return nil }
-    let task = Task(id: scheduler.nextID, name: name, stackBottom: bottom, stackFrames: frames, body: body)
-    scheduler.nextID += 1
+    let task = Task(id: -1, name: name, affinity: affinity, stackBottom: bottom, stackFrames: frames, body: body)
     task.buildInitialFrame()
-    scheduler.all.append(task)
-    scheduler.runQueue.append(task)
+    schedLock.withIRQsOff {
+        task.id = scheduler.nextID
+        scheduler.nextID += 1
+        scheduler.all.append(task)
+        scheduler.runQueue.append(task)
+        wakeIdleCPU(for: task)
+    }
     return task
 }
 
-/// Let every other ready task run once, then continue. A no-op when nothing
-/// else is ready.
+/// Let every other ready task (that this CPU may run) run once, then
+/// continue. A no-op when there is none, e.g. on an AP with nothing else
+/// runnable.
 func yield() {
-    guard let me = scheduler.current, scheduler.hasReady else { return }
-    me.state = .ready
-    scheduler.runQueue.append(me)
-    reschedule()
+    guard scheduler.current != nil else { return }
+    reschedule(.yield)
 }
 
 /// The next event in the current task's inbox, blocking until there is one.
@@ -157,10 +325,9 @@ func yield() {
 func waitEvent() -> Event {
     guard let me = scheduler.current else { taskPanic("waitEvent before the scheduler started") }
     while true {
-        if let event = me.inbox.next() { return event }
+        if let event = schedLock.withIRQsOff({ me.inbox.next() }) { return event }
         guard !me.isMain else { taskPanic("the main task can't block") }
-        me.state = .blocked
-        reschedule()
+        reschedule(.block) // re-checks the inbox under the lock before blocking
     }
 }
 
@@ -171,47 +338,96 @@ func waitKey() -> Key {
     }
 }
 
-/// Switch to the head of the run queue, if any. The current task's state
-/// says what happens to it: requeued by the caller (yield), blocked (woken
-/// by post) or finished (freed by the next task).
+enum SwitchReason { case yield, block, exit }
+
+/// Switch to the next task this CPU may run, if any. `why` says what
+/// happens to the current task: requeued (yield), blocked (woken by post)
+/// or finished (freed by the next task on this CPU).
 @inline(never)
-func reschedule() {
-    guard let regs = prepareSwitch() else { return }
-    context_switch(regs.0, regs.1)
+func reschedule(_ why: SwitchReason) {
+    guard let (save, load) = prepareSwitch(why) else { return }
+    switchStacks(save, load)
     afterSwitch()
 }
 
-/// All the bookkeeping of a switch, done before it, so no Swift reference
-/// lives in the frame that calls context_switch. Returns where to save the
-/// current rsp and the rsp to load, or nil to keep running.
+/// The handoff: wait until no CPU is on `load`'s stack (its previous CPU
+/// may still be inside context_switch), claim it, and switch. Raw pointers
+/// only: nothing here keeps a task alive.
+@inline(__always)
+func switchStacks(_ save: UnsafeMutablePointer<UInt64>, _ load: UnsafeMutablePointer<UInt64>) {
+    let onCPU = load + 1
+    while atomic_load64(onCPU) != 0 { cpu_pause() }
+    atomic_store64(onCPU, 1)
+    context_switch(save, atomic_load64(load), save + 1)
+}
+
+/// The first task in the run queue that CPU `cpu` may run, removed. Under
+/// schedLock.
+func takeRunnable(_ cpu: Int) -> Task? {
+    guard let i = scheduler.runQueue.firstIndex(where: { $0.affinity.allows(cpu) }) else { return nil }
+    return scheduler.runQueue.remove(at: i)
+}
+
+/// All the bookkeeping of a switch, under schedLock and before it, so no
+/// Swift reference lives in the frame that calls context_switch. Returns
+/// where to save the current rsp and the incoming task's rsp slot, or nil
+/// to keep running.
 @inline(never)
-func prepareSwitch() -> (UnsafeMutablePointer<UInt64>, UInt64)? {
-    guard let prev = scheduler.current else { return nil }
-    guard !scheduler.runQueue.isEmpty else {
-        if prev.state == .ready { prev.state = .running; return nil } // nothing else to run
+func prepareSwitch(_ why: SwitchReason) -> (UnsafeMutablePointer<UInt64>, UnsafeMutablePointer<UInt64>)? {
+    guard let sched = thisSched(), let prev = sched.current else { return nil }
+    let flags = schedLock.acquireIRQ()
+    defer { schedLock.releaseIRQ(flags) }
+    if why == .block && !prev.inbox.isEmpty { return nil } // an event arrived: don't sleep
+    let next: Task
+    if let n = takeRunnable(sched.cpu) {
+        next = n
+    } else if why == .yield {
+        watchdogSwitch(from: prev, toIdle: false) // cooperating counts, even with no switch
+        return nil
+    } else if let idle = sched.idle, idle !== prev {
+        next = idle
+    } else {
         taskPanic("deadlock: no task is ready")
     }
-    let next = scheduler.runQueue.removeFirst()
     if !prev.canaryIntact { taskPanic("stack overflow (canary) in the task switching out") }
     if !next.canaryIntact { taskPanic("stack overflow (canary) in the task switching in") }
-    watchdogSwitch(from: prev)
-    if prev.state == .running { prev.state = .ready } // shouldn't happen, but don't lose it
+    watchdogSwitch(from: prev, toIdle: next === sched.idle)
+    switch why {
+    case .yield:
+        prev.state = .ready
+        scheduler.runQueue.append(prev)
+        wakeIdleCPU(for: prev)
+    case .block:
+        prev.state = .blocked
+    case .exit:
+        prev.state = .finished
+        sched.zombies.append(prev)
+    }
+    switchedIn(next, sched)
+    return (prev.rspSlot, next.rspSlot)
+}
+
+/// Bookkeeping for the task about to run on this CPU. Under schedLock.
+func switchedIn(_ next: Task, _ sched: CPUSched) {
     next.state = .running
     next.runs += 1
-    scheduler.current = next
+    next.lastCPU = sched.cpu
+    sched.current = next
     scheduler.switches += 1
-    if next === prev { return nil }
-    return (prev.rspSlot, next.rspSlot.pointee)
+    thisCPU().pointee.switches &+= 1
 }
 
 /// Runs on the incoming task's stack after every switch: free the tasks that
-/// finished (none of them is the one running).
+/// finished on this CPU (none of them is the one running). Their deinit
+/// (heap, pmm) runs outside schedLock.
 func afterSwitch() {
-    guard !scheduler.zombies.isEmpty else { return }
-    for dead in scheduler.zombies {
-        if let i = scheduler.all.firstIndex(where: { $0 === dead }) { scheduler.all.remove(at: i) }
+    guard let sched = thisSched(), !sched.zombies.isEmpty else { return }
+    schedLock.withIRQsOff {
+        for dead in sched.zombies {
+            if let i = scheduler.all.firstIndex(where: { $0 === dead }) { scheduler.all.remove(at: i) }
+        }
     }
-    scheduler.zombies.removeAll() // frees their stacks, unless someone still holds them
+    sched.zombies.removeAll(keepingCapacity: true) // frees their stacks, unless someone still holds them
 }
 
 /// First code of every task, reached from task_trampoline (cpu.S).
@@ -231,33 +447,93 @@ func runCurrentBody() {
     body()
 }
 
-/// Leave for good. The finished task is in `zombies`, so its stack and rsp
-/// slot stay valid through the context_switch; the next task frees them.
+/// Leave for good. The finished task is in this CPU's zombies, so its stack
+/// and rsp slot stay valid through the context_switch; the next task on
+/// this CPU frees them.
 @inline(never)
 func exitCurrentTask() -> Never {
     let (save, load) = prepareExit()
-    context_switch(save, load)
+    switchStacks(save, load)
     taskPanic("a finished task was resumed")
 }
 
 @inline(never)
-func prepareExit() -> (UnsafeMutablePointer<UInt64>, UInt64) {
+func prepareExit() -> (UnsafeMutablePointer<UInt64>, UnsafeMutablePointer<UInt64>) {
     guard let me = scheduler.current, !me.isMain else { taskPanic("the main task returned") }
-    me.state = .finished
-    scheduler.zombies.append(me)
-    guard let switchTo = prepareSwitch() else { taskPanic("no task to run after exit") }
+    guard let switchTo = prepareSwitch(.exit) else { taskPanic("no task to run after exit") }
     return switchTo
 }
 
 func taskPanic(_ why: StaticString) -> Never {
+    panicBegin() // stop the other CPUs first (first CPU to panic wins)
     _ = stdoutLock.acquireForPanic() // bounded spin, then write anyway
     statusBarAlert(" *** TASK PANIC: system halted (see serial) ***")
     puts("\ntask panic: ")
     puts(why)
+    puts(" (cpu ")
+    printDec(cpuIndex())
+    puts(")")
     newline()
     panicFlush()
     qemuExit(1)
 }
+
+// MARK: AP idle task
+
+/// An AP's scheduler state: its boot context (the stack it will run on)
+/// becomes its idle task. Built by the BSP in smpInit before it starts the
+/// AP, so APs allocate nothing while booting.
+func apSchedInit(cpu: Int) {
+    let e = perCPUEntry(cpu)
+    let idle = Task(id: -1, name: "idle", affinity: .cpu(cpu), stackBottom: UInt(e.pointee.stackBase),
+                    stackFrames: 0, body: nil)
+    idle.lastCPU = cpu
+    schedLock.withIRQsOff {
+        idle.id = scheduler.nextID
+        scheduler.nextID += 1
+    }
+    cpuSchedInstall(CPUSched(cpu: cpu, current: idle, idle: idle), cpu: cpu)
+}
+
+/// The AP's idle loop (its idle task): run whatever this CPU may run, else
+/// sleep until a reschedule IPI. The check and the sleep can't race a
+/// wakeup: interrupts are off from the check (which sets this CPU's idle
+/// bit under schedLock) to `sti; hlt`, and a pending IPI ends the hlt.
+func apIdleLoop() -> Never {
+    while true {
+        cli()
+        if let (save, load) = idlePick() {
+            sti()
+            switchStacks(save, load)
+            afterSwitch()
+            continue
+        }
+        sti_hlt()
+        thisCPU().pointee.idleWakeups &+= 1
+    }
+}
+
+/// Interrupts are off. The next task for this CPU (switched in), or nil
+/// with this CPU marked idle.
+@inline(never)
+func idlePick() -> (UnsafeMutablePointer<UInt64>, UnsafeMutablePointer<UInt64>)? {
+    guard let sched = thisSched(), let idle = sched.idle else { return nil }
+    schedLock.acquire()
+    defer { schedLock.release() }
+    guard let next = takeRunnable(sched.cpu) else {
+        setIdle(true)
+        thisCPU().pointee.watchdogActive = 0
+        return nil
+    }
+    setIdle(false)
+    if !next.canaryIntact { taskPanic("stack overflow (canary) in the task switching in") }
+    watchdogSwitch(from: idle, toIdle: false)
+    idle.state = .ready
+    switchedIn(next, sched)
+    return (idle.rspSlot, next.rspSlot)
+}
+
+// MARK: Main loop
 
 /// The event loop, as task 0: poll the devices, hand each event to `route`
 /// (which posts it into some task's inbox), let the ready tasks run, and
@@ -287,46 +563,94 @@ func runShellTask() -> Never {
     }
 }
 
+/// Every task but task 0 and the caller is blocked with an empty inbox, and
+/// this CPU has no zombies (settled; selftests).
+func otherTasksSettled() -> Bool {
+    guard let sched = thisSched() else { return true }
+    if !sched.zombies.isEmpty { return false }
+    let me = sched.current
+    return schedLock.withIRQsOff {
+        for task in scheduler.all where !task.isMain && task !== me {
+            if task.state != .blocked || !task.inbox.isEmpty { return false }
+        }
+        return true
+    }
+}
+
+/// Per CPU: its index and the name of the task running there ("-" if the
+/// CPU has no scheduler state).
+func currentTaskNames() -> [String] {
+    var names: [String] = []
+    names.reserveCapacity(smpStarted)
+    schedLock.withIRQsOff {
+        for i in 0..<smpStarted { names.append(cpuSched(i)?.current?.name ?? "-") }
+    }
+    return names
+}
+
 // MARK: Watchdog
 
-// Plain globals, because the timer IRQ reads them (no allocation, no
-// classes). A task that runs longer than watchdogLimit ticks without
-// switching or sleeping in idleStep gets a serial warning from the IRQ (the
-// only code that still runs while it spins), then a report and a status-bar
-// alert once it finally lets go.
+// Per CPU (PerCPU.watchdogMark/Active/Tripped), checked by the BSP's timer
+// IRQ (no allocation, no locks, no classes). A task that runs longer than
+// watchdogLimit ticks without switching, yielding or sleeping in idleStep
+// gets a raw serial warning from the IRQ (the only code that still runs on
+// CPU 0 while it spins there), then a report and a status-bar alert once it
+// finally lets go.
 
 var watchdogArmed = false
-/// `ticks` when the running task was switched in, or last idled.
-var watchdogMark: UInt64 = 0
 var watchdogLimit: UInt64 = timerHz
-/// Set by the IRQ once per overrun.
-var watchdogTripped = false
+/// Overruns reported (under schedLock).
 var watchdogTrips = 0
 /// Show the status-bar alert until this tick.
 var watchdogAlertUntil: UInt64 = 0
 
+/// Set by the IRQ once per overrun on this CPU.
+var watchdogTripped: Bool {
+    get { thisCPU().pointee.watchdogTripped != 0 }
+    set { thisCPU().pointee.watchdogTripped = newValue ? 1 : 0 }
+}
+
 func watchdogPet() {
-    watchdogMark = ticks
+    thisCPU().pointee.watchdogMark = ticks
 }
 
-/// Timer IRQ (interrupts.swift). Allocation-free; raw serial only, because
-/// the console may be in the middle of an update.
+/// Timer IRQ (interrupts.swift), on the BSP. Allocation-free; raw serial
+/// only, because the console may be in the middle of an update.
 func watchdogTick() {
-    guard watchdogArmed, !watchdogTripped, ticks &- watchdogMark > watchdogLimit else { return }
-    watchdogTripped = true
-    let message: StaticString = "\r\n[watchdog: a task has not yielded within the limit]\r\n"
-    message.withUTF8Buffer { for b in $0 { serialPutc(b) } }
+    guard watchdogArmed else { return }
+    let now = ticks
+    for i in 0..<smpStarted {
+        let e = perCPUEntry(i)
+        guard e.pointee.watchdogActive != 0, e.pointee.watchdogTripped == 0,
+              now &- e.pointee.watchdogMark > watchdogLimit else { continue }
+        e.pointee.watchdogTripped = 1
+        let head: StaticString = "\r\n[watchdog: a task has not yielded within the limit"
+        head.withUTF8Buffer { for b in $0 { serialPutc(b) } }
+        if i != 0 {
+            let on: StaticString = " (cpu "
+            on.withUTF8Buffer { for b in $0 { serialPutc(b) } }
+            if i >= 10 { serialPutc(UInt8(48 + i / 10)) }
+            serialPutc(UInt8(48 + i % 10))
+            serialPutc(0x29)
+        }
+        let tail: StaticString = "]\r\n"
+        tail.withUTF8Buffer { for b in $0 { serialPutc(b) } }
+    }
 }
 
-/// On a switch away from `prev`: report an overrun, restart the clock.
-func watchdogSwitch(from prev: Task) {
-    if watchdogTripped {
-        watchdogTripped = false
+/// On a switch away from `prev` (or a yield that kept it): report an
+/// overrun, restart the clock. Under schedLock.
+func watchdogSwitch(from prev: Task, toIdle: Bool) {
+    let e = thisCPU()
+    if e.pointee.watchdogTripped != 0 {
         watchdogTrips += 1
         watchdogAlertUntil = ticks + 5 * timerHz
-        print("watchdog: task \(prev.id) (\(prev.name)) ran \((ticks &- watchdogMark) * 1000 / timerHz) ms without yielding")
+        let cpu = e.pointee.index
+        print("watchdog: task \(prev.id) (\(prev.name)) ran \((ticks &- e.pointee.watchdogMark) * 1000 / timerHz) ms without yielding\(cpu == 0 ? "" : " on cpu \(cpu)")")
+        e.pointee.watchdogTripped = 0
     }
-    watchdogPet()
+    e.pointee.watchdogMark = ticks
+    if e.pointee.index != 0 { e.pointee.watchdogActive = toIdle ? 0 : 1 }
 }
 
 /// Called right after the status bar is redrawn: keep the alert on top.

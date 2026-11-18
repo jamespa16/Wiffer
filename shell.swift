@@ -361,9 +361,17 @@ struct Shell<T: Terminal> {
             Command(name: "gfx", args: "", help: "compositor layers and damage stats") { sh, _ in
                 sh.say(compositorInfo())
             },
-            Command(name: "fault", args: "<kind>", help: "raise an exception: ud, de, pf, gp, df") { sh, args in
+            Command(name: "fault", args: "<kind>", help: "raise an exception: ud, de, pf, gp, df; ap: #UD on CPU 1") { sh, args in
+                if args.count == 1 && args[0] == "ap" {
+                    // Phase S: a fault on another CPU halts this one (halt IPI).
+                    guard spawn("fault", affinity: .cpu(1), { fault_invalid_opcode() }) != nil else {
+                        sh.say("fault ap: needs a second CPU")
+                        return
+                    }
+                    while true { yield() }
+                }
                 if args.count == 1 { raiseFault(String(args[0])) }
-                sh.say("usage: fault <ud|de|pf|gp|df>")
+                sh.say("usage: fault <ud|de|pf|gp|df|ap>")
             },
             Command(name: "halt", args: "", help: "stop the CPU") { sh, _ in
                 sh.say("Halted.")

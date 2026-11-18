@@ -82,6 +82,9 @@ func runSelfTests() -> Never {
     // Phase H: modifier keys, event queue, cooperative tasks.
     taskTests(&t)
 
+    // Phase S: the SMP scheduler.
+    schedTests(&t)
+
     // Phase M: RAM filesystem, ustar, file commands.
     fsTests(&t)
 

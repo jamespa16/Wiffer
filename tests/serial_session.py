@@ -144,6 +144,9 @@ FAULT_CHECKS = [
     ("gp", ["*** EXCEPTION 13: #GP general protection fault", "rip    0xffffffff8"]),
     ("df", ["*** EXCEPTION 8: #DF double fault", "rsp    0x0000700000000000"]),
 ]
+# Phase S: a fault on an AP (CPU 1) stops the others and reports its CPU.
+if int(SMP) >= 2:
+    FAULT_CHECKS.append(("ap", ["*** EXCEPTION 6: #UD invalid opcode", "cpu    1", "rip    0xffffffff8"]))
 
 
 class Session:

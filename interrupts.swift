@@ -52,6 +52,7 @@ func exceptionName(_ vector: UInt64) -> StaticString {
 /// the heap may be what faulted. On screen: a white-on-red header and
 /// footer, and the status bar turns red.
 func exceptionReport(_ f: interrupt_frame) -> Never {
+    panicBegin() // Phase S: first CPU to fail reports; the others are stopped
     _ = stdoutLock.acquireForPanic() // bounded spin, then write anyway
     statusBarAlert(" *** EXCEPTION: system halted (see the report below) ***")
     // Reset attributes first: the fault may have hit mid-way through output.

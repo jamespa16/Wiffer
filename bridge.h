@@ -240,8 +240,10 @@ static inline void sse_clobber_all(void) {
 // ---- Phase H: cooperative tasks (cpu.S) -----------------------------------
 
 // Push rbp, rbx, r12-r15, MXCSR and the x87 control word, store rsp in
-// *save_rsp, load load_rsp, pop the same from there and ret.
-void context_switch(uint64_t *save_rsp, uint64_t load_rsp);
+// *save_rsp, load load_rsp, then store 0 to *on_cpu (the outgoing task's
+// "still on a CPU" word: from here another CPU may resume it), pop the same
+// from the new stack and ret. Phase S.
+void context_switch(uint64_t *save_rsp, uint64_t load_rsp, uint64_t *on_cpu);
 // Address of the first-run trampoline a new task's stack "returns" into.
 extern const uint64_t task_trampoline_address;
 // Selftest: load rbx, rbp, r12-r15 with seed+1...seed+6, MXCSR and the x87
@@ -275,6 +277,15 @@ static inline int atomic_cas64(volatile uint64_t *p, uint64_t expected, uint64_t
 // Returns the old value.
 static inline uint64_t atomic_fetch_add64(volatile uint64_t *p, uint64_t value) {
     return __atomic_fetch_add(p, value, __ATOMIC_SEQ_CST);
+}
+
+// Return the old value.
+static inline uint64_t atomic_fetch_or64(volatile uint64_t *p, uint64_t value) {
+    return __atomic_fetch_or(p, value, __ATOMIC_SEQ_CST);
+}
+
+static inline uint64_t atomic_fetch_and64(volatile uint64_t *p, uint64_t value) {
+    return __atomic_fetch_and(p, value, __ATOMIC_SEQ_CST);
 }
 
 // Spin-wait hint.

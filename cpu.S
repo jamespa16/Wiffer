@@ -104,7 +104,7 @@ isr_common:
 
 
 // ---- Phase H: cooperative task switch ------------------------------------
-// void context_switch(uint64_t *save_rsp, uint64_t load_rsp)
+// void context_switch(uint64_t *save_rsp, uint64_t load_rsp, uint64_t *on_cpu)
 // The SysV callee-saved state: rbx, rbp, r12-r15, plus MXCSR's control bits
 // and the x87 control word. Everything else is caller-saved, so the Swift
 // caller has already spilled what it needs. Interrupts may arrive at any
@@ -123,6 +123,11 @@ context_switch:
     fnstcw 4(%rsp)
     movq %rsp, (%rdi)
     movq %rsi, %rsp
+    // Phase S: only now, off the old stack, release the outgoing task to the
+    // other CPUs (a plain store is a release on x86: the pushes and the rsp
+    // save above are visible first). Clearing it before the rsp load would
+    // let an interrupt push onto a stack another CPU had already resumed.
+    movq $0, (%rdx)
     ldmxcsr (%rsp)
     fldcw 4(%rsp)
     addq $8, %rsp
