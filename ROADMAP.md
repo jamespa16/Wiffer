@@ -9,8 +9,9 @@
 - **Part 5: Writing to disk.** Done (Phases U–Z): a FAT32 virtio disk at /disk.
 - **Parts 6–8: Toward a web browser.** Planned: user space (6A–6G),
   networking (7A–7F), and a browser (8A–8I). See the end of this document.
-  Part 6: 6A–6D done (page tables, ring 3 and syscalls, processes, ELF
-  programs in /bin, libwiffer, preemption and timed sleeps); 6E–6G open.
+  Part 6: 6A–6E done (page tables, ring 3 and syscalls, processes, ELF
+  programs in /bin, libwiffer, preemption and timed sleeps, fds, pipes,
+  wait); 6F–6G open.
   Part 7: 7A–7C done (virtio-net, Ethernet/ARP/IPv4/ICMP, UDP, DHCP, DNS);
   7D–7F open.
 
@@ -1704,7 +1705,7 @@ gets the right checksum.
   second for their timer (no tickless idle). Kernel code that never
   yields still freezes its CPU, by design.
 
-## Phase 6E: files, stdio and wait
+## Phase 6E: files, stdio and wait (done)
 
 **6E1. File descriptors.** Each process has an fd table of `FileObject`
 (a class hierarchy: `VFSFile`, `ConsoleFile`, `PipeEnd`, and later
@@ -1735,6 +1736,66 @@ proves the file API on real use.
 **Done when:** `/bin/cat /disk/README.TXT | /bin/wc` works in a
 terminal window, Ctrl-C kills a `spin`, and the shell harness checks
 pass with the ported commands.
+
+**As built** (fileobject.swift, sysfile.swift, process_commands.swift,
+user/libwiffer/files.swift, user/{cat,ls,wc,hexdump,echo,iotest},
+file_selftest.swift):
+- **Ground rule: the kernel never dereferences a user pointer outside
+  `copyIn`/`copyOut`/`withUserBuffer`, and trusts no syscall value.** Every
+  fd, length, count, flag and path is checked (paths: 1...4096 bytes, no
+  NUL; wait: at most 64 fds). `read` validates the destination with
+  `userRangeReady` before taking data from a pipe, so a bad pointer loses
+  nothing. `iotest` (ring 3) covers null, kernel, unmapped, read-only and
+  page-straddling pointers and pointer+length overflow.
+- **FileObject** (`class`, any CPU unless `needsCPU0`): `tryRead(max) ->
+  IOResult`, `tryWrite([UInt8]) -> IOResult` (`.data/.count/.wouldBlock/
+  .error(errno)`; empty `.data` is EOF), `ready() -> Int16` (WaitEvent
+  readable/writable/hangup), `waits: WaitList` (`add/remove/wake`; call
+  `notify()` when readiness may change), `seek`, `stat`, `readdir`,
+  `lastClose()`, `needsCPU0`, `consoleChannel`. Methods never block: the
+  syscall layer (`blockingIO`, `sysWait`) registers on `waits`, re-checks
+  `ready()`, then `park()`s (a kill unparks: -EINTR). Subclasses for 6F
+  windows and 7E sockets override these. Reference counting is explicit:
+  `FdTable.install/set/close` call `addRef/dropRef`; the last drop runs
+  `lastClose` (how a pipe sees its last writer go). The shell holds a count
+  on both ends of each pipe until every stage has its fds.
+- **Decision (console):** a command line's programs share a
+  `ConsoleChannel`; the waiting shell is the pump (`waitProcesses`): it
+  drains output to its terminal, feeds keys from its inbox to the channel's
+  line discipline and kills the programs on Ctrl-C or window close. (Not a
+  post to the terminal's inbox: the shell is already the task that owns the
+  terminal.) Cooked mode (default): echo, Backspace, Ctrl-U, one line per
+  read, Ctrl-D on an empty line is EOF. `console_mode(fd, ConsoleMode.raw
+  [| .passInterrupt])`: keys as bytes (arrows as ESC [ A..D), no echo;
+  Ctrl-C still kills unless `passInterrupt`. Background jobs and a channel
+  after its command ended log to the kernel log and read EOF.
+- **VFSFile** works on a private copy when opened for writing and writes it
+  through (`vfs.write`, so /disk too) when its last fd closes; other opens
+  see the new bytes then. Known gap: a large file written in pieces is
+  rewritten whole at close (FAT write-through is whole-file).
+- **Syscalls:** spawn 6 `(path,len,argv blob,len,fds)`, waitpid 7, kill 8
+  (children or self), open 20, close 21, read 22, write 23, seek 24, stat
+  25, readdir 26 (DirRecord stream), mkdir 27, unlink 28 (file or empty
+  dir), rename 29, getcwd 30, chdir 31, dup2 32, pipe 33, wait 34
+  `(WaitFD array, count, timeoutMs)`, consoleMode 35, fstat 36.
+  `handleSyscall` now takes a fifth argument (r8). `wait` uses 6D's
+  `parkUntil`/`deadlineAfter`.
+- **Shell:** `a | b | c` runs programs only (a bare name is /bin/name).
+  **Resolution order:** built-in commands first (`cat`, `ls`, `echo` stay
+  built in: the in-kernel selftests and many serial checks use their exact
+  output), then /bin/<word>; a word with `/` always runs the program, so
+  `/bin/cat` is the port. The ports (cat, ls, wc, hexdump, echo) pass the
+  same harness checks; removing the built-ins was left out of scope.
+  `set affinity <cpu>` pins started programs to a CPU.
+- **libwiffer:** `File.open/read/readAll/write/writeAll/seek/stat/close/
+  dup2/pipe/readDirectory`, `File.stdin`, `FS.list/stat/mkdir/unlink/
+  rename/getcwd/chdir`, `wait(&[WaitFD], timeoutMs:)`, `Console.setMode`,
+  `Process.spawn/waitpid/kill`, `SysError(errno).message`.
+- Known gaps: no redirection (`>`), no fd inheritance flags (spawn
+  inherits 0-2 or three chosen fds), no `O_NONBLOCK`, pipes have no
+  `SIGPIPE` (-EPIPE only), processes are limited to 256 and 64 children,
+  and a program's output to a terminal window is copied by the shell task
+  on CPU 0 (a flood is bounded by the channel's 64 KiB).
 
 ## Phase 6F: windows for processes
 
