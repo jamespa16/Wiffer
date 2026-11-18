@@ -92,6 +92,9 @@ func runSelfTests() -> Never {
     // Phase U: block devices.
     blockTests(&t)
 
+    // Phases W and X: FAT32.
+    fatTests(&t)
+
     // Phase N: text buffer and editor key model.
     editorTests(&t)
 

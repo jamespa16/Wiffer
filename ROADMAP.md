@@ -871,6 +871,30 @@ passes. Booting with `--nodisk` still passes everything else.
 
 ## Phase W: FAT32 read and format
 
+**Done** (fat32.swift, fat32_selftest.swift; selftest `fatTests`, run after
+`blockTests`). The API below as written, except that `label` and
+`freeClusters` are `private(set)` and the geometry is `let`. Format follows
+the Microsoft table and FAT-size formula. A 64 MiB disk gets 1016-sector
+FATs and 129,008 clusters of 512 B; 293 MiB gets 4 KiB clusters. Under
+65,525 clusters gives `.noSpace`, and a bad label gives `.invalidName`. The
+FATs and the root cluster are zeroed in 64-sector writes, and the boot
+sector at 0 is written last. Mount always counts the free clusters from
+the FAT, in 32 KiB reads; FSInfo is only a hint and is never trusted. The
+label comes from the root's label entry, or else from the BPB ("NO NAME" =
+""). Directories are read whole, one per path component, on every call: no
+directory cache. The FAT cache holds whole sectors keyed by index. Dirty
+ones are written to every FAT copy in runs, and the cache is dropped past
+512 sectors. A chain is `.corrupt` if it runs off the volume, into a free
+or bad cluster, or past `totalClusters` links (a loop). LFN runs need
+consecutive sequence numbers and the matching checksum, or the 8.3 name is
+shown instead. Orphaned LFN entries are skipped. Lookup folds only ASCII
+and matches long names only (not `NAME~1`). Short names above 0x7F are
+shown as Latin-1. Checked against macOS: images written here pass
+`fsck_msdos` and mount with names intact, and a `newfs_msdos` volume filled
+by macOS lists, reads and checks clean here (a host build of
+fat32.swift + block.swift). Z's fixture hadn't landed, so it isn't tested
+yet. The FAT tests add about 0.35 s to a ~1.9 s selftest.
+
 `fat32.swift` (plus `fat32_selftest.swift`) is pure Swift over a
 `BlockDevice`. It's written against `RamDisk` only, so it needs nothing
 from V.
@@ -921,6 +945,34 @@ final class FATVolume {
   - the heap goes back to baseline after unmount
 
 ## Phase X: FAT32 write
+
+**Done** (same files). Timestamps come from the global
+`fatClock: () -> FATTimestamp`, which defaults to `fatDefaultClock`
+(2026-01-01 00:00). Y should point it at `rtcNow()`. Each mutating call runs
+inside `update`, which flushes the FAT, FSInfo and then the device. If the
+call throws, the volume drops its FAT cache and recounts the free clusters
+from disk. The commit point is one sector write: the 8.3 entry's sector
+(written last when adding, first when deleting). A call that throws has not
+reached it, so the disk still reads as before. Errors after it (freeing the
+old chain, deleting a rename's old entry) are swallowed, because at worst
+they leak clusters or orphan LFN entries. The data goes out before the
+commit: new clusters, their FAT links, then a device flush. A pre-commit
+failure tries to free the new chain again. A directory grows by a zeroed
+cluster, marked end-of-chain and flushed before it's linked in. Replacing a
+file needs room for both copies, so a full disk gives `.noSpace` even when
+the new contents are smaller. Writing an existing name in another case
+replaces that file and keeps its spelling. A generated short name never
+reuses one in the directory: a plain 8.3 name that is taken gets an LFN
+and `~N`. Rename is in place when it stays in one directory and needs no
+more slots, and only a change of case is allowed onto the same entry.
+Moving a directory into itself gives `.invalidName`, since FATError has no
+`invalidMove` (Y's VFS checks first anyway). An empty path gives
+`.invalidName` (`read([])` gives `.isADirectory`). `check()` doesn't
+compare the FAT copies. `reserve(path, size:)` allocates without writing
+data, so the full-disk test can fill a volume cheaply. The power-cut sweep
+cuts after every possible write count of a 12-sector-write overwrite.
+Breaking the write order (freeing the old chain before the commit) makes it
+fail, as does skipping the LFN checksum in the hand-built test.
 
 - **Names:** pick a short name (`NAME~1.TXT`) and write LFN entries when
   the name isn't a valid uppercase 8.3 name. Characters outside FAT's set
