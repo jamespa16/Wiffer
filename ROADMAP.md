@@ -835,6 +835,33 @@ global `blockDevices`.
 
 ## Phase V: PCI and virtio-blk
 
+**Done** (`pci.swift`, `virtio_blk.swift`, `rtc.swift`; selftests
+`pciTests`, `rtcTests`, `virtioTests`). `diskInit()` (after `smpInit()`)
+runs `pciInit()`, which fills `pciDevices` (BARs sized with decoding and
+interrupts off), then probes every 1af4:1001 function as `VirtioBlock`
+vda, vdb, ... into `blockDevices`. A modern-only 1af4:1042 is reported
+and skipped. One polled queue with one request in flight. Fixed
+descriptors 0–2 point into a request frame (header at 0, status at 16)
+and a 64 KiB bounce buffer (128 sectors per chunk). `avail.flags =
+NO_INTERRUPT`, and ISR is read after each completion. A request that
+times out (2 s of ticks, or a spin cap if interrupts are off) marks the
+device `broken`. The device may still own the buffers then, so every
+later request fails with `.io`. `flush()` sends T_FLUSH if the device
+offers F_FLUSH, otherwise it does nothing. `rtcNow()` returns a named
+tuple `RTCTime` (`rtcDecode` is separately tested). bridge.h gained
+`outw/inw/outl/inl`, `dma_load16/dma_store16/dma_load8` (acquire/release)
+and `dma_fence`. Shell: `lspci`, `disks`. Under both SeaBIOS and OVMF,
+the disk is at 00:03.0 with I/O BAR 0 already assigned: 128 bytes, the
+legacy header plus device config, at 0xc000 under SeaBIOS and 0x6000 under
+OVMF. MSI-X is off, so device config starts at 0x14. No firmware quirks were needed. The driver still sets
+I/O + bus master in the command register itself. run.sh creates
+`build/disk.img` (64 MiB of zeros) if it's missing. `--nodisk` leaves the
+disk off (with `--test`, the harness's main session too, via
+`WIFFER_NODISK`). The harness's main session gets a fresh scratch image in
+a temp dir. `DISK_CHECKS` (or `NODISK_CHECKS`) run after the shell checks.
+Restoring the selftest's sectors was checked by booting on 64 MiB of
+random data, running `selftest`, and comparing hashes (BIOS and UEFI).
+
 **V1. PCI** (`pci.swift`). Config mechanism #1 (0xCF8/0xCFC). Brute-force
 bus 0–255, device 0–31, and functions 0–7 for multi-function devices. That
 gives a `[PCIDevice]` with location, vendor/device, class/subclass, BARs

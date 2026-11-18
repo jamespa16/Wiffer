@@ -46,7 +46,7 @@ struct Shell<T: Terminal> {
     init(terminal: T) {
         term = terminal
         commands = Shell.builtins() + Shell.fileCommands() + Shell.desktopCommands()
-            + Shell.editorCommands() + Shell.terminalCommands()
+            + Shell.editorCommands() + Shell.terminalCommands() + Shell.diskCommands()
     }
 
     /// Until the terminal says the session is over (Phase L: `exit`, or the

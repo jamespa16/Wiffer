@@ -92,6 +92,11 @@ func runSelfTests() -> Never {
     // Phase U: block devices.
     blockTests(&t)
 
+    // Phase V: PCI, CMOS RTC, virtio-blk (round trip only if vda exists).
+    pciTests(&t)
+    rtcTests(&t)
+    virtioTests(&t)
+
     // Phase N: text buffer and editor key model.
     editorTests(&t)
 

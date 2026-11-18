@@ -7,11 +7,14 @@
 #   ./run.sh --test   headless: scripted shell checks + in-kernel selftest
 #   ./run.sh --test --uefi   the same, booted through OVMF
 #   ./run.sh --smp N   N virtual CPUs (default 4, or env WIFFER_SMP); works with --test
+#   ./run.sh --nodisk  no virtio disk (default: build/disk.img, 64 MiB, created
+#                      blank if missing); with --test the harness's main
+#                      session boots without its scratch disk too
 # Options may be given in any order.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-TEST=0 UEFI=0 NODESKTOP=0 NOGRAPHIC=0
+TEST=0 UEFI=0 NODESKTOP=0 NOGRAPHIC=0 NODISK=0
 SMP="${WIFFER_SMP:-4}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -19,6 +22,7 @@ while [[ $# -gt 0 ]]; do
     --uefi) UEFI=1 ;;
     --nographic) NOGRAPHIC=1 ;;
     --nodesktop) NODESKTOP=1 ;;
+    --nodisk) NODISK=1 ;;
     --smp)
       [[ $# -ge 2 ]] || { echo "--smp needs a count" >&2; exit 1; }
       SMP="$2"; shift ;;
@@ -47,6 +51,7 @@ export WIFFER_OVMF
 if (( TEST )); then
   export WIFFER_SMP="$SMP"
   (( UEFI )) && export WIFFER_UEFI=1
+  (( NODISK )) && export WIFFER_NODISK=1
   exec python3 tests/serial_session.py
 fi
 
@@ -56,5 +61,11 @@ EXTRA=()
 DISPLAY_ARGS=(-serial stdio)
 (( UEFI )) && EXTRA+=(-drive "if=pflash,format=raw,readonly=on,file=$WIFFER_OVMF")
 (( NOGRAPHIC )) && DISPLAY_ARGS=(-nographic)
+# Phase V: the virtio disk (legacy virtio-blk: see ROADMAP Part 5).
+DISK=build/disk.img
+if (( ! NODISK )); then
+  [[ -f "$DISK" ]] || { echo "creating blank $DISK (64 MiB)"; python3 -c 'import sys; open(sys.argv[1], "wb").truncate(64 << 20)' "$DISK"; }
+  EXTRA+=(-drive "file=$DISK,if=none,id=vd0,format=raw" -device virtio-blk-pci,drive=vd0,disable-legacy=off,disable-modern=on)
+fi
 exec qemu-system-x86_64 -M q35 -m 256M -cpu max -smp "$SMP" -cdrom "$ISO" -boot d -no-reboot -no-shutdown \
   ${EXTRA[@]+"${EXTRA[@]}"} "${DISPLAY_ARGS[@]}"

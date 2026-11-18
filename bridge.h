@@ -349,3 +349,46 @@ static inline void mp_start(struct limine_mp_info *info, uint64_t arg, limine_go
 
 // `sti; hlt` as one asm: an interrupt can't slip in between and be lost.
 static inline void sti_hlt(void) { __asm__ volatile ("sti\n\thlt" : : : "memory"); }
+
+// ---- Phase V: PCI and virtio-blk -------------------------------------------
+// 16/32-bit port I/O (PCI config mechanism #1, the legacy virtio registers).
+
+static inline void outw(uint16_t port, uint16_t value) {
+    __asm__ volatile ("outw %0, %1" : : "a"(value), "Nd"(port) : "memory");
+}
+
+static inline uint16_t inw(uint16_t port) {
+    uint16_t value;
+    __asm__ volatile ("inw %1, %0" : "=a"(value) : "Nd"(port) : "memory");
+    return value;
+}
+
+static inline void outl(uint16_t port, uint32_t value) {
+    __asm__ volatile ("outl %0, %1" : : "a"(value), "Nd"(port) : "memory");
+}
+
+static inline uint32_t inl(uint16_t port) {
+    uint32_t value;
+    __asm__ volatile ("inl %1, %0" : "=a"(value) : "Nd"(port) : "memory");
+    return value;
+}
+
+// Virtqueue memory shared with the device (DMA). Ring indices go through
+// these so the compiler can't cache or reorder them: dma_store16 is a
+// release (the descriptor and ring writes before it are visible first),
+// dma_load16/dma_load8 an acquire (reads after it of the used ring, the
+// status byte and the data see what the device wrote).
+static inline uint16_t dma_load16(const void *p) {
+    return __atomic_load_n((const volatile uint16_t *)p, __ATOMIC_ACQUIRE);
+}
+
+static inline void dma_store16(void *p, uint16_t value) {
+    __atomic_store_n((volatile uint16_t *)p, value, __ATOMIC_RELEASE);
+}
+
+static inline uint8_t dma_load8(const void *p) {
+    return __atomic_load_n((const volatile uint8_t *)p, __ATOMIC_ACQUIRE);
+}
+
+// Full fence (mfence): ring updates before the notify port write.
+static inline void dma_fence(void) { __atomic_thread_fence(__ATOMIC_SEQ_CST); }
