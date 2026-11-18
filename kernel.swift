@@ -65,6 +65,7 @@ func kernelMain() -> Never {
     // earlyLog and is replayed onto the screen.
     consoleInit()
     print("free: \(pmm.freeFrames) frames")
+    vmmInit() // Phase 6A: kernel PDPTs, NX/SMEP/SMAP (before any AP or process)
 
     // PIC is remapped before any IRQ can arrive, then the timer, then sti.
     picInit()

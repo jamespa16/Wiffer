@@ -59,8 +59,14 @@ isr_stub_\n:
 // already aligned here; the andq keeps it so if the frame layout ever changes.
 // rbx (already saved in the frame, callee-saved across the call) remembers
 // the frame address.
+// Phase 6B: an interrupt or exception from ring 3 (saved CS RPL 3) swaps GS
+// in and out. Nonzero from interrupt_dispatch means the user process is
+// leaving: it is user_run's saved stack point (user_leave, below).
 isr_common:
-    pushq %rax
+    testb $3, 24(%rsp)          // saved CS (above vector and error code)
+    jz 1f
+    swapgs
+1:  pushq %rax
     pushq %rbx
     pushq %rcx
     pushq %rdx
@@ -82,6 +88,8 @@ isr_common:
     fxsave (%rsp)
     movq %rbx, %rdi
     call interrupt_dispatch
+    testq %rax, %rax
+    jnz user_leave
     fxrstor (%rsp)
     movq %rbx, %rsp
     popq %r15
@@ -99,8 +107,175 @@ isr_common:
     popq %rcx
     popq %rbx
     popq %rax
-    addq $16, %rsp              // vector + error code
+    testb $3, 24(%rsp)
+    jz 2f
+    cli                         // (already off: an interrupt gate) no IRQ on user GS
+    swapgs
+2:  addq $16, %rsp              // vector + error code
     iretq
+
+
+// ---- Phase 6B: ring 3 ----------------------------------------------------
+// Per-CPU words the stubs use (PerCPU in percpu.swift; checked at boot):
+    .set PERCPU_USER_RSP, 16        // user rsp, scratch during syscall entry
+    .set PERCPU_KERNEL_RSP, 24      // kernel stack for syscalls (user_run's point)
+    .set PERCPU_TSS_RSP0_PTR, 32    // address of this CPU's TSS rsp0 field
+
+// SYSCALL from ring 3 (IA32_LSTAR). The CPU put the user rip in rcx and
+// rflags in r11, and FMASK cleared IF, DF, TF and AC. Build an
+// interrupt_frame (bridge.h: vector 0x100 marks a syscall) on the task's
+// kernel stack, call syscall_dispatch with interrupts on, and return with
+// sysretq, or iretq if the return rip isn't a lower-half canonical address
+// (sysret would #GP in ring 0 on the user stack). Nonzero from the
+// dispatcher means the process is leaving (user_leave).
+    .p2align 4
+    .type syscall_entry, @function
+syscall_entry:
+    swapgs
+    movq %rsp, %gs:PERCPU_USER_RSP
+    movq %gs:PERCPU_KERNEL_RSP, %rsp
+    pushq $0x1B                 // ss: user data | 3
+    pushq %gs:PERCPU_USER_RSP   // rsp
+    pushq %r11                  // rflags
+    pushq $0x23                 // cs: user code | 3
+    pushq %rcx                  // rip
+    pushq $0                    // error code
+    pushq $0x100                // "vector": a syscall
+    pushq %rax
+    pushq %rbx
+    pushq %rcx
+    pushq %rdx
+    pushq %rsi
+    pushq %rdi
+    pushq %rbp
+    pushq %r8
+    pushq %r9
+    pushq %r10
+    pushq %r11
+    pushq %r12
+    pushq %r13
+    pushq %r14
+    pushq %r15
+    movq %rsp, %rbx             // rbx = frame (22 words below an aligned top)
+    andq $-16, %rsp
+    sti
+    movq %rbx, %rdi
+    call syscall_dispatch
+    cli
+    testq %rax, %rax
+    jnz user_leave
+    movq %rbx, %rsp
+    popq %r15
+    popq %r14
+    popq %r13
+    popq %r12
+    popq %r11
+    popq %r10
+    popq %r9
+    popq %r8
+    popq %rbp
+    popq %rdi
+    popq %rsi
+    popq %rdx
+    popq %rcx
+    popq %rbx
+    popq %rax
+    addq $16, %rsp              // vector + error code: rsp at the iret frame
+    movq (%rsp), %rcx           // rip (rcx and r11 are clobbered by syscall)
+    movq %rcx, %r11
+    shrq $47, %r11
+    jnz 3f
+    movq 16(%rsp), %r11         // rflags
+    movq 24(%rsp), %rsp         // user rsp (interrupts are off)
+    swapgs
+    sysretq
+3:  swapgs
+    iretq
+    .size syscall_entry, . - syscall_entry
+
+// void user_run(uint64_t rip, uint64_t rsp, uint64_t *slot)
+// Same saved layout as context_switch: [MXCSR | FCW] r15 r14 r13 r12 rbx rbp ret.
+    .globl user_run
+    .type user_run, @function
+user_run:
+    pushq %rbp
+    pushq %rbx
+    pushq %r12
+    pushq %r13
+    pushq %r14
+    pushq %r15
+    subq $8, %rsp               // now 16-byte aligned
+    stmxcsr (%rsp)
+    fnstcw 4(%rsp)
+    cli
+    movq %rsp, (%rdx)
+    movq %rsp, %gs:PERCPU_KERNEL_RSP
+    movq %gs:PERCPU_TSS_RSP0_PTR, %rax
+    movq %rsp, (%rax)
+    pushq $0x1B                 // ss
+    pushq %rsi                  // rsp
+    pushq $0x202                // rflags: IF
+    pushq $0x23                 // cs
+    pushq %rdi                  // rip
+    // A clean FPU/SSE state and no kernel values in registers.
+    fninit
+    movl $0x1F80, -8(%rsp)      // interrupts are off: below rsp is safe
+    ldmxcsr -8(%rsp)
+    movq $0, -8(%rsp)
+    pxor %xmm0, %xmm0
+    pxor %xmm1, %xmm1
+    pxor %xmm2, %xmm2
+    pxor %xmm3, %xmm3
+    pxor %xmm4, %xmm4
+    pxor %xmm5, %xmm5
+    pxor %xmm6, %xmm6
+    pxor %xmm7, %xmm7
+    pxor %xmm8, %xmm8
+    pxor %xmm9, %xmm9
+    pxor %xmm10, %xmm10
+    pxor %xmm11, %xmm11
+    pxor %xmm12, %xmm12
+    pxor %xmm13, %xmm13
+    pxor %xmm14, %xmm14
+    pxor %xmm15, %xmm15
+    xorl %eax, %eax
+    xorl %ebx, %ebx
+    xorl %ecx, %ecx
+    xorl %edx, %edx
+    xorl %esi, %esi
+    xorl %edi, %edi
+    xorl %ebp, %ebp
+    xorl %r8d, %r8d
+    xorl %r9d, %r9d
+    xorl %r10d, %r10d
+    xorl %r11d, %r11d
+    xorl %r12d, %r12d
+    xorl %r13d, %r13d
+    xorl %r14d, %r14d
+    xorl %r15d, %r15d
+    swapgs
+    iretq
+    .size user_run, . - user_run
+
+// The process is leaving ring 3 for good: rax is user_run's saved stack
+// point. Everything below it (the syscall or interrupt frame, the Swift
+// dispatcher's frames, already returned) is dropped, and user_run returns
+// to its caller. GS is already the kernel's (the entry stub swapped it).
+    .type user_leave, @function
+user_leave:
+    movq %rax, %rsp
+    ldmxcsr (%rsp)
+    fldcw 4(%rsp)
+    addq $8, %rsp
+    popq %r15
+    popq %r14
+    popq %r13
+    popq %r12
+    popq %rbx
+    popq %rbp
+    sti
+    ret
+    .size user_leave, . - user_leave
 
 
 // ---- Phase H: cooperative task switch ------------------------------------
@@ -233,5 +408,9 @@ isr_stub_table:
     .globl task_trampoline_address
 task_trampoline_address:
     .quad task_trampoline
+
+    .globl syscall_entry_address
+syscall_entry_address:
+    .quad syscall_entry
 
     .section .note.GNU-stack, "", @progbits

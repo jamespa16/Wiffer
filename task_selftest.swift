@@ -216,6 +216,7 @@ func taskTests(_ t: inout SelfTest) {
 
     _ = pingPongLast // allocated once, before the baseline
     let base = HeapUsage(), frames = pmm.freeFrames
+    let splits = splitPages // Phase 6A: guard-page splits keep their page table
     let r = runPingPong(10_000)
     t.check("tasks: ping-pong 10,000 messages finished", r.finished && r.rounds == 10_000 && r.bothRan)
     t.check("tasks: every reply was the right message", r.errors == 0)
@@ -225,11 +226,11 @@ func taskTests(_ t: inout SelfTest) {
     t.check("tasks: stacks identity-mapped, page aligned", r.stacksLow)
     t.check("tasks: at least 20,000 switches", r.switches >= 20_000)
     t.check("tasks: heap back to baseline", HeapUsage() == base)
-    t.check("tasks: stacks returned to the frame allocator", pmm.freeFrames == frames)
+    t.check("tasks: stacks returned to the frame allocator", pmm.freeFrames + (splitPages - splits) == frames)
     print("  tasks: \(r.switches) switches for 10,000 round trips")
 
     t.check("tasks: 20 short-lived tasks run and are freed", shortLivedTasks())
-    t.check("tasks: short-lived tasks freed", HeapUsage() == base && pmm.freeFrames == frames)
+    t.check("tasks: short-lived tasks freed", HeapUsage() == base && pmm.freeFrames + (splitPages - splits) == frames)
     t.check("tasks: canary corruption detected", canaryDetects())
 
     // Watchdog, with a 30 ms limit: spin (in hlt, but without yielding).

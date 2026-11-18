@@ -115,6 +115,11 @@ func runSelfTests() -> Never {
     // Phase L: terminal windows.
     terminalWindowTests(&t)
 
+    // Phases 6A-6C: page tables, ring 3, processes.
+    vmmTests(&t)
+    ringThreeTests(&t)
+    processTests(&t)
+
     puts("selftest: "); printDec(UInt64(t.passed)); puts(" passed, ")
     printDec(UInt64(t.failed)); puts(" failed\n")
     qemuExit(t.failed == 0 ? 0 : 1)

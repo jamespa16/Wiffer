@@ -28,7 +28,7 @@ swiftc \
   -Xfrontend -disable-swift-specific-llvm-optzns \
   -import-objc-header bridge.h \
   "${XCC[@]}" \
-  -emit-ir *.swift -o build/kernel.raw.ll
+  -emit-ir *.swift abi/*.swift -o build/kernel.raw.ll
 
 # 2. Drop @llvm.used, which pins embedded runtime stubs
 #    (swift_isClassType, _swift_fatalError, ...) so they survive DCE.
@@ -96,11 +96,59 @@ if llvm-objdump -d --disassemble-symbols="$ENTRY_SYMS" build/kernel.elf | grep -
 fi
 echo "OK: build/kernel.elf"
 
+# 5b. Phase 6C: user programs. Each user/<prog>/ (but libwiffer) is one
+#     Embedded Swift module: its *.swift (main.swift has the top-level
+#     code), libwiffer, abi/syscalls.swift, the kernel's heap.swift (the
+#     same allocator, its frames from map()), and the lib/ libraries named in
+#     user/<prog>/LIBS with their DEPS, transitively (lib/README.md). No
+#     tag-bit rewriting: user addresses are all below 2^47. Position-
+#     independent code (LTO with -relocation-model=pic) so it links at
+#     0x100_0000_0000 (user/user.ld). The programs go into rootfs /bin.
+#     Same -disable-swift-specific-llvm-optzns as the kernel (copy-on-write).
+mkdir -p build/user
+clang -target x86_64-unknown-none-elf -c user/libwiffer/start.S -o build/user/start.o
+declare -a USER_LIB_ORDER=()
+user_lib_visit() { # <lib>: append it after its DEPS, once
+  local n="$1" d
+  for d in "${USER_LIB_ORDER[@]+"${USER_LIB_ORDER[@]}"}"; do [[ "$d" == "$n" ]] && return 0; done
+  [[ -d "lib/$n" ]] || { echo "error: no such lib: $n" >&2; exit 1; }
+  if [[ -f "lib/$n/DEPS" ]]; then for d in $(cat "lib/$n/DEPS"); do user_lib_visit "$d"; done; fi
+  USER_LIB_ORDER+=("$n")
+}
+USER_PROGS=()
+for dir in user/*/; do
+  prog="$(basename "$dir")"
+  [[ "$prog" == libwiffer || ! -f "$dir/main.swift" ]] && continue
+  USER_LIB_ORDER=()
+  if [[ -f "$dir/LIBS" ]]; then for l in $(cat "$dir/LIBS"); do user_lib_visit "$l"; done; fi
+  SRCS=("$dir"*.swift user/libwiffer/*.swift abi/syscalls.swift heap.swift)
+  for l in "${USER_LIB_ORDER[@]+"${USER_LIB_ORDER[@]}"}"; do
+    for f in lib/"$l"/*.swift; do [[ -e "$f" ]] && SRCS+=("$f"); done
+  done
+  swiftc -target x86_64-unknown-none-elf -enable-experimental-feature Embedded -wmo -Osize \
+    -Xfrontend -disable-stack-protector -Xfrontend -disable-swift-specific-llvm-optzns \
+    -import-objc-header user/libwiffer/libwiffer.h -module-name "$prog" \
+    -emit-ir "${SRCS[@]}" -o "build/user/$prog.ll"
+  clang -target x86_64-unknown-none-elf -flto -fPIC -Wno-override-module \
+    -c "build/user/$prog.ll" -o "build/user/$prog.o"
+  ld.lld -T user/user.ld -nostdlib -static --gc-sections -z max-page-size=0x1000 --build-id=none \
+    --lto-O2 -mllvm -relocation-model=pic "build/user/$prog.o" build/user/start.o "$UNICODE_TABLES" \
+    -o "build/user/$prog"
+  if [[ -n "$(llvm-nm -u "build/user/$prog")" ]]; then
+    echo "error: undefined symbols in $prog:" >&2; llvm-nm -u "build/user/$prog" >&2; exit 1
+  fi
+  USER_PROGS+=("$prog")
+done
+echo "OK: user programs: ${USER_PROGS[*]}"
+
 # 6. Root filesystem (Phase M): rootfs/ as a ustar archive, loaded by Limine as
 #    a module (limine.conf module_path) and unpacked into the RAM fs by
 #    ustar.swift. No macOS metadata (._ files, xattrs); owner root.
+#    Phase 6C: staged in build/rootfs with the user programs in /bin.
+rm -rf build/rootfs && cp -R rootfs build/rootfs && mkdir -p build/rootfs/bin
+for prog in "${USER_PROGS[@]+"${USER_PROGS[@]}"}"; do cp "build/user/$prog" build/rootfs/bin/; done
 COPYFILE_DISABLE=1 bsdtar --format ustar --no-mac-metadata --no-xattrs --no-fflags \
-  --uid 0 --gid 0 --uname root --gname root -cf build/rootfs.tar -C rootfs .
+  --uid 0 --gid 0 --uname root --gname root -cf build/rootfs.tar -C build/rootfs .
 
 # 7. Bootable hybrid BIOS/UEFI ISOs. wiffer.iso boots limine.conf's first
 #    entry (the desktop); wiffer-nodesktop.iso is the same plus

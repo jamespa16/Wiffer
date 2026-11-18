@@ -47,6 +47,7 @@ struct Shell<T: Terminal> {
         term = terminal
         commands = Shell.builtins() + Shell.fileCommands() + Shell.desktopCommands()
             + Shell.editorCommands() + Shell.terminalCommands() + Shell.diskCommands()
+            + Shell.processCommands()
     }
 
     /// Until the terminal says the session is over (Phase L: `exit`, or the
@@ -305,6 +306,7 @@ struct Shell<T: Terminal> {
         let words = text.split(separator: " ")
         guard let name = words.first else { return }
         guard let command = commands.first(where: { $0.name == name }) else {
+            if runProgram(words) { return } // Phase 6C: /bin/<name>
             say("unknown command: \(name)")
             return
         }

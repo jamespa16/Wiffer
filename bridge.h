@@ -392,3 +392,28 @@ static inline uint8_t dma_load8(const void *p) {
 
 // Full fence (mfence): ring updates before the notify port write.
 static inline void dma_fence(void) { __atomic_thread_fence(__ATOMIC_SEQ_CST); }
+
+// ---- Phase 6A: page tables -------------------------------------------------
+
+// Drop one TLB entry on this CPU.
+static inline void invlpg(uint64_t address) {
+    __asm__ volatile ("invlpg (%0)" : : "r"(address) : "memory");
+}
+
+// SMAP: allow (stac) and forbid again (clac) supervisor access to user
+// pages. Only valid when CPUID reports SMAP (#UD otherwise): vmm.swift's
+// userAccessBegin/End check first.
+static inline void stac(void) { __asm__ volatile ("stac" : : : "memory", "cc"); }
+static inline void clac(void) { __asm__ volatile ("clac" : : : "memory", "cc"); }
+
+// ---- Phase 6B: ring 3 and syscalls (cpu.S) ---------------------------------
+
+// The SYSCALL entry stub (IA32_LSTAR).
+extern const uint64_t syscall_entry_address;
+// Run user code: push the callee-saved registers, MXCSR and FCW, store that
+// kernel stack point in *slot, in the per-CPU syscall stack word and in TSS
+// rsp0, then iretq to ring 3 at rip with rsp (rflags IF only, every other
+// register zero). Returns when a syscall or interrupt stub, entered from that
+// user code, gets *slot back from its Swift dispatcher (the process is
+// leaving: exit, kill or a fault). See syscall.swift.
+void user_run(uint64_t rip, uint64_t rsp, uint64_t *slot);

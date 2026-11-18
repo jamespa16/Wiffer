@@ -67,7 +67,8 @@ final class Task {
     /// Set once, by spawn under schedLock, before another CPU can see the task.
     var id: Int
     let name: String
-    let affinity: Affinity
+    /// Changed only under schedLock (onCPU0 changes it for a while).
+    var affinity: Affinity
     /// Changed only under schedLock.
     var state: State
     /// Touched only under schedLock (Task.post, waitEvent).
@@ -90,10 +91,23 @@ final class Task {
     var lastCPU = -1
     /// `ticks` when it last entered the run queue.
     var readySince: UInt64 = 0
+    /// Phase 6A: the frame below the stack, unmapped in the identity map
+    /// so an overflow faults (0: none).
+    var guardPage: UInt = 0
+    /// Phase 6B/6C: the process this task is the thread of (nil for kernel
+    /// tasks), and the page tables to load when it is switched in (0: the
+    /// kernel's). Set by the task itself (or before it first runs).
+    var process: Process?
+    var cr3: UInt64 = 0
+    /// park/unpark (under schedLock): an unpark arrived since the last park.
+    var wakePending = false
 
     var isMain: Bool { id == 0 }
     var stackTop: UInt { stackBottom + UInt(stackFrames * frameSize) }
     var onCPU: UnsafeMutablePointer<UInt64> { rspSlot + 1 }
+    /// rspSlot[2]: user_run's saved kernel stack point while the task runs
+    /// user code (0 otherwise): the syscall stack and TSS rsp0.
+    var userEntry: UnsafeMutablePointer<UInt64> { rspSlot + 2 }
 
     init(id: Int, name: String, affinity: Affinity = .cpu(0), stackBottom: UInt, stackFrames: Int,
          body: (() -> Void)?) {
@@ -104,16 +118,21 @@ final class Task {
         self.stackFrames = stackFrames
         self.body = body
         state = body == nil ? .running : .ready
-        rspSlot = .allocate(capacity: 2)
+        rspSlot = .allocate(capacity: 3)
         rspSlot.initialize(to: 0)
         // A context with no body is the one already running (task 0, idle).
         (rspSlot + 1).initialize(to: body == nil ? 1 : 0)
+        (rspSlot + 2).initialize(to: 0)
         writeCanary()
     }
 
     deinit {
         rspSlot.deallocate()
         if stackFrames > 0 { pmm.free(stackBottom, count: stackFrames) }
+        if guardPage != 0 {
+            setGuardPage(guardPage, guarded: false)
+            pmm.free(guardPage)
+        }
         _ = withUnsafeMutablePointer(to: &tasksFreed) { atomic_fetch_add64($0, 1) }
     }
 
@@ -308,17 +327,22 @@ func setIdle(_ on: Bool) {
 /// Create a task that runs `body` on its own stack, and make it ready. It
 /// runs the next time a CPU it may run on switches or idles. Nil if there is
 /// no memory for the stack, or `.cpu(n)` names a CPU that isn't online.
+/// Phase 6A: the stack gets an unmapped guard page below it. `setup` runs
+/// on the new task before any CPU can run it (Phase 6C: a process's thread).
 @discardableResult
 func spawn(_ name: String, affinity: Affinity = .cpu(0), stackSize: Int = Task.defaultStackSize,
-           _ body: @escaping () -> Void) -> Task? {
+           setup: ((Task) -> Void)? = nil, _ body: @escaping () -> Void) -> Task? {
     scheduler.start()
     if case .cpu(let n) = affinity {
         guard n >= 0 && n < smpStarted && perCPUEntry(n).pointee.online else { return nil }
     }
     let frames = (max(stackSize, 4096) + frameSize - 1) / frameSize
-    guard let bottom = pmm.allocate(count: frames) else { return nil }
-    let task = Task(id: -1, name: name, affinity: affinity, stackBottom: bottom, stackFrames: frames, body: body)
+    guard let base = pmm.allocate(count: frames + 1) else { return nil }
+    let task = Task(id: -1, name: name, affinity: affinity, stackBottom: base + UInt(frameSize), stackFrames: frames,
+                    body: body)
+    if setGuardPage(base, guarded: true) { task.guardPage = base } else { pmm.free(base) }
     task.buildInitialFrame()
+    setup?(task)
     schedLock.withIRQsOff {
         task.id = scheduler.nextID
         scheduler.nextID += 1
@@ -355,7 +379,51 @@ func waitKey() -> Key {
     }
 }
 
-enum SwitchReason { case yield, block, exit }
+enum SwitchReason { case yield, block, exit, park }
+
+// MARK: park / unpark (Phase 6C)
+
+/// Block the current task until unpark(it), unless an unpark already came
+/// since the last park. Wakeups can be spurious (a post to the inbox wakes
+/// it too), so callers loop on their own condition. Not for task 0.
+func park() {
+    guard let me = scheduler.current, !me.isMain else { return }
+    reschedule(.park)
+}
+
+/// Wake `task` from park (or make its next park return at once). Any CPU.
+func unpark(_ task: Task) {
+    let flags = schedLock.acquireIRQ()
+    task.wakePending = true
+    if task.state == .blocked {
+        task.state = .ready
+        enqueue(task)
+        wakeIdleCPU(for: task)
+    }
+    schedLock.releaseIRQ(flags)
+}
+
+// MARK: onCPU0 (Parts 6-7 "Scheduling")
+
+/// Run `body` on CPU 0, where the unlocked subsystems live (fs, WM,
+/// terminals, the process table, later the network stack): pin the current
+/// task to CPU 0, yield until it is there, run the body, then restore its
+/// affinity. Runs `body` directly if already pinned there (or before the
+/// scheduler exists). It must not be called with interrupts off.
+func onCPU0<R>(_ body: () -> R) -> R {
+    guard let me = scheduler.current, !me.isMain, !(me.affinity == .cpu(0) && currentCPU() == 0) else {
+        return body()
+    }
+    let saved = schedLock.withIRQsOff { () -> Affinity in
+        let a = me.affinity
+        me.affinity = .cpu(0)
+        return a
+    }
+    while currentCPU() != 0 { yield() }
+    let result = body()
+    schedLock.withIRQsOff { me.affinity = saved }
+    return result
+}
 
 /// Switch to the next task this CPU may run, if any. `why` says what
 /// happens to the current task: requeued (yield), blocked (woken by post)
@@ -456,20 +524,26 @@ func prepareSwitch(_ why: SwitchReason) -> (UnsafeMutablePointer<UInt64>, Unsafe
     let flags = schedLock.acquireIRQ()
     defer { schedLock.releaseIRQ(flags) }
     if why == .block && !prev.inbox.isEmpty { return nil } // an event arrived: don't sleep
+    if why == .park && prev.wakePending { prev.wakePending = false; return nil } // already unparked
     let next: Task
     // Yielding from a real task: only tasks homed here (no stealing while
     // busy). Blocking or exiting, or task 0 yielding, is this CPU's idle
     // context. CPU 0 has no idle task, so a block or exit there must find
     // something (task 0 is always queued then; `force` is a safety net).
-    let stealing = why != .yield || prev.isMain
-    let force = why != .yield && sched.idle == nil
+    // Phase 6C: a yield by a task that may no longer run here (onCPU0) is
+    // a move: it must leave, to the idle task if nothing else is ready.
+    let moving = why == .yield && !prev.affinity.allows(sched.cpu)
+    let stealing = why != .yield || prev.isMain || moving
+    let force = (why != .yield || moving) && sched.idle == nil
     if let n = takeRunnable(sched.cpu, stealing: stealing, force: force) {
         next = n
-    } else if why == .yield {
+    } else if why == .yield && !moving {
         watchdogSwitch(from: prev, toIdle: false) // cooperating counts, even with no switch
         return nil
     } else if let idle = sched.idle, idle !== prev {
         next = idle
+    } else if moving {
+        return nil // CPU 0 with nothing else ready: try again later
     } else {
         taskPanic("deadlock: no task is ready")
     }
@@ -481,7 +555,7 @@ func prepareSwitch(_ why: SwitchReason) -> (UnsafeMutablePointer<UInt64>, Unsafe
         prev.state = .ready
         enqueue(prev)
         wakeIdleCPU(for: prev)
-    case .block:
+    case .block, .park:
         prev.state = .blocked
     case .exit:
         prev.state = .finished
@@ -498,7 +572,19 @@ func switchedIn(_ next: Task, _ sched: CPUSched) {
     next.lastCPU = sched.cpu
     sched.current = next
     scheduler.switches += 1
-    thisCPU().pointee.switches &+= 1
+    let e = thisCPU()
+    e.pointee.switches &+= 1
+    e.pointee.inSyscall = 0 // (stats: the incoming task sets it again)
+    e.pointee.processRunning = next.process != nil ? 1 : 0
+    // Phase 6B: its page tables, and the kernel stack ring 3 enters on.
+    let cr3 = next.cr3 != 0 ? next.cr3 : kernelCR3
+    if cr3 != 0 && read_cr3() != cr3 { write_cr3(cr3) }
+    let entry = next.userEntry.pointee
+    if entry != 0 {
+        e.pointee.syscallKernelRSP = entry
+        e.pointee.tss[1] = UInt32(truncatingIfNeeded: entry)
+        e.pointee.tss[2] = UInt32(truncatingIfNeeded: entry >> 32)
+    }
 }
 
 /// Runs on the incoming task's stack after every switch: free the tasks that
@@ -716,7 +802,7 @@ func watchdogTick() {
     let now = ticks
     for i in 0..<smpStarted {
         let e = perCPUEntry(i)
-        guard e.pointee.watchdogActive != 0, e.pointee.watchdogTripped == 0,
+        guard e.pointee.watchdogActive != 0, e.pointee.watchdogTripped == 0, e.pointee.processRunning == 0,
               now &- e.pointee.watchdogMark > watchdogLimit else { continue }
         e.pointee.watchdogTripped = 1
         let head: StaticString = "\r\n[watchdog: a task has not yielded within the limit"

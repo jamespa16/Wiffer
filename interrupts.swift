@@ -3,17 +3,26 @@
 
 // MARK: Dispatcher
 
+/// Phase 6B: returns 0, or (for an interrupt from ring 3 whose process is
+/// leaving) user_run's stack point, which the stub returns to instead.
 @_cdecl("interrupt_dispatch")
-public func interruptDispatch(_ frame: UnsafeMutablePointer<interrupt_frame>) {
+public func interruptDispatch(_ frame: UnsafeMutablePointer<interrupt_frame>) -> UInt64 {
     let vector = frame.pointee.vector
+    let fromUser = frame.pointee.cs & 3 == 3
+    if gsBaseReady {
+        let e = thisCPU()
+        if fromUser { e.pointee.userInterrupts &+= 1 } else if e.pointee.inSyscall != 0 { e.pointee.syscallInterrupts &+= 1 }
+    }
     if sseClobberInIRQ && vector >= 32 { sse_clobber_all() } // SSE selftest
     if vector < 32 {
+        if fromUser { return userException(frame) }
         exceptionReport(frame.pointee)
     } else if vector < 48 {
         handleIRQ(UInt8(truncatingIfNeeded: vector - 32))
     } else if vector >= 0xF0 {
         apicInterrupt(UInt8(truncatingIfNeeded: vector))
     }
+    return fromUser ? userLeavePoint() : 0
 }
 
 // MARK: Exceptions
