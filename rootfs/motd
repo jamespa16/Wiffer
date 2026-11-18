@@ -1,1 +1,1 @@
-Welcome to Wiffer. Files live in RAM: try 'ls' and 'cat /README'.
+Welcome to Wiffer. Files live in RAM, except under /disk: try 'ls' and 'cat /README'.

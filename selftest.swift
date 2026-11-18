@@ -100,6 +100,9 @@ func runSelfTests() -> Never {
     // Phases W and X: FAT32.
     fatTests(&t)
 
+    // Phase Y: FAT32 volumes mounted in the VFS.
+    fsMountTests(&t)
+
     // Phase N: text buffer and editor key model.
     editorTests(&t)
 

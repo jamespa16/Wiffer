@@ -7,9 +7,10 @@
 #   ./run.sh --test   headless: scripted shell checks + in-kernel selftest
 #   ./run.sh --test --uefi   the same, booted through OVMF
 #   ./run.sh --smp N   N virtual CPUs (default 4, or env WIFFER_SMP); works with --test
-#   ./run.sh --nodisk  no virtio disk (default: build/disk.img, 64 MiB, created
-#                      blank if missing); with --test the harness's main
-#                      session boots without its scratch disk too
+#   ./run.sh --nodisk  no virtio disk (default: build/disk.img, 64 MiB FAT32,
+#                      mounted at /disk; made by tests/fat32.py if missing,
+#                      never touched if present); with --test the harness's
+#                      main session boots without its scratch disk too
 # Options may be given in any order.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -64,7 +65,13 @@ DISPLAY_ARGS=(-serial stdio)
 # Phase V: the virtio disk (legacy virtio-blk: see ROADMAP Part 5).
 DISK=build/disk.img
 if (( ! NODISK )); then
-  [[ -f "$DISK" ]] || { echo "creating blank $DISK (64 MiB)"; python3 -c 'import sys; open(sys.argv[1], "wb").truncate(64 << 20)' "$DISK"; }
+  # Phase Y: a new image is formatted FAT32 (by the host tool) with a README.
+  if [[ ! -f "$DISK" ]]; then
+    echo "creating $DISK (64 MiB FAT32, label WIFFER)"
+    python3 tests/fat32.py mkfs "$DISK" --size 64M --label WIFFER
+    printf 'Wiffer disk\n\nThis FAT32 volume is mounted at /disk. Files written there survive a reboot.\n' |
+      python3 tests/fat32.py put "$DISK" - /README.TXT
+  fi
   EXTRA+=(-drive "file=$DISK,if=none,id=vd0,format=raw" -device virtio-blk-pci,drive=vd0,disable-legacy=off,disable-modern=on)
 fi
 exec qemu-system-x86_64 -M q35 -m 256M -cpu max -smp "$SMP" -cdrom "$ISO" -boot d -no-reboot -no-shutdown \

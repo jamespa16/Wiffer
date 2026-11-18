@@ -694,6 +694,12 @@ final class FATVolume {
         guard let i = dir.find(name) else { throw .notFound }
         let e = dir.entries[i]
         guard !e.isDirectory else { throw .isADirectory }
+        return try contents(of: e)
+    }
+
+    /// A file entry's bytes (for read, and for the VFS loading a whole
+    /// volume at mount without re-walking each file's path from the root).
+    func contents(of e: FATDirEntry) throws(FATError) -> [UInt8] {
         defer { trimCache() }
         guard e.size > 0 else { return [] }
         let need = (e.size + clusterSize - 1) / clusterSize

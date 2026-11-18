@@ -118,7 +118,8 @@ make_iso() { # <iso path> <default entry>
   local root=build/iso_root
   rm -rf "$root"
   mkdir -p "$root/boot/limine" "$root/EFI/BOOT"
-  cp build/kernel.elf build/rootfs.tar "$root/boot/"
+  # Phase Y: the host-written FAT32 fixture (tests/fat32.py), for fsMountTests.
+  cp build/kernel.elf build/rootfs.tar tests/fixtures/fat32-lfn.sparse "$root/boot/"
   { echo "default_entry: $2"; cat limine.conf; } > "$root/boot/limine/limine.conf"
   cp "$LIMINE_SHARE"/limine-bios.sys "$LIMINE_SHARE"/limine-bios-cd.bin \
      "$LIMINE_SHARE"/limine-uefi-cd.bin "$root/boot/limine/"

@@ -249,16 +249,67 @@ func diskInit() {
     for dev in pciFind(vendor: virtioVendor, device: 0x1042) {
         print("virtio-blk at \(dev.location) is modern-only (needs disable-legacy=off): skipped")
     }
+    // Phase Y: FAT timestamps from the CMOS clock, and vda at /disk.
+    fatClock = {
+        let t = rtcNow()
+        return FATTimestamp(year: t.year, month: t.month, day: t.day, hour: t.hour, minute: t.minute, second: t.second)
+    }
+    if let vda = blockDevice(named: "vda") {
+        _ = try? vfs.mkdir("/disk")
+        print(mountLine(vda, at: "/disk", in: vfs))
+    }
+}
+
+func blockDevice(named name: Substring) -> BlockDevice? {
+    blockDevices.first(where: { $0.name == name })
+}
+
+/// Mount the FAT32 volume on `dev` at `dir` in `fs`, as a message: "vda:
+/// FAT32 'WIFFER' mounted at /disk, ..." or why not.
+func mountLine(_ dev: BlockDevice, at dir: String, in fs: FileSystem, cwd: String = "/") -> String {
+    let v: FATVolume
+    do throws(FATError) {
+        v = try FATVolume.mount(dev)
+    } catch {
+        if error == .notFAT32 { return "\(dev.name): no FAT32 filesystem (mkfs \(dev.name))" }
+        return "\(dev.name): \(error.message)"
+    }
+    do throws(FSError) {
+        try fs.mount(v, at: dir, cwd: cwd)
+    } catch {
+        return "mount: \(dir): \(error.message)"
+    }
+    let at = fs.mountPoint(for: v).map { fs.path(of: $0) } ?? dir
+    return "\(dev.name): FAT32 '\(v.label)' mounted at \(at), " + volumeUsage(v)
+}
+
+/// "0.1 of 63.0 MiB used, 129008 clusters of 512 bytes": the volume's space.
+func volumeUsage(_ v: FATVolume) -> String {
+    let total = v.totalClusters * v.clusterSize, used = (v.totalClusters - v.freeClusters) * v.clusterSize
+    func mib(_ bytes: Int) -> String {
+        let tenths = (bytes * 10 + (1 << 19)) >> 20
+        return "\(tenths / 10).\(tenths % 10)"
+    }
+    return "\(mib(used)) of \(mib(total)) MiB used, \(v.totalClusters) clusters of \(v.clusterSize) bytes"
+}
+
+/// Where `dev` is mounted in `fs`, if it is.
+func mountPath(of dev: BlockDevice, in fs: FileSystem) -> String? {
+    for m in fs.mounts {
+        if let v = m.volume, v.device === dev { return fs.path(of: m) }
+    }
+    return nil
 }
 
 /// `disks`: one line per block device.
-func disksLines() -> [String] {
+func disksLines(fs: FileSystem = vfs) -> [String] {
     if blockDevices.isEmpty { return ["no disks"] }
-    var lines = ["name  size      sectors         read   written"]
+    var lines = ["name  size      sectors         read   written  mount"]
     for d in blockDevices {
         let mib = d.byteCount >> 20
         lines.append(pad(d.name, 6) + pad("\(mib) MiB", 10) + pad("\(d.sectorCount)", 10)
-            + pad("\(d.sectorsRead)", 9, left: true) + pad("\(d.sectorsWritten)", 10, left: true) + (d.readOnly ? "  ro" : ""))
+            + pad("\(d.sectorsRead)", 9, left: true) + pad("\(d.sectorsWritten)", 10, left: true)
+            + (d.readOnly ? "  ro" : "") + (mountPath(of: d, in: fs).map { "  " + $0 } ?? ""))
     }
     return lines
 }
@@ -319,7 +370,55 @@ extension Shell {
                 for l in lspciLines() { sh.say(l) }
             },
             Command(name: "disks", args: "", help: "list block devices: size, sectors read/written") { sh, _ in
-                for l in disksLines() { sh.say(l) }
+                for l in disksLines(fs: sh.fs) { sh.say(l) }
+            },
+            // Phase Y: FAT32 volumes in the VFS.
+            Command(name: "mkfs", args: "<dev>", help: "format as FAT32 (erases it): mkfs <dev> [label]") { sh, args in
+                guard args.count == 1 || args.count == 2 else { sh.say("usage: mkfs <dev> [label]"); return }
+                guard let dev = blockDevice(named: args[0]) else { sh.say("mkfs: \(args[0]): no such disk"); return }
+                if let at = mountPath(of: dev, in: sh.fs) { sh.say("mkfs: \(dev.name): mounted at \(at) (umount first)"); return }
+                do throws(FATError) {
+                    try FATVolume.format(dev, label: args.count == 2 ? String(args[1]) : "WIFFER")
+                    let v = try FATVolume.mount(dev)
+                    sh.say("mkfs: \(dev.name): FAT32 '\(v.label)', " + volumeUsage(v))
+                } catch {
+                    sh.say("mkfs: \(dev.name): \(error == .invalidName ? "bad label (up to 11 letters, digits, spaces)" : error.message)")
+                }
+            },
+            Command(name: "mount", args: "[dev dir]", help: "mount a FAT32 disk on an empty dir (alone: list)") { sh, args in
+                if args.isEmpty {
+                    for m in sh.fs.mounts {
+                        guard let v = m.volume else { continue }
+                        sh.say("\(v.device.name) on \(sh.fs.path(of: m)): FAT32 '\(v.label)'")
+                    }
+                    return
+                }
+                guard args.count == 2 else { sh.say("usage: mount <dev> <dir>"); return }
+                guard let dev = blockDevice(named: args[0]) else { sh.say("mount: \(args[0]): no such disk"); return }
+                if let at = mountPath(of: dev, in: sh.fs) { sh.say("mount: \(dev.name): already mounted at \(at)"); return }
+                sh.say(mountLine(dev, at: String(args[1]), in: sh.fs, cwd: sh.cwd))
+            },
+            Command(name: "umount", args: "<dir>", help: "sync and unmount a disk") { sh, args in
+                guard args.count == 1 else { sh.say("usage: umount <dir>"); return }
+                do throws(FSError) { try sh.fs.unmount(at: String(args[0]), cwd: sh.cwd) } catch { sh.fsFail("umount", args[0], error) }
+            },
+            Command(name: "sync", args: "", help: "flush every mounted disk") { sh, _ in
+                for m in sh.fs.mounts {
+                    guard let v = m.volume else { continue }
+                    do throws(FATError) { try v.sync() } catch { sh.say("sync: \(sh.fs.path(of: m)): \(error.message)") }
+                }
+            },
+            Command(name: "fsck", args: "<dir>", help: "check a mounted FAT32 volume") { sh, args in
+                guard args.count == 1 else { sh.say("usage: fsck <dir>"); return }
+                do throws(FSError) {
+                    let n = try sh.fs.lookup(String(args[0]), cwd: sh.cwd)
+                    guard let v = n.volume else { throw FSError.notMounted }
+                    let problems = v.check()
+                    for p in problems { sh.say("fsck: " + p) }
+                    sh.say("fsck: \(sh.fs.path(of: n)): " + (problems.isEmpty ? "clean" : "\(problems.count) problems"))
+                } catch {
+                    sh.fsFail("fsck", args[0], error)
+                }
             },
         ]
     }

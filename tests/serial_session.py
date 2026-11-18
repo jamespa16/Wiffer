@@ -20,6 +20,9 @@ Assumes ./build.sh has already been run.
 """
 import argparse, os, re, select, socket, struct, subprocess, sys, tempfile, time
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fat32  # Phase Z: the host-side FAT32 tool (formats and checks images)
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ISO = os.path.join(ROOT, "build", "wiffer.iso")  # boots into the desktop
 NODESKTOP_ISO = os.path.join(ROOT, "build", "wiffer-nodesktop.iso")  # cmdline `nodesktop`
@@ -36,32 +39,70 @@ if os.environ.get("WIFFER_UEFI"):
 # Virtual CPU count for every QEMU (run.sh --smp N sets WIFFER_SMP).
 SMP = os.environ.get("WIFFER_SMP", "4")
 
-# Phase V: the main session gets a fresh blank 64 MiB scratch disk (never
+# Phase V: the main session gets a fresh 64 MiB scratch disk (never
 # build/disk.img) as a legacy virtio-blk device, unless run.sh --nodisk
-# (WIFFER_NODISK=1) or --nodisk here.
+# (WIFFER_NODISK=1) or --nodisk here. Phase Y: it's FAT32 (made by
+# fat32.mkfs, with a host-written /hello.txt), so the kernel mounts it at
+# /disk.
 DISK_MIB = 64
+HOST_HELLO = b"hello from the host\n"
 def disk_args(path):
     return ["-drive", f"file={path},if=none,id=vd0,format=raw",
             "-device", "virtio-blk-pci,drive=vd0,disable-legacy=off,disable-modern=on"]
 
-def scratch_disk(mib=DISK_MIB):
-    """A blank raw image in a new temp dir: (path, dir to remove)."""
+def scratch_disk(mib=DISK_MIB, fat=True):
+    """A raw image in a new temp dir: (path, dir to remove). FAT32 with
+    /hello.txt, or with fat=False all zeros."""
     d = tempfile.mkdtemp(prefix="wifferdisk")
     path = os.path.join(d, "scratch.img")
-    with open(path, "wb") as f:
-        f.truncate(mib << 20)
+    if fat:
+        fat32.mkfs(path, mib << 20, "WIFFER")
+        fat32.write_file(path, "/hello.txt", HOST_HELLO)
+    else:
+        with open(path, "wb") as f:
+            f.truncate(mib << 20)
     return path, d
 
-# Phase V: PCI and the disk, when the main session has one.
+def remove_disk(path, d):
+    if os.path.exists(path):
+        os.unlink(path)
+    os.rmdir(d)
+
+# Phase V: PCI and the disk, when the main session has one. Phase Y: /disk
+# is the FAT32 scratch image (write, mkdir, mv, rm, df, fsck, disks).
 DISK_CHECKS = [
     ("lspci", "1af4:1001 01.00"),
     ("lspci", "00:00.0 8086:29c0 06.00 host bridge"),
     ("disks", "vda   64 MiB    131072"),
     ("help", "disks           list block devices"),
+    ("disks", "  /disk\r\n"),
+    ("mount", "vda on /disk: FAT32 'WIFFER'"),
+    ("cat /disk/hello.txt", "hello from the host"),
+    ("cat /disk/HELLO.TXT", "hello from the host"),
+    ("write /disk/w.txt written here", "> "),
+    ("cat /disk/w.txt", "\r\nwritten here\r\n"),
+    ("mkdir /disk/dir", "> "),
+    ("mv /disk/w.txt /disk/dir", "> "),
+    ("cat /disk/dir/w.txt", "\r\nwritten here\r\n"),
+    ("cat /disk/w.txt", "cat: /disk/w.txt: no such file or directory"),
+    ("mv /disk/dir/w.txt /", "mv: /disk/dir/w.txt: can't move across filesystems"),
+    ("rm /disk/dir", "rm: /disk/dir: directory not empty"),
+    ("rm /disk", "rm: /disk: mount point busy"),
+    ("rm -r /disk/dir", "> "),
+    ("ls /disk/dir", "ls: /disk/dir: no such file or directory"),
+    ("write /disk/kept.txt kept for the host", "> "),
+    ("mkdir /disk/Sub", "> "),
+    ("mkdir /disk/sub", "mkdir: /disk/sub: already exists"),
+    ("df", "/disk: vda 'WIFFER', 0.0 of 63.0 MiB used, 129008 clusters of 512 bytes"),
+    ("sync", "> "),
+    ("fsck /disk", "fsck: /disk: clean"),
+    ("help", "umount <dir>    sync and unmount a disk"),
 ]
 NODISK_CHECKS = [
     ("disks", "no disks"),
     ("lspci", "00:00.0 8086:29c0 06.00 host bridge"),
+    ("ls /disk", "ls: /disk: no such file or directory"),
+    ("mount", "> "),
 ]
 
 PROMPT = b"> "
@@ -607,6 +648,14 @@ def main():
     desk = None if opts.command else Session(monitor=True, iso=NODESKTOP_ISO)
     ed = None if opts.command else Session(monitor=True)  # Phase N, in the boot desktop
     term = None if opts.command else Session(monitor=True)  # Phase L, in the boot desktop
+    # Phase Y: persistence (boot 1 of 2, in the desktop, on its own FAT32
+    # image) and mkfs on a blank image. Not with --nodisk.
+    persist = blank = None
+    if not opts.command and not opts.nodisk:
+        persist_img = scratch_disk()
+        persist = Session(monitor=True, extra_args=disk_args(persist_img[0]))
+        blank_img = scratch_disk(fat=False)
+        blank = Session(iso=NODESKTOP_ISO, extra_args=disk_args(blank_img[0]))
     try:
         boot = s.read_prompt(opts.timeout)
         if not PROMPT_RE.search(boot):
@@ -792,6 +841,17 @@ def main():
             failures += editor_checks(ed, opts.timeout)
         if term:
             failures += terminal_checks(term, opts.timeout)
+        if blank:
+            failures += mkfs_checks(blank, blank_img[0], opts.timeout)
+        if persist:
+            failures += persistence_checks(persist, persist_img[0], opts.timeout)
+
+        # The boot mounted the scratch image (or, with --nodisk, there was none).
+        mounted = b"vda: FAT32 'WIFFER' mounted at /disk" in s.log
+        ok = mounted != opts.nodisk
+        failures += not ok
+        print(f"{'PASS' if ok else 'FAIL'}: boot " + ("left /disk out (no disk)" if opts.nodisk else
+              "mounted vda at /disk"))
 
         # In-kernel self-tests: QEMU exits with (code << 1) | 1.
         s.send("selftest")
@@ -800,12 +860,26 @@ def main():
         if status != 1:
             print(f"FAIL: selftest exit status {status} (want 1)")
             return 1
+        # Phase Y: the scratch image, written by the kernel, read on the host.
+        if disk:
+            problems = fat32.fsck(disk)
+            kept = fat32.read_file(disk, "/kept.txt")
+            # (OVMF keeps its emulated variable store in NvVars on any FAT
+            # volume it finds, so a UEFI boot adds that file.)
+            names = sorted(e.name for e in fat32.list_dir(disk) if e.name != "NvVars")
+            ok = not problems and kept == b"kept for the host\n" and names == ["Sub", "hello.txt", "kept.txt"]
+            failures += not ok
+            print(f"{'PASS' if ok else 'FAIL'}: host reads the main session's /disk (fsck clean, kept.txt)"
+                  + ("" if ok else f"\n  problems {problems}, kept {kept!r}, names {names}"))
         return 1 if failures else 0
     finally:
         s.close()
         if disk_dir:
-            os.unlink(disk)
-            os.rmdir(disk_dir)
+            remove_disk(disk, disk_dir)
+        for sess, img in ((persist, persist_img if persist else None), (blank, blank_img if blank else None)):
+            if sess:
+                sess.close()
+                remove_disk(*img)
         for _, _, fs in faults:
             fs.close()
         if fault_screen:
@@ -1053,6 +1127,97 @@ def editor_checks(s: Session, timeout: float) -> int:
         s.sendkeys(["ctrl-q"])
         want = f"wm: close #{new[0]}".encode()
         check(want in s.read_until(want, timeout), "Ctrl-Q closes a clean editor")
+    return failures
+
+
+def mkfs_checks(s: Session, img: str, timeout: float) -> int:
+    """Phase Y on a blank (all-zero) image: the boot says there's no FAT32,
+    `mkfs vda` formats it, `mount vda /disk` mounts it, and what's written
+    there is on the image (read on the host after QEMU is killed)."""
+    failures = 0
+
+    def check(ok, label, detail=""):
+        nonlocal failures
+        failures += not ok
+        print(f"{'PASS' if ok else 'FAIL'}: blank disk: {label}" + ("" if ok or not detail else f"\n  {detail}"))
+
+    boot = s.read_prompt(timeout)
+    check(b"vda: no FAT32 filesystem (mkfs vda)" in s.log, "boot says 'no FAT32 filesystem (mkfs vda)'",
+          repr(boot[-300:]))
+    got = s.command("mount") + s.command("ls /disk")  # /disk is made anyway, empty
+    check("on /disk" not in got and "ls: " not in got, "nothing mounted at /disk", repr(got))
+    got = s.command("mkfs vda", 20)
+    check("mkfs: vda: FAT32 'WIFFER', 0.0 of 63.0 MiB used, 129008 clusters of 512 bytes" in got, "mkfs vda", repr(got))
+    got = s.command("mount vda /disk")
+    check("vda: FAT32 'WIFFER' mounted at /disk" in got, "mount vda /disk", repr(got))
+    got = s.command("mkfs vda")
+    check("mkfs: vda: mounted at /disk (umount first)" in got, "mkfs refuses a mounted disk", repr(got))
+    s.command("write /disk/made.txt made after mkfs")
+    got = s.command("umount /disk")
+    got += s.command("ls /disk") + s.command("mount vda /disk") + s.command("cat /disk/made.txt")
+    check("made after mkfs" in got and "mounted at /disk" in got, "umount, mount again, file still there", repr(got))
+    s.p.kill()
+    s.p.wait()
+    problems = fat32.fsck(img)
+    made = fat32.read_file(img, "/made.txt") if not problems else None
+    check(not problems and made == b"made after mkfs\n", "host: fsck clean, made.txt readable",
+          f"problems {problems}, made {made!r}")
+    return failures
+
+
+PERSIST_NOTE = "kept on disk\nacross a reboot"
+
+
+def persistence_checks(s: Session, img: str, timeout: float) -> int:
+    """Phase Y's "done when": in the desktop, edit /disk/notes.txt with the
+    PS/2 keyboard and Ctrl-S, write and mkdir from the terminal, `sync`,
+    then kill QEMU. A second QEMU on the same image finds every file, and
+    so does the host (fat32.fsck clean, read_file)."""
+    failures = 0
+
+    def check(ok, label, detail=""):
+        nonlocal failures
+        failures += not ok
+        print(f"{'PASS' if ok else 'FAIL'}: persistence: {label}" + ("" if ok or not detail else f"\n  {detail}"))
+        return ok
+
+    if not check(enter_desktop(s, timeout) is not None, "desktop is on (boot 1)"):
+        return failures
+    got = s.command("edit /disk/notes.txt")
+    if not check("/disk/notes.txt: new file" in got, "edit /disk/notes.txt opens a new file", repr(got)):
+        return failures
+    s.sendkeys(key_names(PERSIST_NOTE) + ["ctrl-s"])
+    time.sleep(0.3)
+    got = s.command("cat /disk/notes.txt")
+    check(PERSIST_NOTE.replace("\n", "\r\n") + "\r\n" in got, "Ctrl-S saved the note under /disk", repr(got))
+    s.sendkeys(["ctrl-q"])
+    check(b"wm: close #2" in s.read_until(b"wm: close #2", timeout), "Ctrl-Q closes the editor")
+    for cmd in ["write /disk/log.txt from the terminal", "mkdir /disk/saved", "write /disk/saved/deep.txt nested",
+                "write /disk/hello.txt replaced", "sync"]:
+        got = s.command(cmd)
+        check(f"{cmd.split()[0]}: " not in got, cmd, repr(got))
+    s.p.kill()  # no shutdown: everything must already be on the image
+    s.p.wait()
+
+    second = Session(iso=NODESKTOP_ISO, extra_args=disk_args(img))
+    try:
+        boot = second.read_prompt(timeout)
+        check(b"vda: FAT32 'WIFFER' mounted at /disk" in second.log, "boot 2 mounts the same image", repr(boot[-300:]))
+        for path, want in [("/disk/notes.txt", PERSIST_NOTE), ("/disk/log.txt", "from the terminal"),
+                           ("/disk/saved/deep.txt", "nested"), ("/disk/hello.txt", "replaced")]:
+            got = second.command(f"cat {path}")
+            check("\r\n" + want.replace("\n", "\r\n") + "\r\n" in got, f"boot 2: cat {path}", repr(got))
+        got = second.command("fsck /disk")
+        check("fsck: /disk: clean" in got, "boot 2: fsck /disk clean", repr(got))
+    finally:
+        second.close()
+    problems = fat32.fsck(img)
+    check(not problems, "host: fat32.fsck clean", str(problems))
+    if not problems:
+        files = {p: fat32.read_file(img, p) for p in ["/notes.txt", "/log.txt", "/saved/deep.txt", "/hello.txt"]}
+        check(files == {"/notes.txt": PERSIST_NOTE.encode() + b"\n", "/log.txt": b"from the terminal\n",
+                        "/saved/deep.txt": b"nested\n", "/hello.txt": b"replaced\n"},
+              "host: read_file gets every file", str(files))
     return failures
 
 

@@ -6,7 +6,7 @@
 - **Part 3: Window manager and text editor.** Phases H–N done (N4 stretch
   items not started). Phase O (stretch) is open. This document.
 - **Part 4: SMP.** Done (Phases P–T).
-- **Part 5: Writing to disk.** Phases U–Y. In progress.
+- **Part 5: Writing to disk.** Done (Phases U–Z): a FAT32 virtio disk at /disk.
 
 Goal: boot into a desktop with overlapping, draggable windows. Each shell
 runs in its own terminal window, and a text editor can open, edit and save
@@ -61,6 +61,13 @@ What Part 3 builds on:
   show it. `./run.sh --test --smp N` runs with N CPUs (default 4). Known
   limit: a task off CPU 0 must post results rather than print, because
   consoleFlush isn't synchronised with stdoutLock.
+- **Disk (Part 5).** A legacy virtio-blk disk (polled, CPU 0 only) holds a
+  whole-disk FAT32 volume with long names. It is mounted at /disk, which
+  is loaded into RAM and written through, so `write`, `mv`, `rm` and the
+  editor's Ctrl-S reach the disk before they return. run.sh formats a
+  missing build/disk.img, and `tests/fat32.py` reads and writes images on
+  the host. Commands: `disks`, `lspci`, `mkfs`, `mount`, `umount`, `sync`,
+  `fsck` and `df`.
 
 Two things stand in the way of a window manager:
 
@@ -1092,6 +1099,84 @@ from fatgen103 without looking at fat32.swift.
 - Not done: rename (the kernel has it; the harness only needs host reads).
 
 ## Phase Y: /disk
+
+**Done** (fs.swift, virtio_blk.swift, fs_mount_selftest.swift; selftest
+`fsMountTests`, after `fatTests`). `FileSystem.mount(volume, at:)` needs
+an empty directory that isn't "/", isn't on or under another mount, and a
+volume not already mounted (`.busy`). It loads the tree recursively with
+`loadDir` plus the new `FATVolume.contents(of:)`, so files aren't
+re-walked from the root. The depth limit is 64 (`.corrupt` past that).
+The mount point node holds the `FATVolume`. Each change below it calls
+the volume first, and the RAM tree changes only on success. `unmount(at:)`
+syncs (errors ignored: everything was already flushed), then drops the
+nodes. The rules:
+- **Case.** Lookups below a mount fold ASCII case. Writing to a case
+  variant of an existing file writes that file and keeps its spelling.
+  Creating a case variant of a different entry (create, mkdir, a rename's
+  target) gives `.exists`. Renaming an entry to another case of its own
+  name is allowed, and `mv dir DIR` renames rather than moving into itself.
+- **touch and append.** `touch` on an existing file only bumps the RAM
+  tick. Append rewrites the whole file.
+- **`rm -r`** removes bottom-up, one FAT call per entry.
+- **rename** works within one mount only. RAM to or from a mount, or one
+  mount to another, gives `.crossDevice`. Removing or renaming a mount
+  point, or a directory above one, gives `.busy`.
+- **RAM paths** are unchanged: exact lookups. `usage` skips mount points.
+
+New `FSError` cases: `io`, `noSpace`, `invalidName`, `corrupt`,
+`crossDevice`, `busy` and `notMounted`, with `init(FATError)`. `diskInit`
+points `fatClock` at `rtcNow()`. If vda exists it makes /disk and mounts
+the volume there: `vda: FAT32 'WIFFER' mounted at /disk, 0.0 of 63.0 MiB
+used, 129008 clusters of 512 bytes`. Otherwise it prints `vda: no FAT32
+filesystem (mkfs vda)`, and /disk stays an empty directory.
+
+New shell commands: `mkfs <dev> [label]` (refused while mounted), `mount
+[dev dir]` (with no arguments, it lists mounts), `umount`, `sync` and
+`fsck <dir>`. `df` adds a line per mount, and `disks` adds a mount column.
+`sync` made Tab on "s" ambiguous between three commands, so that
+completion selftest now uses "mo" → "mou" (mount, mouse).
+
+run.sh formats a missing build/disk.img with `tests/fat32.py mkfs` and
+puts a README.TXT on it. It never touches an existing image. The second
+Limine module is `fat32-lfn` (tests/fixtures/fat32-lfn.sparse, copied
+into the ISO by build.sh and found with `bootModule(named:)`). It is
+loaded into a RamDisk, mounted, and compared with Z's FIXTURE_TREE: names,
+sizes, contents and big.bin's formula. That's the cross-implementation
+check, and it passes.
+
+Selftests: a mirrored script, then a remount compared tree for tree; with
+`failWritesAfter = 0`, every operation gives `.io` and neither tree
+changes; a power-cut sweep over an overwrite; the case rule;
+crossDevice/busy and mount errors; `.noSpace` on a filled volume; the
+editor saving through a mount (`save: /m/notes.txt: I/O error`, still
+dirty, then a retry); a shell transcript with a RamDisk as "ram9"; and
+the heap back to baseline.
+
+Harness: the main session's scratch image comes from `fat32.mkfs`, with a
+host-written /hello.txt. It runs `DISK_CHECKS` (cat, write, mkdir, mv,
+rm, the error messages, df, sync, fsck, disks, mount), then checks the
+image on the host after the selftest (fsck clean, kept.txt). Two extra
+QEMUs boot alongside it:
+- **Blank image:** the "no FAT32" message, `mkfs vda`, `mount`, `umount`,
+  remount, then the host reads the file.
+- **Persistence:** in the desktop, edit /disk/notes.txt with sendkey and
+  Ctrl-S, then Ctrl-Q, then write and mkdir from the terminal, `sync`,
+  and kill QEMU. A second boot on the same image `cat`s every file, and
+  `fat32.fsck` and `read_file` agree.
+
+`--nodisk` skips both and checks that there is no /disk. A full disk is
+tested in the selftest, not over serial.
+
+**Gotcha: OVMF writes `NvVars`** (its emulated variable store) into the
+root of any FAT volume it finds. A UEFI boot leaves that file in /disk,
+and the harness ignores it.
+
+Known limits:
+- The whole volume sits in RAM.
+- A file written from the host while the kernel has the disk mounted
+  isn't seen until a remount, and QEMU's image lock prevents that anyway.
+- `touch` doesn't update FAT timestamps.
+- `mv` between mounts doesn't copy.
 
 - **VFS mounts** (`fs.swift`): `FileSystem.mount(volume, at:)` loads the
   volume into FSNodes under the mount point. `unmount(at:)` syncs it and

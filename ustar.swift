@@ -137,6 +137,17 @@ func rootfsModule() -> UnsafeRawBufferPointer? {
     return UnsafeRawBufferPointer(start: base, count: Int(f.pointee.size))
 }
 
+/// The boot module whose cmdline (module_string) is exactly `name`, if any
+/// (Phase Y: "fat32-lfn", the host-written FAT32 fixture).
+func bootModule(named name: StaticString) -> UnsafeRawBufferPointer? {
+    guard let resp = module_request.response, let modules = resp.pointee.modules else { return nil }
+    for i in 0..<Int(resp.pointee.module_count) {
+        guard let f = modules[i], let s = f.pointee.string, cStringIs(s, name), let base = f.pointee.address else { continue }
+        return UnsafeRawBufferPointer(start: base, count: Int(f.pointee.size))
+    }
+    return nil
+}
+
 func cStringIs(_ s: UnsafePointer<CChar>, _ want: StaticString) -> Bool {
     want.withUTF8Buffer { w in
         for i in 0..<w.count where UInt8(bitPattern: s[i]) != w[i] { return false }

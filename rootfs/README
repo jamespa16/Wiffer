@@ -2,6 +2,9 @@ Wiffer RAM filesystem
 
 These files were packed into rootfs.tar (ustar) by build.sh, loaded by
 Limine as a boot module, and copied into the kernel's RAM filesystem.
-Nothing is saved: changes last until the next reboot.
+Changes here last until the next reboot. The exception is /disk: a FAT32
+volume on the virtio disk (build/disk.img), where every change is written
+to the disk before the command returns, so it survives a reboot.
 
-Try: ls, cd, pwd, cat, mkdir, rm, mv, touch, write <file> <text>, df.
+Try: ls, cd, pwd, cat, mkdir, rm, mv, touch, write <file> <text>, df,
+and for disks: disks, mount, umount, sync, fsck, mkfs.

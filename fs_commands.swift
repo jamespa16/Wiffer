@@ -45,7 +45,9 @@ extension Shell {
     mutating func move(_ from: Substring, _ to: Substring) {
         var target = String(to)
         // An existing directory as the target: move into it, keeping the name.
+        // (Not the source itself: under a mount `mv dir DIR` changes case.)
         if let d = try? fs.lookup(target, cwd: cwd), d.isDirectory,
+           fs.mountPoint(of: d) == nil || (try? fs.lookup(String(from), cwd: cwd)) !== d,
            let name = FileSystem.components(String(from), cwd: cwd).last {
             target = FileSystem.normalize(target, cwd: cwd) + "/" + name
         }
@@ -115,6 +117,10 @@ extension Shell {
             Command(name: "df", args: "", help: "filesystem usage") { sh, _ in
                 let u = sh.fs.usage
                 sh.say("fs: \(u.bytes) bytes in \(u.files) files, \(u.directories) directories")
+                for m in sh.fs.mounts { // Phase Y: each mounted volume
+                    guard let v = m.volume else { continue }
+                    sh.say("\(sh.fs.path(of: m)): \(v.device.name) '\(v.label)', " + volumeUsage(v))
+                }
             },
         ]
     }

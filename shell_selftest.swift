@@ -238,8 +238,8 @@ func shellTests(_ t: inout SelfTest) {
             edits(chars("hist x") + lefts(2) + [tabKey, enterKey], "history x", "> history x"))
     t.check("complete: ambiguous lists and reprints (h)",
             ambiguousCompletion("h", "h", "halt  help  history", "> h"))
-    t.check("complete: ambiguous extends to common prefix (s -> se)",
-            ambiguousCompletion("s", "se", "selftest  set", "> se"))
+    t.check("complete: ambiguous extends to common prefix (mo -> mou)",
+            ambiguousCompletion("mo", "mou", "mount  mouse", "> mou"))
     t.check("complete: no match, or past the first word, does nothing",
             edits(chars("zz") + [tabKey, enterKey], "zz", "> zz")
             && edits(chars("echo up") + [tabKey, enterKey], "echo up", "> echo up"))

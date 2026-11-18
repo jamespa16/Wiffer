@@ -484,9 +484,10 @@ func fatNamesRoundTrip() -> Bool {
 @inline(never)
 func fatTimestamps() -> Bool {
     guard let (_, v) = fatFresh() else { return false }
+    let saved = fatClock // the RTC, once diskInit has run
     fatClock = { FATTimestamp(year: 2030, month: 6, day: 15, hour: 13, minute: 45, second: 30) }
     let wrote = (try? v.write(["t.txt"], [1])) != nil && (try? v.mkdir(["dir"])) != nil
-    fatClock = fatDefaultClock
+    fatClock = saved
     guard wrote, let root = try? v.loadDir(v.rootCluster), let i = root.find("t.txt"), let j = root.find("dir"),
           let sub = try? v.loadDir(root.entries[j].cluster), let dot = sub.dot else { return false }
     let date = 50 << 9 | 6 << 5 | 15, time = 13 << 11 | 45 << 5 | 15
