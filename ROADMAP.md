@@ -7,6 +7,8 @@
   items not started). Phase O (stretch) is open. This document.
 - **Part 4: SMP.** Done (Phases P–T).
 - **Part 5: Writing to disk.** Done (Phases U–Z): a FAT32 virtio disk at /disk.
+- **Parts 6–8: Toward a web browser.** Planned: user space (6A–6G),
+  networking (7A–7F), and a browser (8A–8I). See the end of this document.
 
 Goal: boot into a desktop with overlapping, draggable windows. Each shell
 runs in its own terminal window, and a text editor can open, edit and save
@@ -1208,3 +1210,798 @@ Known limits:
 
 **Done when:** a note written in the editor survives a reboot and reads
 back on the host. `./run.sh --test`, `--test --uefi` and `--smp 1` pass.
+
+---
+
+# Parts 6–8: toward a web browser
+
+The end goal is a **mostly-working web browser** in the default apps. It
+loads real text-heavy sites over HTTPS (Wikipedia, Hacker News,
+lite.duckduckgo.com, text.npr.org, info.cern.ch), lays them out with CSS,
+shows images, follows links and submits simple forms. **JavaScript is out
+of scope** until after Part 8 (see "After Part 8"). That rules out
+single-page apps, but most document-style sites still read fine without
+it.
+
+Getting there takes three parts:
+
+- **Part 6: User space.** Page tables per process, ring 3, syscalls, ELF
+  programs, preemption for user code, and windows owned by processes. A
+  browser is a large pile of parsers fed hostile input. It must be able to
+  crash without taking the desktop with it.
+- **Part 7: Networking.** virtio-net, Ethernet/ARP/IPv4/ICMP, UDP, DHCP,
+  DNS, TCP, and a sockets API for processes.
+- **Part 8: Browser.** TLS 1.3, HTTP/1.1, HTML, CSS, fonts, layout,
+  images, and the browser app itself.
+
+```
+Part 6  6A page tables ─→ 6B ring 3 + syscalls ─→ 6C processes, ELF, libwiffer ─┬─→ 6D preemption
+                                                                                 ├─→ 6E files, stdio, shell runs /bin ─┐
+                                                                                 └─→ 6F windows for processes ─────────┤
+Part 7  7A virtio-net ─→ 7B Eth/ARP/IPv4/ICMP ─→ 7C UDP, DHCP, DNS ─→ 7D TCP ────────────────────┬────────────────────┤
+                                                                                     6E ─────────┴─→ 7E sockets ─→ 7F fetch, MSI-X
+Part 8  8A crypto + TLS ─┐
+        8B URL, HTTP, inflate ─┤
+        8C HTML ─┐             │
+        8D CSS ──┼─→ 8F layout + paint ─┴─→ 8H browser app (needs 6F, 7E) ─→ 8I tests, target sites
+        8E fonts ┤
+        8G images┘
+```
+
+**Parts 6 and 7 can run side by side.** Part 7 up to 7D lives entirely in
+the kernel and is tested with in-kernel selftests and the harness, so it
+doesn't wait for user space. They meet at 7E (sockets). **Most of Part 8
+doesn't need either.** 8A–8G are pure Swift libraries with no OS
+dependencies, so they can start right away, built and tested on the host
+(see the design decisions below).
+
+## Design decisions (all three parts)
+
+### Address space
+
+The kernel already owns two lower-half slots. That fixes where user space
+can go:
+
+| PML4 slot | Range | Owner |
+|---|---|---|
+| 0 | 0 – 512 GiB | kernel: identity map, heap, task stacks (supervisor-only) |
+| 1–254 | 0x0000_0080_0000_0000 – 0x0000_7f7f_ffff_ffff | **user** (per process) |
+| 255 | 0x0000_7fff_8000_0000+ | kernel: image alias for String literals |
+| 256–511 | upper half | kernel: HHDM, kernel image |
+
+- **Each process gets its own PML4.** Slots 0, 255 and 256–511 are copied
+  from the kernel's PML4. They point at shared PDPTs, so the kernel looks
+  the same in every address space. Slots 1–254 are private.
+- **Never add a top-level kernel entry after the first process exists.**
+  It wouldn't appear in older PML4s. 6A preallocates a PDPT for every
+  empty upper-half slot at boot so this can't happen by accident.
+- **User/supervisor bits.** Only slots 1–254 ever get U=1. All kernel
+  entries stay U=0, so ring 3 can't touch the identity map.
+- **SMEP and SMAP on** (if CPUID has them; `-cpu max` does). The kernel
+  touches user memory only inside `copyIn`/`copyOut`/`withUserBuffer`,
+  which validate the range by walking the page tables and bracket the
+  access with `stac`/`clac`.
+- **NX.** Check that EFER.NXE is set (Limine sets it), and map code R+X,
+  data RW+NX, and stacks RW+NX.
+- Swift's pointer tag bits (the reason for the identity map) are fine for
+  user programs: every user address is below 2^47.
+- User programs link at **0x0000_0100_0000_0000** (slot 2). The stack
+  goes at the top of slot 254, with an unmapped guard page below it.
+
+### Kernel entry and exit
+
+- **SYSCALL/SYSRET.** The GDT already orders user data (0x18) before user
+  code (0x20) for SYSRET, so STAR = `0x0010 << 48 | 0x0008 << 32` works.
+  LSTAR points at an asm stub in cpu.S. FMASK clears IF, DF and TF.
+- **swapgs.** Today the kernel writes GS_BASE directly and user space
+  never runs. From 6B: GS_BASE holds the per-CPU pointer while in the
+  kernel, and KERNEL_GS_BASE holds the user value (0) while in ring 3.
+  The syscall stub and every IDT stub swap only when the saved CS has
+  RPL 3. Get this wrong and the kernel crashes in odd places, so 6B tests
+  it directly (an interrupt during user code, a fault in user code, a
+  nested IRQ during a syscall).
+- **Per-CPU TSS rsp0** (the TSS is already per CPU) is set to the
+  incoming task's kernel stack top on every switch to a user task.
+- **SYSRET's non-canonical RCX bug** (Intel): if the return RIP isn't
+  canonical, return through `iretq` instead.
+- **ABI.** The number goes in rax. Arguments go in rdi, rsi, rdx, r10, r8
+  and r9. The result comes back in rax, with negative values meaning
+  `-errno`. Numbers and structs are defined once, in `abi/syscalls.swift`,
+  which is compiled into both the kernel and libwiffer. Use our own small
+  syscall table, not Linux's. POSIX or Linux compatibility (running
+  static musl binaries as a source of apps) is deferred until after
+  Part 8. Keep the API small and our own until then.
+
+### Scheduling
+
+- **A process is a Task plus an address space.** `final class Process`
+  holds a pid, an `AddressSpace`, an fd table, a cwd, its windows, a
+  parent and an exit status. Its thread is a normal `Task` with a kernel
+  stack and a saved user context. Processes are **single-threaded** in
+  Part 6. The browser uses one thread and an event loop (`wait`, 6E).
+- **Preempt user code only.** The timer interrupt switches tasks only if
+  it interrupted ring 3. Kernel code stays cooperative, so every
+  assumption that unlocked CPU-0-only code relies on still holds. A user
+  infinite loop can't freeze the desktop. A kernel one still can, as
+  today.
+- **APs need a timer.** The PIT ticks only CPU 0. 6D starts the x2APIC
+  timer on every CPU, calibrated against the PIT, at 100 Hz. On CPU 0
+  the PIT stays the clock, and on APs the LAPIC timer only preempts.
+- **CPU-0 subsystems via a hop.** The fs, WM, terminals and (Part 7) the
+  network stack are unlocked and pinned to CPU 0. A process may run on
+  any CPU (`.any`), so a syscall that touches one of them calls
+  `onCPU0 { ... }`. That sets the task's affinity to `.cpu(0)`, yields,
+  runs the body, and then restores the affinity. It's just the Part 4
+  scheduler, used for one syscall at a time.
+
+### Networking
+
+- **virtio-net, legacy, like virtio-blk.** QEMU gets `-netdev
+  user,id=n0 -device
+  virtio-net-pci,netdev=n0,disable-legacy=off,disable-modern=on`
+  (1af4:1000). User-mode networking (SLIRP) needs no host setup and works
+  in CI. The guest is 10.0.2.15, the gateway is 10.0.2.2 (which is also
+  the host, for test servers), and DNS is 10.0.2.3. `-object
+  filter-dump,id=f0,netdev=n0,file=build/net.pcap` captures traffic for
+  Wireshark when debugging. It's off by default, with `./run.sh --pcap`.
+- **Polled first, interrupts later.** 7A polls the rx ring from the main
+  loop, like the disk. The catch is that CPU 0 `hlt`s until the next PIT
+  tick, which adds up to 10 ms of latency per wakeup. That's fine for
+  ping and DNS but slow for TCP. 7F adds MSI-X, which delivers straight
+  to a LAPIC vector, so there's still no IOAPIC. It needs 6A's
+  `mapMMIO`, because the MSI-X table is in a memory BAR.
+- **The stack is a kernel task on CPU 0** (`netd`), driven by rx events
+  and timer deadlines. It's unlocked, like the fs. Packet buffers are
+  `final class Packet` with headroom, so headers can be pushed without
+  copying. A free list caps memory.
+- **IPv4 only.** IPv6 is "After Part 8". Fragmented IP packets are
+  reassembled, but we never fragment our own (TCP MSS keeps segments
+  under the MTU).
+- **`NetDevice` is a class hierarchy like `BlockDevice`.** `VirtioNet`,
+  `Loopback`, and `LinkPair`, which joins two stacks in memory with
+  injected loss, reordering, duplication and delay. The whole stack, TCP
+  included, is tested off-screen this way. That's the existing ground
+  rule.
+
+### Browser and libraries
+
+- **Shared libraries are pure Swift and build two ways.** HTML, CSS,
+  layout, URL, HTTP parsing, inflate, PNG/JPEG, TrueType and crypto
+  don't touch the OS. They go in `lib/<name>/` and compile both into
+  Wiffer user programs (Embedded Swift) and into a host test binary
+  (`./run.sh --hosttest`, with the pinned toolchain). Most of the
+  browser's bugs will be in parsing and layout, and a host test loop
+  takes seconds where a QEMU boot takes a minute. Code must stay within
+  the Embedded Swift subset (no `any` existentials or reflection), so
+  the host build uses `-enable-experimental-feature Embedded` too, or at
+  least a CI check that the Embedded build still compiles.
+- **TLS and crypto in pure Swift: no C libraries.** Either write it from
+  scratch or port an existing pure-Swift library. 8A starts by surveying
+  the candidates (CryptoSwift covers hashes, AES and ChaCha20 but not
+  elliptic curves; there are a few TLS 1.3 implementations in pure
+  Swift). A port has to work in Embedded Swift: no Foundation, no
+  existentials, no reflection. If it would need more rewriting than
+  writing from scratch, write it. Wrappers around C libraries
+  (BoringSSL-based swift-crypto, swift-nio-ssl) are out. Either way,
+  fixed test vectors decide whether it works: RFC 8448 has whole recorded
+  TLS 1.3 handshakes. Hand-written crypto here is for a hobby OS, not for
+  protecting anything real. Constant-time code is a goal, not a
+  guarantee.
+- **TLS 1.3 only at first.** Nearly every major site supports it. TLS 1.2
+  (ECDHE + AES-GCM) is a stretch item for older servers.
+- **Fonts: a TrueType rasterizer, not more bitmap fonts.** Web pages need
+  several sizes, bold, italic and monospace. A `glyf`-outline rasterizer
+  with antialiasing and a glyph cache is a few hundred lines of Swift.
+  Bundle one free family (DejaVu Sans, Serif and Sans Mono: Bitstream
+  Vera license, wide Unicode coverage) in rootfs. The console keeps
+  Spleen.
+- **Memory.** QEMU goes from 256 MiB to 1 GiB in Part 8 (page images,
+  glyph caches and DOMs add up). Reasonable sites should still load at
+  512 MiB.
+- **A browser crash is a process exit.** The window closes, and the
+  terminal that launched it, or the taskbar, reports why. The kernel
+  never panics on bad input from the network.
+
+---
+
+# Part 6: User space
+
+Goal: programs in /bin are ELF files that run in ring 3 with their own
+address space. A crashing or spinning program is killed or preempted while
+the desktop keeps running. Programs can read and write files, print to the
+terminal that started them, and open their own windows.
+
+## Phase 6A: page tables
+
+**6A1. `AddressSpace`** (`vmm.swift`). Owns a PML4 frame and the page
+table frames under slots 1–254. `map(virt, phys, count, flags)`,
+`unmap`, `translate(virt) -> (phys, flags)?`, `protect`, and `deinit`,
+which frees the tables and any frames marked as owned. Flags are
+`.write`, `.user`, `.noExec`, `.uncached`. Page table frames come from
+pmm and are zeroed through the identity map. `AddressSpace.kernel` wraps
+the boot PML4.
+
+**6A2. Kernel-half setup at boot.** Preallocate PDPTs for every empty
+slot in 256–511 (see the design decisions). Check NXE, enable SMEP/SMAP
+if present (CR4), and add `stac`/`clac` to bridge.h.
+
+**6A3. `mapMMIO(phys, size) -> UnsafeMutableRawPointer`** for the
+kernel: maps uncached into a reserved upper-half window (Limine's HHDM
+may not cover MMIO). Part 7's MSI-X needs it, and so will any future
+AHCI/NVMe/xHCI driver.
+
+**6A4. Guard pages for kernel task stacks** (cheap now): leave the page
+below each new task stack unmapped in the identity map, so an overflow
+faults instead of corrupting the heap. Keep the canaries.
+
+**Selftests:** map/translate/unmap round trips, flags, a fresh address
+space switched into and out of (CR3) with a test page visible only
+there, deinit returns every frame (pmm count back to baseline), and an
+MMIO map of the framebuffer compared through both mappings.
+
+**Done when:** the kernel runs unchanged on its own boot PML4, and an
+`AddressSpace` can be created, entered, left and freed with no leaks.
+
+## Phase 6B: ring 3 and syscalls
+
+**6B1. Entry stubs** (cpu.S, kept tiny). The `syscall` entry: swapgs,
+save the user rsp in per-CPU scratch, load the kernel stack from per-CPU,
+build a `UserContext` frame, call `@_cdecl("syscall_dispatch")`, then
+return through sysret (or iretq, for a non-canonical rip). IDT stubs
+swapgs when the saved CS is ring 3. `enterUser(context)` does the first
+`iretq` into a new process.
+
+**6B2. MSRs** per CPU in `gdtInit(cpu:)`: EFER.SCE, STAR, LSTAR, FMASK,
+KERNEL_GS_BASE. Switching to a user task sets TSS rsp0 and CR3.
+
+**6B3. Dispatch** (`syscall.swift`): a switch on the number. Just enough
+for now: `exit(code)`, `write_debug(ptr, len)` (to serial), `yield`.
+`copyIn`/`copyOut` reject any range outside slots 1–254 or not mapped
+with U (and W, for copyOut), giving `-EFAULT`.
+
+**6B4. User faults.** A #PF, #GP, #UD, #DE or #BP from ring 3 kills the
+task with a one-line report (`pid 7 (crash): page fault at
+0x100_0000_1234, rip 0x100_0000_0042`) instead of panicking. A fault in
+ring 0 still panics, as now.
+
+**Selftests**, using a few bytes of hand-assembled code copied into a
+fresh address space (no ELF yet): `exit(42)` returns 42 to the kernel;
+`write_debug` prints; reading kernel memory, executing a data page,
+`hlt`, `cli` and `in`/`out` are all killed with the right report; a busy
+loop sees timer IRQs come and go (swapgs balanced); and running the same
+blob on every CPU.
+
+**Done when:** a user blob runs, makes syscalls, and exits or is killed
+on every CPU, with the desktop unaffected.
+
+## Phase 6C: processes, ELF and libwiffer
+
+**6C1. ELF loader** (`elf.swift`). Static x86-64 `ET_EXEC`. Check the
+magic, class, machine and that every PT_LOAD is inside slots 1–254. Map
+the segments with their own permissions (W^X: refuse a segment that is
+both W and X), zero the .bss, set up the stack (argc, argv, envp, and an
+auxv with AT_PAGESZ, AT_PHDR and AT_ENTRY), and enter `e_entry`. The ELF
+is read from the VFS, so it can come from rootfs or /disk.
+
+**6C2. `Process`** (`process.swift`). pid, parent, children, state,
+exit code. `spawn(path, argv, stdio) -> pid`, `exit`, `wait(pid)`,
+`kill(pid)`. The process table is CPU 0 data, reached through `onCPU0`.
+An exited process is a zombie until its parent waits, and orphans
+reparent to the kernel (pid 0), which reaps them.
+
+**6C3. Memory syscalls:** `map(addr hint, len, prot) -> addr`
+(anonymous, zeroed, lazily allocated on first fault), `unmap`,
+`protect`. Demand faults on mapped-but-absent pages allocate a frame. A
+fault anywhere else kills the process.
+
+**6C4. libwiffer** (`user/libwiffer/`): `_start` (asm: stack to argc and
+argv, then `main`), syscall stubs, and the Embedded Swift runtime hooks
+(`posix_memalign`, `free`, `putchar`, `arc4random_buf`). The heap is
+**heap.swift's size-class allocator compiled a second time**, with its
+frame source swapped for `map`. Wrap the syscalls in Swift: `File`,
+`print` to fd 1, `Process.args`, `exit`.
+
+**6C5. Build.** build.sh compiles each `user/<prog>/` with libwiffer,
+links with `user/user.ld` (base 0x100_0000_0000), and puts the binary in
+rootfs `/bin`. The same `-disable-swift-specific-llvm-optzns` flag
+applies (see the Array copy-on-write note).
+
+**First programs:** `hello`, `args`, `alloc` (Array, String, Dictionary
+and lots of allocation, then a checksum), `crash <kind>`, `spin`.
+
+**Shell:** a command that isn't built in is looked up in `/bin` and
+spawned. The shell waits for it. `ps` lists processes, and `kill <pid>`
+kills one.
+
+**Done when:** `hello` prints from ring 3, `alloc` does real Swift
+allocation, each `crash` kind is reported and the shell carries on, and
+pmm/heap usage returns to baseline after 100 spawns.
+
+## Phase 6D: preemption
+
+**6D1. LAPIC timer on every CPU** (x2APIC MSRs, periodic, calibrated
+against the PIT at boot), vector 0xEF. CPU 0 keeps the PIT for `ticks`.
+
+**6D2. Preempt ring 3.** When a timer interrupt (PIT on CPU 0, LAPIC on
+the APs) lands in ring 3 and the task has used up its slice (2 ticks),
+it is marked ready and the CPU switches away. A timer interrupt that
+lands in ring 0 never switches. Interrupted user state lives on the
+kernel stack, so the normal `context_switch` handles the rest.
+
+**6D3. `sleep(ms)`** and `now()` syscalls, with timed wakeups in the
+scheduler (a sorted deadline list checked on each tick). The WM and the
+browser need timeouts anyway (6E `wait`).
+
+**Tests:** four `spin` processes on 4 CPUs, and the desktop still
+redraws and echoes keys (harness). `spin` on `--smp 1` still lets the
+shell run. `sleep 500` takes 500 ms ± a tick. A preempted `alloc` still
+gets the right checksum.
+
+**Done when:** no user program can stall the desktop by spinning.
+
+## Phase 6E: files, stdio and wait
+
+**6E1. File descriptors.** Each process has an fd table of `FileObject`
+(a class hierarchy: `VFSFile`, `ConsoleFile`, `PipeEnd`, and later
+`Socket` in 7E). `open(path, flags)`, `read`, `write`, `seek`, `close`,
+`stat`, `readdir`, `mkdir`, `unlink`, `rename`, `getcwd`, `chdir`, `dup2`.
+VFS calls run under `onCPU0`. Paths resolve against the cwd. Mounts
+(/disk) work unchanged, since they're already behind `FileSystem`.
+
+**6E2. stdio.** fds 0, 1 and 2 are a `ConsoleFile` bound to the terminal
+that spawned the process. Writes post text to the terminal's inbox.
+Reads block until the terminal has a line (cooked mode) or a key (raw
+mode, `ioctl`-like `console_mode`). Ctrl-C in the terminal kills the
+foreground process.
+
+**6E3. Pipes** (`pipe()`), plus `cmd | cmd` in the shell. Small but
+useful, and it exercises blocking reads and writes from both sides.
+
+**6E4. `wait(fds, events, timeout) -> ready`**, the one blocking
+multiplexer (think `poll`). It covers files that can block (console,
+pipes, and later sockets and windows). The browser's event loop is a
+single call to it.
+
+**6E5. Move simple commands out.** Port `cat`, `ls`, `wc`, `hexdump`
+and `echo` to `/bin` as libwiffer programs (the built-ins stay until
+the ports pass the same harness checks, then they're removed). That
+proves the file API on real use.
+
+**Done when:** `/bin/cat /disk/README.TXT | /bin/wc` works in a
+terminal window, Ctrl-C kills a `spin`, and the shell harness checks
+pass with the ported commands.
+
+## Phase 6F: windows for processes
+
+**6F1. Protocol.** `win_create(w, h, title) -> (fd, buffer address)`.
+The kernel allocates a contiguous frame run for the pixels and maps it
+into the process (RW, NX). The kernel sees it through the identity map.
+`win_present(fd, damage rect)` tells the compositor what changed.
+Events (key, mouse, resize, focus, close) are read from the window's fd,
+so they work with `wait`. `win_resize` replaces the buffer after a
+resize event. `win_set_title`. Closing the fd, or exiting, closes the
+window.
+
+**6F2. Kernel side.** `final class UserWindow: Window` (CPU 0) blits from
+the shared buffer in `draw`, converts damage into compositor damage, and
+turns `handle(event)` into posts to the fd. A process that stops reading
+events has its queue capped (drop mouse motion first), so it can't grow
+kernel memory.
+
+**6F3. libwiffer GUI.** `Surface` (surface.swift, shared like heap.swift)
+over the mapped buffer, drawing primitives, PSF text, and a small widget
+kit: `Label`, `Button`, `TextField` and `ScrollView`. This is Phase O's
+widget kit, done now because the browser needs a text field.
+
+**6F4. Demo apps:** `/bin/clock` (redraws every second through
+`wait`'s timeout) and `/bin/sysmon` (frames, heap, tasks, processes,
+CPU load). Launch from the shell, and from the taskbar (a launcher
+menu).
+
+**Tests:** create, draw, present, then the harness screendumps it; a
+drag and a resize; a process killed while its window is focused (the
+window disappears, focus moves, and memory returns to baseline); and an
+event flood with no reader.
+
+**Done when:** a ring-3 app opens a window, draws, reacts to keys and the
+mouse, and its crash or exit closes the window cleanly.
+
+## Phase 6G: docs and cleanup
+
+- Update "Where we are", the ground rules (new: the kernel never
+  dereferences a user pointer outside `copyIn`/`copyOut`; nothing in the
+  kernel trusts a value from a syscall), and the memory notes.
+- Stretch: move the editor to user space (`/bin/edit`) as the proof that
+  apps don't need to live in the kernel. Terminals and the shell can
+  follow later.
+
+---
+
+# Part 7: Networking
+
+Goal: `ping 10.0.2.2`, `host example.com` and `fetch
+http://example.com/` work from a terminal. User programs get TCP and
+UDP sockets.
+
+## Phase 7A: virtio-net
+
+**7A1. `NetDevice`** (`net_device.swift`): name, MAC, MTU, `send(Packet)`,
+an rx callback, and counters. Subclasses: `Loopback`, and `LinkPair` for
+tests (loss, reorder, duplication, delay in ticks, all seeded and
+deterministic).
+
+**7A2. `VirtioNet`** (`virtio_net.swift`): the legacy sequence, as in
+virtio-blk, with queue 0 (rx) and queue 1 (tx), features MAC and
+STATUS, and the 10-byte `virtio_net_hdr` (no offloads). Rx gets 256
+preposted 2 KiB buffers from one contiguous frame run, refilled as they
+are consumed. Tx gets a ring of bounce buffers. Polled from the main
+loop. Named eth0.
+
+**7A3. run.sh and harness.** Attach virtio-net with SLIRP by default.
+`--nonet` leaves it off, and `--pcap` dumps traffic. A harness helper
+starts host servers (Python `http.server` and a TCP echo server) on
+ephemeral ports and passes the ports to the session.
+
+**Shell:** `ifconfig` (MAC, IP, counters) and `lspci` showing 1af4:1000.
+
+**Done when:** eth0 sends a raw broadcast frame and receives frames
+(SLIRP answers ARP for 10.0.2.2) under BIOS and UEFI.
+
+## Phase 7B: Ethernet, ARP, IPv4, ICMP
+
+- Ethernet II framing. ARP requests, replies and a cache with timeouts.
+  Packets waiting on ARP are queued (bounded).
+- IPv4: header checksum, one interface, a default route, and TTL.
+  Fragment reassembly (with a timeout and a memory cap), and we never
+  fragment what we send.
+- ICMP: answer echo requests, and send echo requests for `ping`. Report
+  "destination unreachable" to the socket that caused it (used by 7D).
+- `netd` task on CPU 0: drains rx, runs timers, and owns all stack
+  state.
+
+**Tests:** `LinkPair` with two stacks pinging each other, ARP
+expiry, reassembly in random order, and bad checksums dropped and
+counted. Harness: `ping -c 3 10.0.2.2`. (SLIRP answers ICMP echo for the
+gateway. Pinging outside hosts may not work, depending on the host OS's
+ICMP permissions, so don't test it.)
+
+## Phase 7C: UDP, DHCP, DNS
+
+- UDP with ports, checksums and a per-port receive queue.
+- DHCP client (DISCOVER, OFFER, REQUEST, ACK) at boot, with lease
+  renewal. A static fallback config if no offer arrives in 5 s.
+- DNS resolver: A queries, following CNAMEs, retries with a timeout, a
+  cache that honors TTLs, and name compression on parse. Treat every
+  reply as hostile: bounds-check every offset and limit compression
+  loops.
+- Shell: `host <name>`, and `ifconfig` shows the lease.
+
+**Tests:** DHCP and DNS against canned packets in the selftest, plus
+fuzzed (truncated, looping, oversize) DNS replies that must fail
+cleanly. Harness: boot gets 10.0.2.15, and `host` resolves a name.
+SLIRP's DNS forwards to the host's resolver, so the harness test needs a
+local fake instead (serve a tiny DNS responder on the host, and use
+`-netdev user,dns=...` or `guestfwd` to point at it). Resolving real
+names is a manual check.
+
+## Phase 7D: TCP
+
+This is the largest phase in Part 7. It follows RFC 9293.
+
+- **State machine:** all eleven states, including simultaneous open and
+  close, and RST handling (RFC 5961's checks against blind resets).
+- **Sending:** a send buffer, MSS from the SYN option, Nagle (on by
+  default, with an option to turn it off), and retransmission with
+  RFC 6298's RTO (Karn's rule, exponential backoff). Fast retransmit
+  on three duplicate ACKs, plus slow start and congestion avoidance
+  (RFC 5681). No SACK at first.
+- **Receiving:** an out-of-order queue, the advertised window, window
+  scaling (RFC 7323, needed for speed), delayed ACKs, and zero-window
+  probes.
+- **Lifecycle:** TIME_WAIT (short, 2 × 10 s MSL is fine), keepalive off,
+  random initial sequence numbers (RDRAND, falling back to RDTSC
+  mixing), and ephemeral ports.
+- **Kernel API** used by 7E and kernel tests: `TCPConnection` with
+  `connect`, `listen`, `accept`, `send`, `receive`, `close` and `abort`,
+  plus readiness callbacks.
+
+**Tests:** over `LinkPair`, transfer 1 MiB in both directions at 0%,
+5% and 20% loss, with reordering and duplication, checking a hash of
+the data (FNV-1a is enough here). Also handshake races, RST in
+every state, and a peer that stops reading (zero window, then
+recovery). Harness: download 1 MiB from the host Python server and
+compare hashes, and `listen` through `hostfwd` with the host connecting
+in.
+
+**Done when:** the lossy-link tests pass deterministically, and a 1 MiB
+download over SLIRP is correct.
+
+## Phase 7E: sockets for user space
+
+Needs 6E (fds and `wait`) and 7D.
+
+- `socket(kind)` where kind is `.tcp` or `.udp`. `connect`, `bind`,
+  `listen`, `accept`, `send`, `recv`, `sendto`, `recvfrom`, `shutdown`,
+  `close`. A socket is a `FileObject`, so `read`, `write` and `wait`
+  work on it too. Non-blocking mode for the browser.
+- `resolve(name) -> [IPv4]`: uses the kernel resolver, so processes
+  share its cache.
+- Every call hops to CPU 0 (the stack lives there). Data is copied
+  between the user buffer and the socket buffer in the syscall.
+- Limits: sockets per process, and buffer sizes. Everything is freed when
+  a process dies with open sockets.
+
+## Phase 7F: tools and interrupts
+
+- **MSI-X for virtio-net** (needs 6A's `mapMMIO`): one vector for rx and
+  tx, aimed at CPU 0's LAPIC. The handler only sets a flag and posts to
+  `netd`. Keep the polling path as the fallback. Note that legacy device
+  config moves from 0x14 to 0x18 when MSI-X is on.
+- **User programs:** `/bin/fetch <url>` (plain HTTP GET to stdout or a
+  file), `/bin/nc` (connect or listen, stdin to socket and socket to
+  stdout), `/bin/ping` and `/bin/host` (move them out of the shell).
+- **Throughput check:** a 10 MiB download through SLIRP with MSI-X at a
+  few MB/s or better (record what you get in the roadmap).
+
+**Done when:** `fetch http://info.cern.ch/` prints the first web page
+from a real server (a manual check), and the harness does the same
+against its local server.
+
+---
+
+# Part 8: Web browser
+
+Goal: `/bin/browse` opens a window with an address bar. It loads HTTP
+and HTTPS pages with images and CSS, scrolls, follows links, goes back
+and forward, and submits simple forms. The target sites at the end of
+this part render readably.
+
+8A–8G are libraries in `lib/`, built for the host test runner and for
+user space (see the design decisions). They can start before Parts 6 and
+7 are done.
+
+## Phase 8A: crypto and TLS 1.3 (`lib/crypto`, `lib/tls`)
+
+- **Port or write.** First survey pure-Swift crypto and TLS libraries
+  against the Embedded Swift constraints (see the design decisions).
+  Record the choice here. Each primitive can be decided separately: for
+  example, port the symmetric ciphers and write X25519, ECDSA and TLS
+  ourselves.
+- **Primitives**, each checked against official test vectors: SHA-256,
+  SHA-384, HMAC, HKDF, AES-128-GCM and AES-256-GCM (software AES; AES-NI
+  as a later speedup), ChaCha20-Poly1305, X25519, ECDSA P-256 and P-384
+  verify, RSA PKCS#1 v1.5 and PSS verify (a small bignum with Montgomery
+  multiplication, up to 4096 bits).
+- **Randomness:** a `getrandom` syscall backed by a kernel ChaCha20 DRBG,
+  seeded from RDSEED/RDRAND, plus RDTSC jitter and interrupt timing as
+  extra input.
+- **ASN.1 DER and X.509:** parse certificates, check the chain to a
+  bundled root store (Mozilla's, as `/etc/roots.der` in rootfs), validity
+  dates from the RTC, the hostname against SAN (with wildcards), basic
+  constraints and key usage. Treat every byte as hostile.
+- **TLS 1.3 client** (RFC 8446): the cipher suites TLS_AES_128_GCM_SHA256,
+  TLS_AES_256_GCM_SHA384 and TLS_CHACHA20_POLY1305_SHA256; X25519 key
+  share (and P-256 as a fallback, for HelloRetryRequest); SNI; ALPN
+  `http/1.1`; signature algorithms ECDSA and RSA-PSS. No client
+  certificates, no 0-RTT, and no resumption at first.
+- **Tests:** RFC 8448's recorded handshake replayed byte for byte (with
+  its fixed keys and randomness), a host `openssl s_server` or Python
+  `ssl` server with a test CA (`tests/certs/`), and bad certificates
+  (expired, wrong host, untrusted root, bad signature) that must all be
+  refused with a clear error.
+- Stretch: TLS 1.2 (ECDHE with AES-GCM or ChaCha20) for older servers,
+  and session resumption.
+
+**Done when:** the host test runner completes a handshake with a local
+server, and inside Wiffer, `fetch https://example.com/` works (a manual
+check).
+
+## Phase 8B: URLs, HTTP and inflate (`lib/url`, `lib/http`, `lib/inflate`)
+
+- **URL parsing** per the WHATWG URL standard (the parts that matter):
+  schemes, authority, ports, percent-encoding, relative resolution
+  against a base (the RFC 3986 and WHATWG test suites are the test
+  fixtures), and IDNA left out (ASCII hosts only, with a clear error).
+- **HTTP/1.1 client:** request building, response parsing (status,
+  headers, Content-Length, chunked, close-delimited), redirects (up to
+  10, with method rules), keep-alive with a small per-host pool, and
+  `Accept-Encoding: gzip, deflate`. Cookies: a per-session jar
+  (Domain, Path, Secure, HttpOnly, Expires and Max-Age). No persistence
+  at first. An in-memory cache keyed by URL (respecting `no-store`).
+- **Inflate:** DEFLATE, zlib and gzip decoding. PNG needs it too. The
+  test fixtures come from host `zlib`/`gzip`.
+- **Text decoding:** UTF-8 (with replacement characters), Windows-1252
+  and ISO-8859-1. Get the charset from the header, then `<meta
+  charset>`, defaulting to UTF-8.
+
+## Phase 8C: HTML (`lib/html`)
+
+- **Tokenizer** following the WHATWG states that matter: data, tags,
+  attributes (all quoting styles), comments, DOCTYPE, RCDATA/RAWTEXT for
+  `<title>`, `<textarea>`, `<style>` and `<script>`, and character
+  references with the full named entity table (generated into a Swift
+  file from the spec's JSON).
+- **Tree builder:** the insertion modes that keep real pages sane:
+  implied html/head/body, auto-closing `<p>`, `<li>`, `<dt>`/`<dd>`,
+  `<option>`, the table modes (simplified foster parenting), and the
+  adoption agency algorithm for formatting tags (a bounded,
+  simplified version). Unknown tags are fine and become generic
+  elements.
+- **DOM:** `final class Node` (element, text, comment, document) with
+  parent, children, attributes, and queries by id, class and tag. No
+  scripting means the DOM is static after parsing (except form state).
+- **Tests:** a subset of html5lib-tests (MIT) as fixtures, comparing
+  the tree dump. Record the pass rate and push it up over time instead
+  of chasing 100%.
+
+## Phase 8D: CSS (`lib/css`)
+
+- **Syntax** (CSS Syntax Level 3): tokenizer, rules, at-rules, and
+  declarations, with error recovery that skips what it doesn't
+  understand.
+- **Selectors:** type, universal, class, id, attribute (`=`, `~=`,
+  `^=`, `$=`, `*=`), descendant, child, adjacent and general sibling,
+  `:first-child`, `:last-child`, `:nth-child(an+b)`, `:not()` (simple),
+  `:link`, `:visited` (always false), `:hover` (tracked by the browser),
+  `:root`. Specificity and source order.
+- **Cascade:** a user-agent stylesheet (from the HTML spec's
+  rendering section), author sheets (`<style>`, `<link
+  rel=stylesheet>`, `@import`), `style=""` attributes, `!important`,
+  inheritance, `initial`/`inherit`/`unset`, and custom properties with
+  `var()` (heavily used now).
+- **Values:** lengths (px, em, rem, %, pt, vw, vh), `calc()` (simple),
+  colors (named, hex, rgb(), rgba(), hsl()), and the properties layout
+  understands (8F). Media queries: `screen`, `min-width`, `max-width`,
+  `prefers-color-scheme: light`. Everything else is parsed and ignored.
+
+## Phase 8E: fonts and text (`lib/font`)
+
+- **TrueType reader:** `cmap` (format 4 and 12), `glyf`/`loca`, `hmtx`,
+  `hhea`, `head`, `kern` (format 0). CFF/OTF outlines are a stretch.
+- **Rasterizer:** quadratic outlines flattened to lines, then a coverage
+  (antialiased) scanline fill with the nonzero rule. A glyph cache keyed
+  by (font, size, glyph). Subpixel positioning is a stretch.
+- **Text runs:** UTF-8 to glyphs, advances plus kerning, font fallback
+  (DejaVu covers a lot; tofu boxes for the rest), and line breaking at
+  spaces and after hyphens (a simplified UAX #14). No complex-script
+  shaping (Arabic, Indic) at first, which is a known limit.
+- **Bundled:** DejaVu Sans, Serif and Sans Mono, regular and bold (and
+  italics if space allows), in rootfs `/fonts`. Map `font-family`
+  generic names (`serif`, `sans-serif`, `monospace`) and common names
+  (Arial, Helvetica, Times, Georgia, Courier) onto them.
+- The taskbar and window titles can switch to these too (optional).
+
+## Phase 8F: layout and paint (`lib/layout`)
+
+- **Box tree** from the DOM and computed styles: `display` (none, block,
+  inline, inline-block, list-item, table parts, flex), anonymous block
+  and inline boxes, and `::before`/`::after` with string `content`.
+- **Block layout:** width/height (auto and fixed), min/max, margins with
+  collapsing, padding, borders, `box-sizing`, and auto horizontal
+  margins for centering.
+- **Inline layout:** line boxes, baselines, vertical-align (baseline,
+  middle, top, bottom, sub, super), text-align (including justify),
+  white-space (normal, nowrap, pre, pre-wrap), `<br>`, text-indent,
+  line-height, and replaced elements (images, form controls) inline.
+- **Floats and clear.** Older sites depend on them.
+- **Positioning:** relative, absolute and fixed (fixed relative to the
+  viewport), and `z-index` in stacking order. `sticky` acts as
+  relative.
+- **Tables:** auto layout with column widths from content, colspan and
+  rowspan, cell padding, and border-collapse. Many sites (HN included)
+  are tables.
+- **Flexbox:** single-line and wrapping, direction, justify-content,
+  align-items, flex-grow/shrink/basis, gap. Modern sites need it.
+  Grid is "After Part 8"; treat it as block for now.
+- **Overflow:** visible, hidden and auto/scroll (scrollable boxes are
+  a stretch; at first only the viewport scrolls).
+- **Paint:** a display list in stacking order (backgrounds,
+  borders, text, decorations, images, outlines), clipped and painted
+  into a `Surface`. Only the visible part of the page is painted, so
+  long pages scroll quickly. Hit testing finds the element under a
+  point, for links, hover and forms.
+- **Tests:** layout dumps (each box's rect as text) compared to expected
+  output for small fixture pages, run on the host. Also some reference
+  screenshots compared with screendump in the harness, but those are
+  brittle, so keep them few.
+
+## Phase 8G: images (`lib/image`)
+
+- **PNG:** every color type and bit depth, filters, transparency
+  (tRNS), and Adam7 interlacing, with inflate from 8B. Checked against
+  PngSuite.
+- **GIF:** LZW, the first frame only (animation is a stretch).
+- **JPEG:** baseline Huffman, 4:4:4/4:2:2/4:2:0 chroma subsampling, and
+  then progressive (a lot of the web is progressive JPEG).
+- **WebP:** lossless and lossy (VP8) are a stretch, but many sites serve
+  WebP when the `Accept` header allows it. Don't advertise it, and most
+  servers fall back to JPEG/PNG.
+- Scaling: bilinear, with alpha blending into the page. A decoded-image
+  cache with a memory cap. Decode limits (dimensions × 4 bytes under a
+  cap), because image headers lie.
+
+## Phase 8H: the browser app (`user/browse`)
+
+- **Window:** an address bar (the 6F `TextField`), back, forward,
+  reload/stop buttons, a page view, and a status line (loading progress,
+  the URL under the mouse). The window title is the page's `<title>`.
+- **Loading:** one event loop on `wait`. Fetch the document, parse it,
+  start fetching stylesheets and images in parallel (up to 6
+  connections per host), lay out once the CSS has arrived (or after a
+  timeout), and relayout when images report their sizes. Show progress.
+  Stop cancels everything.
+- **Navigation:** link clicks (`target` is ignored), fragments
+  (`#id` scrolls), history with scroll positions, `file://` URLs for
+  local pages, `about:blank`, an `about:home` page with bookmarks
+  (target sites), and `view-source:`.
+- **Input:** scrolling with arrow keys, PgUp/PgDn, Space, Home/End, and
+  the mouse wheel. That needs IntelliMouse mode in ps2.swift (the
+  0xF3 200/100/80 knock, then 4-byte packets). Text selection and copy
+  are a stretch.
+- **Forms:** `<input>` (text, password, search, hidden, checkbox, radio,
+  submit), `<textarea>`, `<select>` (a dropdown in the page) and
+  `<button>`. Submit by GET and POST
+  (`application/x-www-form-urlencoded`). That's enough for search on
+  lite.duckduckgo.com and Wikipedia.
+- **Errors** are pages, not crashes: DNS failure, connection refused,
+  TLS failure (with the reason), and HTTP errors.
+- **Desktop:** a taskbar launcher entry, and `browse <url>` from a
+  terminal.
+
+## Phase 8I: tests and target sites
+
+- **Harness:** a host HTTP and HTTPS server (test CA) serves
+  `tests/web/`: fixture pages covering each layout feature, images,
+  redirects, chunked and gzip responses, cookies, forms (the server
+  echoes the posted fields), and a slow or broken server (stalls,
+  truncation, reset). Drive the browser with sendkey/mouse, then check
+  the title, screendumps for a few pages, and that the browser process
+  is still alive after each hostile case.
+- **Fuzzing on the host:** HTML, CSS, PNG, JPEG, inflate, DNS, X.509 and
+  TLS record parsing get a simple mutation fuzzer in the host test
+  runner (random flips, truncation, and splicing of fixtures), run
+  for a fixed number of iterations in `--hosttest`. A crash or a
+  runaway allocation is a failed test.
+- **Target sites** (manual checks, listed in the roadmap with a
+  readable/broken status per site): info.cern.ch, example.com,
+  lite.duckduckgo.com (search), en.wikipedia.org (an article and a
+  search), news.ycombinator.com, text.npr.org, lite.cnn.com,
+  a Wikipedia page with tables and images, and the Wiffer repo's README
+  on GitHub (hard: heavy CSS; as a stretch).
+
+**Done when:** every harness check passes under BIOS and UEFI, and the
+target sites (except the stretch one) are readable and navigable.
+
+---
+
+## After Part 8
+
+Not planned yet. Roughly in order of how much they'd help the browser:
+
+- **JavaScript.** The big one, likely a Part of its own: an ES5 subset
+  interpreter (bytecode, a mark-and-sweep GC), then DOM bindings,
+  events, timers and `fetch`/XHR, then more ES2015+. Even a basic
+  engine makes menus and "accept cookies" banners work. Full modern web
+  apps stay out of reach.
+- Threads in user space (a decoder or layout thread), and shared memory.
+- POSIX or Linux syscall compatibility, so static musl programs can run
+  as a source of ported apps.
+- IPv6, HTTP/2, a persistent cookie jar and cache on /disk, downloads to
+  /disk.
+- CSS Grid, scrollable overflow boxes, transforms, web fonts (WOFF2 needs
+  Brotli), SVG, WebP.
+- An xHCI driver for `usb-tablet` (absolute mouse, no grab), and real
+  hardware networking (e1000, which QEMU also emulates, is the usual
+  next target).
+
+## Decisions
+
+Made on 2026-11-18:
+
+1. **TLS is pure Swift:** written from scratch, or ported from an
+   existing pure-Swift library where one fits Embedded Swift. No C
+   libraries (no BearSSL, no BoringSSL wrappers).
+2. **POSIX or Linux compatibility waits.** It's a possible later source
+   of apps, but not before the browser works.
+3. **JavaScript is a separate pass** after Part 8. Part 8's target sites
+   are the ones that work without it.
