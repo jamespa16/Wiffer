@@ -5,6 +5,7 @@
   parts is in git history (`git show 4cf881e:ROADMAP.md`).
 - **Part 3: Window manager and text editor.** Phases H–N done (N4 stretch
   items not started). Phase O (stretch) is open. This document.
+- **Part 4: SMP.** Done (Phases P–T).
 
 Goal: boot into a desktop with overlapping, draggable windows. Each shell
 runs in its own terminal window, and a text editor can open, edit and save
@@ -50,6 +51,15 @@ What Part 3 builds on:
   selftests plus a Python harness. The harness types through the QEMU
   monitor (`sendkey`, `mouse_move`) and checks `screendump` against a
   replayed serial transcript.
+- **SMP.** Other CPUs start through Limine MP with x2APIC, and a single
+  CPU is the fallback. Per-CPU data sits behind GS. Spinlocks take locks
+  in the order schedLock → heapLock → pmmLock → stdoutLock. One shared run
+  queue filters by affinity. Tasks default to `.cpu(0)`, so the WM,
+  console, shells and fs stay on CPU 0, and `.any` tasks migrate. IPIs
+  wake idle CPUs and halt the rest on panic. The `cpus` and `par` commands
+  show it. `./run.sh --test --smp N` runs with N CPUs (default 4). Known
+  limit: a task off CPU 0 must post results rather than print, because
+  consoleFlush isn't synchronised with stdoutLock.
 
 Two things stand in the way of a window manager:
 
@@ -700,8 +710,8 @@ The whole existing suite still passes on `--smp 1` and `--smp 4`.
   checks the result.
 
 **Done** (par.swift, shell.swift, taskbar.swift, wm.swift, smp.swift,
-selftest.swift, tests/serial_session.py; the docs bullet below is still
-open). `par [n]` (default 3,000,000, 2..100,000,000) spawns one `.any`
+selftest.swift, tests/serial_session.py; the docs bullet below is done
+too). `par [n]` (default 3,000,000, 2..100,000,000) spawns one `.any`
 worker per online CPU, each trial-dividing strided 4096-number chunks of
 [0, n) (yielding per chunk so the watchdog stays quiet), then repeats with
 one worker. Workers never print: each posts `.message(worker << 48 | cpu << 40
@@ -721,4 +731,4 @@ a second; the existing taskbar pixel checks needed no change. Harness:
 used when `-smp` >= 2, the speedup line and bad input; a `help` line check
 for `par`; selftests cover `countPrimes` (pi(10)=4, pi(100)=25,
 pi(10000)=1229) and the strided split.
-- Update "Where we are" and README.md's Wiffer entry.
+- Update "Where we are" and README.md's Wiffer entry. **Done.**
