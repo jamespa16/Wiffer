@@ -21,7 +21,10 @@ lib/<name>/
 ```
 
 `hosttest/harness.swift` has `Tests` (`section`, `check`, `equal`,
-`readFile`, `fuzz`), `TestRandom`, `hex` and `unhex`.
+`readFile`, `fuzz`), `TestRandom`, `hex` and `unhex`. `hosttest/host.h`
+also has loopback TCP and popen helpers (`host_tcp_connect`,
+`host_popen`, ...) for live tests such as lib/tls against a local
+`openssl s_server`; tests only, never in a library.
 
 ## Rules
 
