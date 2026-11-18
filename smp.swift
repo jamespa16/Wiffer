@@ -102,6 +102,7 @@ func apMain(_ cpu: Int) -> Never {
     idtLoad()
     cpuProtectionInit() // Phase 6A: SMEP/SMAP in this CPU's CR4
     apicEnableThisCPU(bsp: false)
+    apicTimerStart() // Phase 6D1: preempts ring 3 here
     let e = thisCPU()
     e.pointee.cr3 = read_cr3()
     e.pointee.online = true

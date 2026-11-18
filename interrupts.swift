@@ -9,6 +9,7 @@
 public func interruptDispatch(_ frame: UnsafeMutablePointer<interrupt_frame>) -> UInt64 {
     let vector = frame.pointee.vector
     let fromUser = frame.pointee.cs & 3 == 3
+    if fromUser { load_ss(Selector.kernelData) } // (the CPU loaded a null SS)
     if gsBaseReady {
         let e = thisCPU()
         if fromUser { e.pointee.userInterrupts &+= 1 } else if e.pointee.inSyscall != 0 { e.pointee.syscallInterrupts &+= 1 }
@@ -19,10 +20,17 @@ public func interruptDispatch(_ frame: UnsafeMutablePointer<interrupt_frame>) ->
         exceptionReport(frame.pointee)
     } else if vector < 48 {
         handleIRQ(UInt8(truncatingIfNeeded: vector - 32))
+    } else if vector == UInt64(Vector.timer) {
+        apicTimerInterrupt()
     } else if vector >= 0xF0 {
         apicInterrupt(UInt8(truncatingIfNeeded: vector))
     }
-    return fromUser ? userLeavePoint() : 0
+    guard fromUser else { return 0 }
+    // Phase 6D2: a timer tick (PIT on CPU 0, LAPIC timer on the APs) that
+    // interrupted ring 3 with the slice used up switches away. Its EOI is
+    // already sent; ring 0 is never preempted.
+    if vector == 32 || vector == UInt64(Vector.timer) { preemptIfSliceUsed() }
+    return userLeavePoint()
 }
 
 // MARK: Exceptions
@@ -133,7 +141,7 @@ func handleIRQ(_ irq: UInt8) {
         return
     }
     switch irq {
-    case 0: ticks &+= 1; cpuUsageTick(); watchdogTick()
+    case 0: ticks &+= 1; cpuUsageTick(); watchdogTick(); expireDeadlines(); sliceTick()
     case 1: keyboardIRQ()
     case 12: mouseIRQ()
     default: break

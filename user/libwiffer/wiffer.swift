@@ -5,6 +5,7 @@
 //   Process.args          argv, argv[0] first
 //   Process.pid, Process.exit(code), Process.yield()
 //   Memory.map/unmap/protect   anonymous pages (the heap uses these)
+//   Time.now, Time.sleep(ms)   ms since boot; block for ms (6D)
 //   debugPrint(_:)        raw bytes to the kernel's serial port
 //
 // Results follow abi/syscalls.swift: negative values are -errno.
@@ -98,6 +99,15 @@ enum Memory {
     static func protect(_ p: UnsafeMutableRawPointer, _ length: Int, prot: UInt64) -> Int {
         sysProtect(UInt64(UInt(bitPattern: p)), UInt64(length), prot)
     }
+}
+
+enum Time {
+    /// Milliseconds since boot (10 ms steps: the 100 Hz timer).
+    static var now: Int { syscall(SyscallNumber.now) }
+
+    /// Block for `ms` milliseconds (rounded up to 10 ms). 0, or -EINTR.
+    @discardableResult
+    static func sleep(_ ms: Int) -> Int { syscall(SyscallNumber.sleep, UInt64(max(ms, 0))) }
 }
 
 /// Raw bytes to the kernel's serial port (debugging; not the terminal).

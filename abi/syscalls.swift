@@ -23,9 +23,10 @@ enum SyscallNumber {
     static let debugWrite: UInt64 = 2
     /// getpid() -> pid.
     static let getpid: UInt64 = 3
-    /// sleep(ms) (reserved: 6D).
+    /// sleep(ms) -> 0, or -EINTR if killed meanwhile. Rounded up to the
+    /// 10 ms tick; sleep(0) yields.
     static let sleep: UInt64 = 4
-    /// now() -> ms since boot (reserved: 6D).
+    /// now() -> ms since boot (10 ms steps).
     static let now: UInt64 = 5
     /// spawn(path, argv, ...) -> pid (reserved: 6E).
     static let spawn: UInt64 = 6
