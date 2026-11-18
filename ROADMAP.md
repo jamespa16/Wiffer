@@ -1838,6 +1838,16 @@ Decisions and results:
   at first. An in-memory cache keyed by URL (respecting `no-store`).
 - **Inflate:** DEFLATE, zlib and gzip decoding. PNG needs it too. The
   test fixtures come from host `zlib`/`gzip`.
+  **Inflate is done** (`lib/inflate`, with Phase 8G). `Inflater` is the
+  streaming API for HTTP bodies: `feed(chunk)` (any chunk size),
+  `take()` to drain output, `finish()` at end of input (throws
+  `.truncated` if the stream is incomplete), `isDone`; formats `.raw`,
+  `.zlib`, `.gzip` (FEXTRA/FNAME/FCOMMENT/FHCRC, CRC-32 and ISIZE,
+  multiple members) and `.auto` (sniffs gzip, then zlib, else raw, which
+  also covers servers that send raw deflate for `Content-Encoding:
+  deflate`). `maxOutput` bounds the decoded size (`.outputLimit`).
+  One-shot: `inflateBytes(data, format:, maxOutput:)`. Details are in
+  Phase 8G below.
 - **Text decoding:** UTF-8 (with replacement characters), Windows-1252
   and ISO-8859-1. Get the charset from the header, then `<meta
   charset>`, defaulting to UTF-8.
@@ -1998,18 +2008,87 @@ Pure Swift, host-tested (`./run.sh --hosttest font`, 516 checks).
 
 ## Phase 8G: images (`lib/image`)
 
+**Done** (`lib/inflate`, `lib/image`; `./run.sh --hosttest inflate image`).
+
 - **PNG:** every color type and bit depth, filters, transparency
   (tRNS), and Adam7 interlacing, with inflate from 8B. Checked against
   PngSuite.
 - **GIF:** LZW, the first frame only (animation is a stretch).
-- **JPEG:** baseline Huffman, 4:4:4/4:2:2/4:2:0 chroma subsampling, and
-  then progressive (a lot of the web is progressive JPEG).
+- **JPEG:** baseline Huffman, 4:2:0/4:2:2/4:4:4 chroma subsampling
+  (plus 4:4:0, 4:1:1 and any integral ratio), and then progressive (a
+  lot of the web is progressive JPEG).
 - **WebP:** lossless and lossy (VP8) are a stretch, but many sites serve
   WebP when the `Accept` header allows it. Don't advertise it, and most
-  servers fall back to JPEG/PNG.
+  servers fall back to JPEG/PNG. Skipped.
 - Scaling: bilinear, with alpha blending into the page. A decoded-image
   cache with a memory cap. Decode limits (dimensions × 4 bytes under a
   cap), because image headers lie.
+
+**Decisions.**
+
+- **API.** `imageDecode(bytes, maxBytes:)` sniffs the magic bytes
+  (`imageSniff`) and calls `PNGDecoder`, `GIFDecoder` or `JPEGDecoder`
+  (`.decode(bytes, maxBytes:)`), all `throws(ImageError)`. `maxBytes`
+  caps width × height × 4 and is checked from the header before
+  anything is allocated (`.tooLarge`); JPEG coefficient memory is also
+  held to about 1.5× the cap.
+- **`ImageBitmap`:** `width`, `height`, `pixels: [UInt32]` as
+  `0xAARRGGBB` with **straight** (non-premultiplied) alpha, no row
+  padding, plus `opaque` (every alpha is 0xFF, so blending can copy).
+  JPEG is always opaque. `rgbaBytes()` gives R,G,B,A bytes.
+- **Scaling and blending:** `imageScaleBilinear(bitmap, width:, height:,
+  maxBytes:)` (premultiplied interpolation, edges clamped, nil if over
+  the cap) and `imageBlend(into: UnsafeMutablePointer<UInt32>, stride:,
+  width:, height:, src:, x:, y:)`, which composites straight alpha over a
+  32-bit XRGB buffer with clipping. Neither knows about the kernel's
+  `Surface`. `ImageLRU<Key, Value>` is a tiny byte-budget LRU for the
+  browser's decoded-image cache.
+- **PNG details:** CRC errors in critical chunks fail; in ancillary
+  chunks the chunk is dropped. Gamma, background and ICC are ignored.
+  16-bit samples keep their high byte (color-key tRNS compares the full
+  16 bits). Data after the last needed pixel is ignored; a missing IEND
+  after complete image data is accepted. APNG decodes as its default
+  image.
+- **GIF details:** output is the logical screen size, transparent where
+  the frame doesn't cover it (offset frames and local palettes work);
+  the background color is ignored. Truncated LZW data leaves the rest
+  transparent.
+- **JPEG details:** follows libjpeg (accurate integer IDCT, fancy
+  triangle upsampling for 2x1, 1x2 and 2x2, fixed-point YCbCr), so
+  output is bit-exact with libjpeg-turbo's `djpeg` on every fixture.
+  Adobe CMYK and YCCK decode to RGB. Truncated or corrupt entropy data
+  decodes as far as it goes (like browsers) rather than failing.
+  Arithmetic coding, lossless and 12-bit precision are `.unsupported`.
+  Not done: EXIF orientation, ICC profiles, JPEG-in-CMYK without an
+  Adobe marker beyond the plain inverse.
+- **Inflate details:** table-driven (10-bit literal/length and 8-bit
+  distance tables with a canonical slow path for longer codes), a 64-bit
+  bit buffer, and unit-granular resumption: each symbol, dynamic table
+  or stored header is decoded atomically and rewound if the chunk ends
+  mid-unit, so any chunking (down to 1 byte) works. Window handling
+  keeps the last 32 KiB after each `take()`. After the last member
+  of a gzip stream the next bytes are ignored unless they start with
+  `1f 8b`.
+
+**Tests.** `inflate`: fixtures made by host zlib/gzip at levels 0, 1, 6 and
+9 plus Z_HUFFMAN_ONLY, Z_RLE and Z_FIXED (`lib/inflate/fixtures/gen.py`),
+a hand-built stream using every length and distance code, every gzip
+header flag, multi-member files, a 1 MB file, bytewise streaming,
+truncation at every offset, corrupted headers and checksums, bad codes,
+distances too far back, output limits, and fuzzing. `image`: PngSuite
+(all 162 valid files compared to a reference decoder written in Python,
+`tests/refdecode.py`, itself cross-checked against Pillow; the 14 `x*`
+files must be rejected; license in `fixtures/pngsuite/`), GIFs from a
+small encoder in `tests/gen_fixtures.py`, JPEGs from `cjpeg` compared
+with `djpeg` output (all subsamplings, restart markers, grayscale,
+progressive, CMYK against Pillow), cap checks, truncation, and fuzzing
+of all three decoders.
+
+**Results** (host, `-Osize`, Apple silicon): inflate about 215 MB/s of
+output; PNG about 53 MP/s and JPEG about 62 MP/s (baseline) and 55 MP/s
+(progressive) on 1024×768 synthetic pictures (smooth content, so real
+photos will be slower per pixel). All of this is plain Swift without
+SIMD.
 
 ## Phase 8H: the browser app (`user/browse`)
 
