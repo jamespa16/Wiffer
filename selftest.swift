@@ -18,6 +18,7 @@ struct SelfTest {
 func runSelfTests() -> Never {
     var t = SelfTest()
     puts("selftest:\n")
+    netSettle() // Part 7: let DHCP finish before anything measures the heap
 
     // Part 1: formatting and parsing helpers.
     t.check("parseHex 0xFfA0", parseHex("0xFfA0") == 0xFFA0)
@@ -114,6 +115,9 @@ func runSelfTests() -> Never {
 
     // Phase L: terminal windows.
     terminalWindowTests(&t)
+
+    // Part 7: networking (packets, LinkPair, ARP/IPv4/ICMP, UDP, DHCP, DNS).
+    netTests(&t)
 
     // Phases 6A-6C: page tables, ring 3, processes.
     vmmTests(&t)

@@ -39,6 +39,12 @@ if os.environ.get("WIFFER_UEFI"):
 # Virtual CPU count for every QEMU (run.sh --smp N sets WIFFER_SMP).
 SMP = os.environ.get("WIFFER_SMP", "4")
 
+# Part 7: every QEMU gets a legacy virtio-net NIC on QEMU's user-mode (SLIRP)
+# network, unless run.sh --nonet (WIFFER_NONET=1) or Session(net=False).
+NONET = bool(os.environ.get("WIFFER_NONET"))
+NET_ARGS = ["-netdev", "user,id=n0",
+            "-device", "virtio-net-pci,netdev=n0,disable-legacy=off,disable-modern=on"]
+
 # Phase V: the main session gets a fresh 64 MiB scratch disk (never
 # build/disk.img) as a legacy virtio-blk device, unless run.sh --nodisk
 # (WIFFER_NODISK=1) or --nodisk here. Phase Y: it's FAT32 (made by
@@ -228,7 +234,7 @@ if int(SMP) >= 2:
 
 
 class Session:
-    def __init__(self, extra_args=(), monitor=False, exit_device=True, iso=ISO):
+    def __init__(self, extra_args=(), monitor=False, exit_device=True, iso=ISO, net=True):
         self.monitor_path = None
         self.mon = None  # connected monitor socket, opened on first use
         self.cursor = None  # mouse sprite (x, y) on screen, if known
@@ -240,6 +246,8 @@ class Session:
         args = ["qemu-system-x86_64", "-M", "q35", "-m", "256M", "-cpu", "max", "-smp", SMP, "-cdrom", iso,
                 "-boot", "d", "-no-reboot", "-display", "none",
                 "-serial", "stdio", "-monitor", mon, *FIRMWARE, *extra_args]
+        if net and not NONET:
+            args += NET_ARGS
         if exit_device:  # without it, a fault or selftest leaves QEMU running
             args += ["-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"]
         self.p = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -710,6 +718,7 @@ def main():
         print(f"{'PASS' if ok else 'FAIL'}: uptime advances (ticks {samples})")
 
         failures += smp_checks(s, opts.timeout)
+        failures += net_checks(s, opts.timeout)
 
         # fault <kind>: a report, then QEMU exits via isa-debug-exit.
         for kind, want, fs in faults:
@@ -898,6 +907,131 @@ def main():
             ed.close()
         if term:
             term.close()
+
+
+def fake_dns_server():
+    """Part 7C: a UDP DNS responder on the host (127.0.0.1, ephemeral port).
+    The guest reaches it at 10.0.2.2:<port> (SLIRP maps the gateway address to
+    the host), so `host <name> 10.0.2.2:<port>` works without touching
+    SLIRP's own DNS forwarder. Returns (port, stop). Besides good answers it
+    serves hostile ones: a self-referencing compression pointer, a truncated
+    reply and an oversize rdlength, which the guest must reject cleanly."""
+    import threading
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind(("127.0.0.1", 0))
+    sock.settimeout(0.2)
+    port = sock.getsockname()[1]
+    stopping = threading.Event()
+
+    def labels(name):
+        return b"".join(bytes([len(p)]) + p.encode() for p in name.split(".")) + b"\0"
+
+    def reply(query, answers, rcode=0):
+        qend = 12
+        while query[qend] != 0:
+            qend += query[qend] + 1
+        question = query[12:qend + 5]
+        head = query[:2] + bytes([0x81, 0x80 | rcode]) + b"\0\1" + len(answers).to_bytes(2, "big") + b"\0\0\0\0"
+        return head + question + b"".join(answers)
+
+    def a_rr(owner, ip, ttl=60):
+        return owner + b"\0\1\0\1" + ttl.to_bytes(4, "big") + b"\0\4" + bytes(map(int, ip.split(".")))
+
+    def serve():
+        while not stopping.is_set():
+            try:
+                data, addr = sock.recvfrom(512)
+            except socket.timeout:
+                continue
+            except OSError:
+                return
+            if len(data) < 17:
+                continue
+            i, parts = 12, []
+            while data[i]:
+                parts.append(data[i + 1:i + 1 + data[i]].decode())
+                i += data[i] + 1
+            name = ".".join(parts).lower()
+            me = b"\xc0\x0c"
+            if name == "test.wiffer.example":
+                out = reply(data, [a_rr(me, "192.0.2.77")])
+            elif name == "www.wiffer.example":
+                target = labels("test.wiffer.example")
+                cname = me + b"\0\5\0\1" + (60).to_bytes(4, "big") + len(target).to_bytes(2, "big") + target
+                out = reply(data, [cname, a_rr(labels("test.wiffer.example"), "192.0.2.77")])
+            elif name == "nx.wiffer.example":
+                out = reply(data, [], rcode=3)
+            elif name == "loop.wiffer.example":
+                # The answer's owner name is a pointer to itself.
+                pos = len(reply(data, []))
+                out = reply(data, [bytes([0xC0 | pos >> 8, pos & 255]) + b"\0\1\0\1\0\0\0\x3c\0\4\1\2\3\4"])
+            elif name == "trunc.wiffer.example":
+                out = reply(data, [a_rr(me, "192.0.2.78")])[:-3]
+            elif name == "huge.wiffer.example":
+                out = reply(data, [me + b"\0\1\0\1\0\0\0\x3c\xff\xff\1\2\3\4"])
+            else:
+                continue
+            sock.sendto(out, addr)
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+
+    def stop():
+        stopping.set()
+        thread.join(1.0)
+        sock.close()
+    return port, stop
+
+
+def net_checks(s: Session, timeout: float) -> int:
+    """Part 7 (7A-7C) on the machine: virtio-net comes up, DHCP gives
+    10.0.2.15, the gateway answers ping, and the resolver talks to a fake DNS
+    server on the host (and survives hostile replies)."""
+    if NONET:
+        print("harness: --nonet, network checks skipped")
+        return 0
+    failures = 0
+    def check(ok, label, detail=""):
+        nonlocal failures
+        failures += not ok
+        print(f"{'PASS' if ok else 'FAIL'}: {label}" + ("" if ok else f"\n  {detail}"))
+        return ok
+    got = s.command("lspci", timeout)
+    check("1af4:1000" in got and "network" in got, "net: lspci shows the virtio-net function (1af4:1000)", repr(got))
+    deadline = time.time() + 20
+    got = ""
+    while time.time() < deadline:
+        got = s.command("ifconfig", timeout)
+        if "dhcp: lease from" in got:
+            break
+        time.sleep(0.5)
+    check("inet 10.0.2.15" in got and "gateway 10.0.2.2" in got and "dhcp: lease from 10.0.2.2" in got
+          and "52:54:00:12:34:56" in got, "net: ifconfig shows the DHCP lease (10.0.2.15) and the MAC", repr(got))
+    check(re.search(r"rx [1-9]\d* frames", got) is not None, "net: eth0 received frames", repr(got))
+    got = s.command("ping -c 3 10.0.2.2", 20.0)
+    check("3 packets transmitted, 3 received, 0% packet loss" in got and "icmp_seq=3" in got,
+          "net: ping -c 3 10.0.2.2", repr(got))
+    got = s.command("arp", timeout)
+    check("10.0.2.2 at " in got, "net: the gateway is in the ARP cache", repr(got))
+    port, stop = fake_dns_server()
+    try:
+        srv = f"10.0.2.2:{port}"
+        got = s.command(f"host test.wiffer.example {srv}", 20.0)
+        check("test.wiffer.example has address 192.0.2.77" in got, "net: host resolves through the fake DNS server", repr(got))
+        got = s.command(f"host www.wiffer.example {srv}", 20.0)
+        check("www.wiffer.example is an alias for test.wiffer.example." in got
+              and "test.wiffer.example has address 192.0.2.77" in got, "net: host follows a CNAME", repr(got))
+        got = s.command(f"host nx.wiffer.example {srv}", 20.0)
+        check("not found: NXDOMAIN" in got, "net: host reports NXDOMAIN", repr(got))
+        for name in ("loop", "trunc", "huge"):
+            # Hostile replies are ignored; the query times out (3 x 2 s) and the kernel lives on.
+            got = s.command(f"host {name}.wiffer.example {srv}", 30.0)
+            check("not found" in got and "timed out" in got, f"net: a hostile '{name}' reply fails cleanly", repr(got))
+        got = s.command("ping -c 1 10.0.2.2", 20.0)
+        check("1 packets transmitted, 1 received" in got, "net: the stack still answers after hostile DNS replies", repr(got))
+    finally:
+        stop()
+    return failures
 
 
 def smp_checks(s: Session, timeout: float) -> int:

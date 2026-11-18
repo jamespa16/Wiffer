@@ -9,6 +9,8 @@
 - **Part 5: Writing to disk.** Done (Phases U–Z): a FAT32 virtio disk at /disk.
 - **Parts 6–8: Toward a web browser.** Planned: user space (6A–6G),
   networking (7A–7F), and a browser (8A–8I). See the end of this document.
+  Part 7: 7A–7C done (virtio-net, Ethernet/ARP/IPv4/ICMP, UDP, DHCP, DNS);
+  7D–7F open.
 
 Goal: boot into a desktop with overlapping, draggable windows. Each shell
 runs in its own terminal window, and a text editor can open, edit and save
@@ -1623,7 +1625,7 @@ Goal: `ping 10.0.2.2`, `host example.com` and `fetch
 http://example.com/` work from a terminal. User programs get TCP and
 UDP sockets.
 
-## Phase 7A: virtio-net
+## Phase 7A: virtio-net (done)
 
 **7A1. `NetDevice`** (`net_device.swift`): name, MAC, MTU, `send(Packet)`,
 an rx callback, and counters. Subclasses: `Loopback`, and `LinkPair` for
@@ -1647,7 +1649,7 @@ ephemeral ports and passes the ports to the session.
 **Done when:** eth0 sends a raw broadcast frame and receives frames
 (SLIRP answers ARP for 10.0.2.2) under BIOS and UEFI.
 
-## Phase 7B: Ethernet, ARP, IPv4, ICMP
+## Phase 7B: Ethernet, ARP, IPv4, ICMP (done)
 
 - Ethernet II framing. ARP requests, replies and a cache with timeouts.
   Packets waiting on ARP are queued (bounded).
@@ -1665,7 +1667,7 @@ counted. Harness: `ping -c 3 10.0.2.2`. (SLIRP answers ICMP echo for the
 gateway. Pinging outside hosts may not work, depending on the host OS's
 ICMP permissions, so don't test it.)
 
-## Phase 7C: UDP, DHCP, DNS
+## Phase 7C: UDP, DHCP, DNS (done)
 
 - UDP with ports, checksums and a per-port receive queue.
 - DHCP client (DISCOVER, OFFER, REQUEST, ACK) at boot, with lease
@@ -1683,6 +1685,94 @@ SLIRP's DNS forwards to the host's resolver, so the harness test needs a
 local fake instead (serve a tiny DNS responder on the host, and use
 `-netdev user,dns=...` or `guestfwd` to point at it). Resolving real
 names is a manual check.
+
+### Notes from 7A–7C (as built)
+
+Files: `net_packet.swift` (Packet, checksums, `NetRNG`), `net_device.swift`
+(NetDevice, Loopback, LinkPair/LinkEnd), `virtio_net.swift`,
+`net_stack.swift` (Ethernet, ARP, IPv4, reassembly, ICMP, timers, hooks),
+`net_udp.swift`, `net_dhcp.swift`, `net_dns.swift`, `net_commands.swift`
+(`netInit`, `netd`, `netBlock`, ifconfig/arp/ping/host), `net_selftest.swift`
+(`NetRig`, `NetWire`, the tests).
+
+- **Parsing.** `lib/bytes/reader.swift` (`ByteReader`) is compiled into the
+  kernel by adding it to build.sh's swiftc inputs (documented there); it is
+  the only lib/ file in the kernel so far. Packet accessors return nil
+  rather than trap.
+- **netd.** One `NetStack` on eth0, owned by the CPU-0 task `netd`, which
+  sleeps in `waitEvent()`. `pollEvents` calls `netPollHook()`, which posts
+  netd a `.message` when `stack.needsPoll(ticks)` (NIC frames, a due timer,
+  local packets). 7F's MSI-X handler should post the same message. Shell
+  commands call into the stack directly (cooperative CPU-0 tasks, so never
+  concurrently with netd) and wait with
+  `netBlock(timeout:ticks) { condition }`, which sleeps the task until netd
+  has run again, a deadline passes, or Ctrl-C.
+- **Time is ticks (100 Hz).** `stack.now` is set by `poll(now:)`; selftests
+  drive virtual time, so tests are deterministic and fast.
+- **Hooks for 7D (TCP)**, all on `NetStack` (net_stack.swift header comment):
+  - `registerProtocol(6) { (IPv4Header, Packet) in ... }`: the packet's
+    `start` is the first byte of the TCP segment (IP header just before it in
+    `buf`), already trimmed to the IP length and reassembled. The packet is
+    borrowed: copy what you keep (`p.bytes()`). `h.src`, `h.dst`, `h.ttl`,
+    `h.broadcast` are in the header. With no handler the stack sends ICMP
+    protocol unreachable.
+  - `sendIP(proto: 6, dst:, payload, src:, ttl:)`: `payload` is a
+    `Packet.make()` with the segment appended; headers go into the headroom
+    (128 bytes). The stack takes ownership, resolves ARP, queues (max 4 per
+    address). It refuses payloads over `mtu - 20` (never fragments), so MSS =
+    `dev.mtu - 40`. Pseudo-header sum: `pseudoHeaderSum(src:dst:proto:length:)`
+    plus `csumAdd`/`csumFold`.
+  - `setErrorHandler(proto: 6) { ICMPError in ... }`: destination
+    unreachable / time exceeded for our datagrams, with `code`, `mtu`
+    (fragmentation needed), the quoted `originalSrc/Dst`, ports and the TCP
+    `seq` from the first 8 quoted bytes. Only quotes from our own address are
+    delivered.
+  - Timers: `let id = stack.schedule(after: ticks) { ... }`, `cancel(id)`,
+    `nextDeadline`. They run inside `poll` (netd). Reschedule from the closure
+    for repeating work. Resolution is one tick, so RTO values are multiples of
+    10 ms; keep a closure's work short (it blocks netd).
+  - Randomness: `netRandom()` (xorshift seeded from the TSC) is fine for
+    ports; mix RDRAND into initial sequence numbers yourself.
+  - Tests: `NetRig` (stacks `a` = 10.1.0.1 and `b` = 10.1.0.2 on a
+    `LinkPair`; `rig.pair.lossPct/reorderPct/dupPct/delay`, `rig.step()`,
+    `rig.run(n)`, `rig.run(until:limit:)`) and `NetWire` (one stack fed
+    hand-made frames). Time starts at tick 1000.
+- **ARP.** Cache of 32 entries, 60 s TTL (`arpTTL`), 3 requests 1 s apart,
+  wait queue of 4. Replies are learned only for addresses we asked about;
+  requests addressed to us are learned. Own address and 127/8 are delivered
+  locally without touching the wire.
+- **IPv4.** Fragments are reassembled (8 datagrams, 256 KiB total, 30 s,
+  duplicates tolerated, overlaps drop the datagram, ICMP time-exceeded if the
+  first fragment arrived). Reassembled datagrams are bigger than a pooled
+  `Packet` (2 KiB), so they arrive in an unpooled `Packet.large`. DF is set on
+  everything we send. ICMP errors are rate limited (10 per second) and never
+  sent about errors, broadcasts or non-first fragments.
+- **Sockets so far.** `stack.udpBind(port)` gives a `UDPSocket` (queue of
+  32, `onReceive` callback, `lastError` from ICMP). 7E wraps this.
+- **DHCP** (`DHCPClient`, started by `netInit`): fallback to the static
+  10.0.2.15/24 after 5 s, discovery continues and a later ACK replaces it.
+  `ifconfig` says `dhcp: lease from ...` or `no offer, static fallback`.
+- **DNS** (`DNSResolver`, `stack.resolver`): `start(name, server:port:)`
+  returns a `DNSQuery` that netd finishes; `host` and `ping` wait on it with
+  `netBlock`. 2 s per attempt, 3 attempts, CNAME chains up to 8, cache of 32
+  names honouring TTLs (capped at a day). No TCP fallback for truncated
+  replies.
+- **Harness DNS.** `host <name> <ip[:port]>` queries a chosen server, so the
+  harness runs a Python UDP responder on the host and the guest reaches it at
+  10.0.2.2:<port> (SLIRP maps the gateway address to the host). That also
+  serves hostile replies (self-referencing pointer, truncation, oversize
+  rdlength). SLIRP's `guestfwd` is TCP only, which is why it isn't used.
+  Real names (`host example.com`) work against SLIRP's 10.0.2.3 and are a
+  manual check.
+- **run.sh / harness.** SLIRP NIC by default, `--nonet` (also
+  `WIFFER_NONET=1` for the harness), `--pcap` (build/net.pcap). Every
+  harness `Session` gets the NIC (`Session(net=False)` opts out).
+- **Deviations.** The 7A3 harness helper that starts Python HTTP and echo
+  servers is left to 7D (nothing needs it yet); only the DNS responder exists.
+  `Loopback` is a device only: sends to our own address are short-circuited
+  inside the stack. `ping` prints `time=<10 ms` below one tick. The shell
+  command table has four new names (`ifconfig`, `arp`, `ping`, `host`), so the
+  "h" completion test now lists `host`.
 
 ## Phase 7D: TCP
 
@@ -1767,14 +1857,67 @@ user space (see the design decisions). They can start before Parts 6 and
   Record the choice here. Each primitive can be decided separately: for
   example, port the symmetric ciphers and write X25519, ECDSA and TLS
   ourselves.
+
+  **Decision: write every primitive ourselves** (no ported code in
+  `lib/crypto`). Survey:
+  - *CryptoSwift* (hashes, HMAC, HKDF, AES-GCM, ChaCha20-Poly1305): pure
+    Swift, but built around untyped `throws` and protocol existentials
+    (`Cipher`, `BlockMode`, `Padding` used as `any`), `Data`/Foundation
+    extensions, and `Array` extension sugar throughout. Embedded needs
+    typed throws and no `any`, so nearly every file would be rewritten.
+    It has no elliptic curves or RSA verify.
+  - *swift-ssl* / 1amageek's *swift-crypto* fork: new, single-maintainer
+    pure-Swift stacks that claim Embedded support (X25519, P-256). Too young
+    to trust over our own vector-tested code, CryptoKit-shaped APIs that
+    clash with our one-module naming rule, and auditing an unknown
+    codebase costs about as much as writing the primitives.
+  - *BigInt* (attaswift), *SwiftECC*, *BlueECC*: generic-protocol-heavy
+    bignums and Foundation, or wrappers around OpenSSL/Security.framework.
+  - *swift-crypto* (Apple), *swift-nio-ssl*: BoringSSL. Out.
+
+  Per primitive: SHA-2, HMAC, HKDF, ChaCha20, Poly1305 (26-bit limbs),
+  X25519 (51-bit limbs, UInt128 products) and the DRBG are small enough
+  that writing them against the RFCs was quicker than adapting anything.
+  AES is a T-table implementation (written; not constant-time against
+  cache timing; AES-NI later). GHASH uses BearSSL's masked-multiply
+  ("holes") carry-less multiplication idea, independently implemented.
+  ECDSA uses one generic Montgomery engine (`CryptoMontgomery`, CIOS
+  over 64-bit limbs) shared with RSA, and the complete a = -3 addition
+  formulas of Renes–Costello–Batina, so there is no special-case code.
+
 - **Primitives**, each checked against official test vectors: SHA-256,
   SHA-384, HMAC, HKDF, AES-128-GCM and AES-256-GCM (software AES; AES-NI
   as a later speedup), ChaCha20-Poly1305, X25519, ECDSA P-256 and P-384
   verify, RSA PKCS#1 v1.5 and PSS verify (a small bignum with Montgomery
   multiplication, up to 4096 bits).
+
+  **Done** (`lib/crypto`: `sha2.swift`, `hmac.swift`, `aes.swift`,
+  `chacha.swift`, `x25519.swift`, `bigint.swift`, `ecdsa.swift`,
+  `rsa.swift`, `drbg.swift`; each file starts with its API). Also SHA-512,
+  AES-192, P-256/P-384 ECDH (for the HelloRetryRequest key share),
+  TLS 1.3 `HKDF.expandLabel` / `deriveSecret`, and `ChaChaDRBG`, the
+  fast-key-erasure generator the kernel's `getrandom` will wrap.
+  `./run.sh --hosttest crypto` checks FIPS 180-4, FIPS 197, RFC 4231,
+  RFC 5869, the RFC 8448 key schedule, the GCM spec test cases, RFC 8439,
+  RFC 7748 (including 1000 iterations), RFC 6979 and RFC 5903 vectors,
+  plus fixtures from Python `cryptography` (`lib/crypto/fixtures/gen_*.py`):
+  every SHA-2 length to 260, AEAD lengths across block boundaries,
+  ECDSA/ECDH on both curves (including the degenerate keys G, 2G, -G),
+  and RSA 1024–4096 PKCS#1 v1.5 and PSS (salt 0, 20 and hash length,
+  emBits a multiple of 8). Negative tests: every bit flip of AEAD
+  output, tampered signatures and digests, r/s out of range, off-curve,
+  compressed and out-of-range points, small-order X25519 points, strict
+  DER. The verify entry points are fuzzed. Host -Osize on an M-series
+  Mac: AES-128-GCM ~200 MB/s, ChaCha20-Poly1305 ~320 MB/s, SHA-256
+  ~320 MB/s, X25519 ~42 µs, P-256 verify ~1.7 ms, RSA-2048 verify ~50 µs.
+  Gaps: AES is not cache-timing safe, P-256/P-384 field arithmetic
+  allocates per operation (fine for a handshake, slow for anything bulk),
+  no compressed points, no SHA-1 (old chains), no RSA signing or
+  decryption.
 - **Randomness:** a `getrandom` syscall backed by a kernel ChaCha20 DRBG,
   seeded from RDSEED/RDRAND, plus RDTSC jitter and interrupt timing as
-  extra input.
+  extra input. (The DRBG is `ChaChaDRBG` in `lib/crypto`; the syscall
+  and seeding are still to do.)
 - **ASN.1 DER and X.509:** parse certificates, check the chain to a
   bundled root store (Mozilla's, as `/etc/roots.der` in rootfs), validity
   dates from the RTC, the hostname against SAN (with wildcards), basic
@@ -1798,6 +1941,34 @@ check).
 
 ## Phase 8B: URLs, HTTP and inflate (`lib/url`, `lib/http`, `lib/inflate`)
 
+**Status: done except inflate** (lib/inflate is being written separately).
+`lib/url`, `lib/http` and `lib/text` are in, all with host tests and
+fuzzers (`./run.sh --hosttest url http text`).
+
+Decisions and results:
+- **lib/url**: full WHATWG basic URL parser (no setters), IPv4 and IPv6
+  hosts, opaque hosts, file drive letters, `blob:` origin, form-urlencoded
+  encode/decode. Non-ASCII hosts throw `URLError.nonASCIIHost` (no IDNA;
+  `xn--` labels pass through unvalidated). Fixture: the complete WPT
+  `urltestdata.json` (BSD-3, license in `lib/url/fixtures/`): 891 pass,
+  13 skipped (IDNA cases), 0 fail of 904. RFC 3986 section 5.4: 41/41.
+- **lib/http** (DEPS url): no I/O, no clock (`now` is Unix seconds).
+  `httpBuildRequest`, `HTTPResponseParser` (events: head/body/trailers/
+  complete/error, byte-at-a-time safe, limits in `HTTPLimits`),
+  `httpRedirectDecision`, `HTTPCookieJar`, `HTTPCache`,
+  `HTTPConnectionPool`. 166 host checks plus parser and cookie fuzzing.
+  Content-Encoding is a plug point (`HTTPBodyDecoder`, `HTTPBodySink`,
+  `httpDecodeBody`); wiring notes at the top of `lib/http/decoder.swift`.
+- **lib/text**: functions are prefixed `charset...` (lib/font owns
+  `textDecodeUTF8` etc.). UTF-8 (WHATWG replacement semantics),
+  windows-1252 (ISO-8859-1 and ASCII labels map to it), UTF-16, label
+  lookup, detection order header, BOM, meta prescan (1024 bytes), UTF-8.
+  Legacy CJK/other 8-bit labels are recognized as `.unsupported` and
+  decoded as windows-1252.
+- Known gaps: no IDNA/punycode, no public suffix list (small built-in
+  list), no SameSite, no HTTP cache heuristic freshness or Vary
+  support, no cookie persistence, no proxy/auth/Expect: continue.
+
 - **URL parsing** per the WHATWG URL standard (the parts that matter):
   schemes, authority, ports, percent-encoding, relative resolution
   against a base (the RFC 3986 and WHATWG test suites are the test
@@ -1810,29 +1981,76 @@ check).
   at first. An in-memory cache keyed by URL (respecting `no-store`).
 - **Inflate:** DEFLATE, zlib and gzip decoding. PNG needs it too. The
   test fixtures come from host `zlib`/`gzip`.
+  **Inflate is done** (`lib/inflate`, with Phase 8G). `Inflater` is the
+  streaming API for HTTP bodies: `feed(chunk)` (any chunk size),
+  `take()` to drain output, `finish()` at end of input (throws
+  `.truncated` if the stream is incomplete), `isDone`; formats `.raw`,
+  `.zlib`, `.gzip` (FEXTRA/FNAME/FCOMMENT/FHCRC, CRC-32 and ISIZE,
+  multiple members) and `.auto` (sniffs gzip, then zlib, else raw, which
+  also covers servers that send raw deflate for `Content-Encoding:
+  deflate`). `maxOutput` bounds the decoded size (`.outputLimit`).
+  One-shot: `inflateBytes(data, format:, maxOutput:)`. Details are in
+  Phase 8G below.
 - **Text decoding:** UTF-8 (with replacement characters), Windows-1252
   and ISO-8859-1. Get the charset from the header, then `<meta
   charset>`, defaulting to UTF-8.
 
 ## Phase 8C: HTML (`lib/html`)
 
-- **Tokenizer** following the WHATWG states that matter: data, tags,
-  attributes (all quoting styles), comments, DOCTYPE, RCDATA/RAWTEXT for
-  `<title>`, `<textarea>`, `<style>` and `<script>`, and character
-  references with the full named entity table (generated into a Swift
-  file from the spec's JSON).
-- **Tree builder:** the insertion modes that keep real pages sane:
-  implied html/head/body, auto-closing `<p>`, `<li>`, `<dt>`/`<dd>`,
-  `<option>`, the table modes (simplified foster parenting), and the
-  adoption agency algorithm for formatting tags (a bounded,
-  simplified version). Unknown tags are fine and become generic
-  elements.
-- **DOM:** `final class Node` (element, text, comment, document) with
-  parent, children, attributes, and queries by id, class and tag. No
-  scripting means the DOM is static after parsing (except form state).
-- **Tests:** a subset of html5lib-tests (MIT) as fixtures, comparing
-  the tree dump. Record the pass rate and push it up over time instead
-  of chasing 100%.
+**Status: done** (`./run.sh --hosttest html`).
+
+- **Tokenizer** following the WHATWG states: data, RCDATA (`title`,
+  `textarea`), RAWTEXT (`style`, `xmp`, `iframe`, `noembed`,
+  `noframes`), script data with the full escaped/double-escaped
+  states, PLAINTEXT, tags, attributes (all quoting styles), comments
+  (including bogus), DOCTYPE, CDATA in foreign content, and character
+  references with the full 2231-entry named table. The table is
+  generated by `lib/html/tools/gen_html_tables.py` from the spec's
+  `entities.json` into two ASCII `StaticString`s (sorted records plus
+  an offset index, binary search; 35 KB of source, no heap). Numeric
+  references use the spec's replacement table. It works on Unicode
+  scalars decoded once from UTF-8 (invalid bytes become U+FFFD, CR/LF
+  normalized, NUL handled per state).
+- **Tree builder:** the full set of insertion modes except template
+  ones (initial through after-after-frameset, including text, the table
+  modes with foster parenting, select, noscript-in-head), the list of
+  active formatting elements with markers and the Noah's Ark clause,
+  and the spec's adoption agency algorithm (bounded at 8 outer / 3
+  inner iterations, as specified). svg/math are generic namespaced
+  elements with the spec's tag/attribute case fixes, integration points
+  and breakout rules. Not done: fragment parsing, scripting,
+  `<template>` contents (a normal element), `<selectedcontent>`, parse
+  errors. The select rules follow the current spec (customizable
+  select: `<select>` content is parsed with in-body rules).
+- **DOM:** `final class HTMLNode` (document, doctype, element, text,
+  comment): `name`, `namespace`, `attributes` (ordered, lowercase),
+  `data`/`text`, `parent` (unowned(unsafe); the document owns
+  everything), `children`, `index`, sibling/first/last navigation,
+  `attribute(_:)`, `id`, `hasClass`, `classNames`, `getElementById`,
+  `getElementsByClassName`, `getElementsByTagName`, `firstElement(where:)`,
+  `elements(where:)`, `walk`, `textContent`, `documentElement`/`head`/
+  `body`, and `teardown()`. Entry points: `htmlParse(bytes or String,
+  limits:)` and `htmlTreeDump`.
+- **Hostile input:** `HTMLParseLimits` (input bytes 16 MB, nodes
+  300 000, depth 512). At the depth cap a new element first closes the
+  deepest open one, so the tree is never deeper than the cap; all
+  tree walks use explicit stacks. `document.truncated` reports a cut-
+  short parse. The fuzzer (3000 mutants) and 100k-deep nesting cases
+  run in the host tests.
+- **Tests:** html5lib-tests tree-construction fixtures (MIT, license in
+  `lib/html/fixtures/`; the files were removed from upstream's master
+  when they moved to WPT, so they come from the last commit that had
+  them, 9329e64). Pass rate: **1394 of 1509 cases (92.3%)**;
+  **1392 of 1398 (99.5%)** without `template.dat`, whose expected
+  trees need template contents. 200 fragment and `#script-on` cases
+  are skipped. The run fails if the pass count drops below 1394.
+  Failures are written to `build/hosttest/html5lib-failures.txt`.
+  Remaining failures: template contents (about 110) and
+  `<selectedcontent>` (4). The tokenizer tests are not run separately;
+  the tree dumps cover tokenization.
+- **Speed:** a 783 KB saved Wikipedia article
+  (`fixtures/wikipedia-html.html`, 15 000 nodes) parses in about 15 ms
+  on the host (~50 MB/s, optimized Embedded build).
 
 ## Phase 8D: CSS (`lib/css`)
 
@@ -1854,22 +2072,76 @@ check).
   understands (8F). Media queries: `screen`, `min-width`, `max-width`,
   `prefers-color-scheme: light`. Everything else is parsed and ignored.
 
-## Phase 8E: fonts and text (`lib/font`)
+**Status: done (host-tested, `./run.sh --hosttest css`).** Decisions:
 
-- **TrueType reader:** `cmap` (format 4 and 12), `glyf`/`loca`, `hmtx`,
-  `hhea`, `head`, `kern` (format 0). CFF/OTF outlines are a stretch.
-- **Rasterizer:** quadratic outlines flattened to lines, then a coverage
-  (antialiased) scanline fill with the nonzero rule. A glyph cache keyed
-  by (font, size, glyph). Subpixel positioning is a stretch.
-- **Text runs:** UTF-8 to glyphs, advances plus kerning, font fallback
-  (DejaVu covers a lot; tofu boxes for the rest), and line breaking at
-  spaces and after hyphens (a simplified UAX #14). No complex-script
-  shaping (Arabic, Indic) at first, which is a known limit.
-- **Bundled:** DejaVu Sans, Serif and Sans Mono, regular and bold (and
-  italics if space allows), in rootfs `/fonts`. Map `font-family`
-  generic names (`serif`, `sans-serif`, `monospace`) and common names
-  (Arial, Helvetica, Times, Georgia, Courier) onto them.
-- The taskbar and window titles can switch to these too (optional).
+- **Generic over the element, no existentials.** `CSSElement` is a protocol
+  (tag, id, classes, attribute, parent, previous/next element sibling, root,
+  hover/link/checked/disabled/empty flags, sibling index and count with
+  walking defaults); matching and the cascade are generic functions, and the
+  DOM conforms in the integration step.
+- **Declarations are expanded at parse time** into typed longhands
+  (`CSSDeclaration`), so invalid values drop the whole declaration and the
+  cascade keeps the earlier one. Declarations containing `var()` stay
+  pending and are substituted and expanded per element.
+- **Rule index** by the rightmost compound's id, first class or tag, in three
+  sets (element, `::before`, `::after`); matching has a step budget.
+  `@media` is evaluated when a sheet is added (`CSSStyleResolver.setContext`
+  re-evaluates after a resize); `@supports` is evaluated at parse time
+  (`display: grid` reports unsupported, so pages use their fallbacks).
+- **Computed values:** em/rem/vw/vh/pt/... resolve to px; percentages and
+  calc() stay a `CSSLP` (px + pct%, with optional min/max/clamp bounds) or a
+  `CSSDimension` (auto/none/keyword/length) for layout to resolve.
+  `display: grid` parses as block, `inline-grid` as inline-block.
+- **Not done / known gaps:** `:has()`, `:lang()`, `::first-line`-style
+  pseudo-elements never match; `@font-face`, `@keyframes`, `@container`
+  ignored; `@layer` ordering ignored (contents are plain rules);
+  `url()` values are resolved at parse time through an optional closure
+  (pending `var()` urls are not); `text-decoration` is not inherited by the
+  cascade (layout propagates it); no `counter()`, no `border-radius`,
+  `outline`, `box-shadow`, `letter-spacing` or grid properties.
+
+## Phase 8E: fonts and text (`lib/font`) (done)
+
+Pure Swift, host-tested (`./run.sh --hosttest font`, 516 checks).
+
+- **TrueType reader** (`ttfont.swift`, `TTFont`): table directory, `head`,
+  `hhea`, `maxp`, `hmtx`, `cmap` (formats 4 and 12; prefers (3,10), then
+  Unicode platform 0, then (3,1)), `loca` short/long, `glyf` simple and
+  composite (2x2 transforms, point matching, depth 6, 64 components,
+  20000 points), `kern` format 0, OS/2 (x-height, cap height), `name`.
+  All reads go through bounds checks (`ByteReader` or checked helpers);
+  fuzzed. CFF/OTF and collections are rejected (stretch).
+- **Rasterizer** (`fontraster.swift`): quadratics flattened to 0.1 px, signed-area
+  accumulation (font-rs method), 8-bit coverage with bearings.
+  Overlapping contours clamp (approximates nonzero). ~840k glyphs/s at
+  16 px on the host, uncached. `GlyphCache` keyed by (font id, size in
+  1/8 px, glyph, synthetic style) with a byte cap, cleared when full
+  (default 4 MiB). Synthetic bold (horizontal dilation by size/20 and a
+  wider advance) and oblique (shear 0.2). `fontBlit` alpha-blends a
+  coverage bitmap into an XRGB `UnsafeMutablePointer<UInt32>` or
+  `[UInt32]`, clipped, independent of `Surface`.
+- **Text** (`textrun.swift`): `TextEngine.shape` gives one glyph per
+  scalar with kerning (same face only), fallback down a `FontChain`, a
+  tofu box (`fontTofuGlyph`, 0.6 em advance) when no face has the
+  character, zero-width controls. `TextRun` has `xs` (pen positions),
+  `width`, `breaks`, `nextBreak(after:)` and `fitLine(from:maxWidth:breakWords:)`.
+  Line breaking (`textBreakOpportunities`): after spaces and hyphens (not
+  before digits), between CJK ideographs, never before closing
+  punctuation or after opening, NBSP/word joiner glue, ZWSP, soft
+  hyphen, mandatory at newlines.
+- **Registry** (`fontregistry.swift`): `FontRegistry.add/face/chain`
+  maps family names (Arial, Helvetica, Times, Times New Roman, Georgia,
+  Verdana, Courier, Courier New, system-ui, serif, sans-serif,
+  monospace, ...) plus weight and style onto faces, with synthetic
+  bold/italic flags when the exact face is missing. `fontBundled` lists
+  the rootfs files.
+- **Bundled** (rootfs `/fonts`, 5.26 MB, with the DejaVu `LICENSE`): DejaVu 2.37
+  Sans, Serif, Sans Mono, each regular, bold, oblique/italic, bold
+  oblique/italic (12 faces). The ISO boots and passes `--test` with them.
+- **Known gaps:** no GSUB/GPOS (kerning is the legacy `kern` table only,
+  so DejaVu Sans Mono has none), no complex-script shaping or bidi, no
+  ligatures, glyph positions are rounded to whole pixels (no subpixel),
+  no hinting, no CFF/WOFF. The taskbar and window titles do not use it yet.
 
 ## Phase 8F: layout and paint (`lib/layout`)
 
@@ -1907,18 +2179,87 @@ check).
 
 ## Phase 8G: images (`lib/image`)
 
+**Done** (`lib/inflate`, `lib/image`; `./run.sh --hosttest inflate image`).
+
 - **PNG:** every color type and bit depth, filters, transparency
   (tRNS), and Adam7 interlacing, with inflate from 8B. Checked against
   PngSuite.
 - **GIF:** LZW, the first frame only (animation is a stretch).
-- **JPEG:** baseline Huffman, 4:4:4/4:2:2/4:2:0 chroma subsampling, and
-  then progressive (a lot of the web is progressive JPEG).
+- **JPEG:** baseline Huffman, 4:2:0/4:2:2/4:4:4 chroma subsampling
+  (plus 4:4:0, 4:1:1 and any integral ratio), and then progressive (a
+  lot of the web is progressive JPEG).
 - **WebP:** lossless and lossy (VP8) are a stretch, but many sites serve
   WebP when the `Accept` header allows it. Don't advertise it, and most
-  servers fall back to JPEG/PNG.
+  servers fall back to JPEG/PNG. Skipped.
 - Scaling: bilinear, with alpha blending into the page. A decoded-image
   cache with a memory cap. Decode limits (dimensions × 4 bytes under a
   cap), because image headers lie.
+
+**Decisions.**
+
+- **API.** `imageDecode(bytes, maxBytes:)` sniffs the magic bytes
+  (`imageSniff`) and calls `PNGDecoder`, `GIFDecoder` or `JPEGDecoder`
+  (`.decode(bytes, maxBytes:)`), all `throws(ImageError)`. `maxBytes`
+  caps width × height × 4 and is checked from the header before
+  anything is allocated (`.tooLarge`); JPEG coefficient memory is also
+  held to about 1.5× the cap.
+- **`ImageBitmap`:** `width`, `height`, `pixels: [UInt32]` as
+  `0xAARRGGBB` with **straight** (non-premultiplied) alpha, no row
+  padding, plus `opaque` (every alpha is 0xFF, so blending can copy).
+  JPEG is always opaque. `rgbaBytes()` gives R,G,B,A bytes.
+- **Scaling and blending:** `imageScaleBilinear(bitmap, width:, height:,
+  maxBytes:)` (premultiplied interpolation, edges clamped, nil if over
+  the cap) and `imageBlend(into: UnsafeMutablePointer<UInt32>, stride:,
+  width:, height:, src:, x:, y:)`, which composites straight alpha over a
+  32-bit XRGB buffer with clipping. Neither knows about the kernel's
+  `Surface`. `ImageLRU<Key, Value>` is a tiny byte-budget LRU for the
+  browser's decoded-image cache.
+- **PNG details:** CRC errors in critical chunks fail; in ancillary
+  chunks the chunk is dropped. Gamma, background and ICC are ignored.
+  16-bit samples keep their high byte (color-key tRNS compares the full
+  16 bits). Data after the last needed pixel is ignored; a missing IEND
+  after complete image data is accepted. APNG decodes as its default
+  image.
+- **GIF details:** output is the logical screen size, transparent where
+  the frame doesn't cover it (offset frames and local palettes work);
+  the background color is ignored. Truncated LZW data leaves the rest
+  transparent.
+- **JPEG details:** follows libjpeg (accurate integer IDCT, fancy
+  triangle upsampling for 2x1, 1x2 and 2x2, fixed-point YCbCr), so
+  output is bit-exact with libjpeg-turbo's `djpeg` on every fixture.
+  Adobe CMYK and YCCK decode to RGB. Truncated or corrupt entropy data
+  decodes as far as it goes (like browsers) rather than failing.
+  Arithmetic coding, lossless and 12-bit precision are `.unsupported`.
+  Not done: EXIF orientation, ICC profiles, JPEG-in-CMYK without an
+  Adobe marker beyond the plain inverse.
+- **Inflate details:** table-driven (10-bit literal/length and 8-bit
+  distance tables with a canonical slow path for longer codes), a 64-bit
+  bit buffer, and unit-granular resumption: each symbol, dynamic table
+  or stored header is decoded atomically and rewound if the chunk ends
+  mid-unit, so any chunking (down to 1 byte) works. Window handling
+  keeps the last 32 KiB after each `take()`. After the last member
+  of a gzip stream the next bytes are ignored unless they start with
+  `1f 8b`.
+
+**Tests.** `inflate`: fixtures made by host zlib/gzip at levels 0, 1, 6 and
+9 plus Z_HUFFMAN_ONLY, Z_RLE and Z_FIXED (`lib/inflate/fixtures/gen.py`),
+a hand-built stream using every length and distance code, every gzip
+header flag, multi-member files, a 1 MB file, bytewise streaming,
+truncation at every offset, corrupted headers and checksums, bad codes,
+distances too far back, output limits, and fuzzing. `image`: PngSuite
+(all 162 valid files compared to a reference decoder written in Python,
+`tests/refdecode.py`, itself cross-checked against Pillow; the 14 `x*`
+files must be rejected; license in `fixtures/pngsuite/`), GIFs from a
+small encoder in `tests/gen_fixtures.py`, JPEGs from `cjpeg` compared
+with `djpeg` output (all subsamplings, restart markers, grayscale,
+progressive, CMYK against Pillow), cap checks, truncation, and fuzzing
+of all three decoders.
+
+**Results** (host, `-Osize`, Apple silicon): inflate about 215 MB/s of
+output; PNG about 53 MP/s and JPEG about 62 MP/s (baseline) and 55 MP/s
+(progressive) on 1024×768 synthetic pictures (smooth content, so real
+photos will be slower per pixel). All of this is plain Swift without
+SIMD.
 
 ## Phase 8H: the browser app (`user/browse`)
 
