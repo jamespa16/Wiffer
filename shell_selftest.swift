@@ -237,7 +237,7 @@ func shellTests(_ t: inout SelfTest) {
     t.check("complete: unique mid-word keeps the rest",
             edits(chars("hist x") + lefts(2) + [tabKey, enterKey], "history x", "> history x"))
     t.check("complete: ambiguous lists and reprints (h)",
-            ambiguousCompletion("h", "h", "halt  help  history", "> h"))
+            ambiguousCompletion("h", "h", "halt  help  history  host", "> h"))
     t.check("complete: ambiguous extends to common prefix (mo -> mou)",
             ambiguousCompletion("mo", "mou", "mount  mouse", "> mou"))
     t.check("complete: no match, or past the first word, does nothing",

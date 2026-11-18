@@ -20,6 +20,10 @@ XCC=(); for f in "${KFLAGS[@]}"; do XCC+=(-Xcc "$f"); done
 #      of that same refcount): `var b = a; b[i] = x` then wrote into `a`'s
 #      buffer too, breaking copy-on-write (fs_selftest copyOnWrite).
 #    -import-objc-header      : Limine structs + outb/inb/hcf from C
+#    lib/bytes/reader.swift   : the shared bounds-checked ByteReader (Part 7's
+#      packet and DNS/DHCP parsers use it); it is the one lib/ file the
+#      kernel compiles in directly. Other lib/ modules join this list as
+#      the kernel needs them.
 swiftc \
   -target x86_64-unknown-none-elf \
   -enable-experimental-feature Embedded \
@@ -28,7 +32,7 @@ swiftc \
   -Xfrontend -disable-swift-specific-llvm-optzns \
   -import-objc-header bridge.h \
   "${XCC[@]}" \
-  -emit-ir *.swift -o build/kernel.raw.ll
+  -emit-ir *.swift lib/bytes/reader.swift -o build/kernel.raw.ll
 
 # 2. Drop @llvm.used, which pins embedded runtime stubs
 #    (swift_isClassType, _swift_fatalError, ...) so they survive DCE.

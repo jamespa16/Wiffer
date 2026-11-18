@@ -129,6 +129,8 @@ func pollEvents() {
     }
     if moved { cursorMove(x: mouse.x, y: mouse.y) }
 
+    netPollHook() // Part 7: wake netd if the NIC or a stack timer has work
+
     let t = ticks
     if t != lastTickPosted {
         lastTickPosted = t

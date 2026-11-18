@@ -9,6 +9,8 @@
 - **Part 5: Writing to disk.** Done (Phases U–Z): a FAT32 virtio disk at /disk.
 - **Parts 6–8: Toward a web browser.** Planned: user space (6A–6G),
   networking (7A–7F), and a browser (8A–8I). See the end of this document.
+  Part 7: 7A–7C done (virtio-net, Ethernet/ARP/IPv4/ICMP, UDP, DHCP, DNS);
+  7D–7F open.
 
 Goal: boot into a desktop with overlapping, draggable windows. Each shell
 runs in its own terminal window, and a text editor can open, edit and save
@@ -1623,7 +1625,7 @@ Goal: `ping 10.0.2.2`, `host example.com` and `fetch
 http://example.com/` work from a terminal. User programs get TCP and
 UDP sockets.
 
-## Phase 7A: virtio-net
+## Phase 7A: virtio-net (done)
 
 **7A1. `NetDevice`** (`net_device.swift`): name, MAC, MTU, `send(Packet)`,
 an rx callback, and counters. Subclasses: `Loopback`, and `LinkPair` for
@@ -1647,7 +1649,7 @@ ephemeral ports and passes the ports to the session.
 **Done when:** eth0 sends a raw broadcast frame and receives frames
 (SLIRP answers ARP for 10.0.2.2) under BIOS and UEFI.
 
-## Phase 7B: Ethernet, ARP, IPv4, ICMP
+## Phase 7B: Ethernet, ARP, IPv4, ICMP (done)
 
 - Ethernet II framing. ARP requests, replies and a cache with timeouts.
   Packets waiting on ARP are queued (bounded).
@@ -1665,7 +1667,7 @@ counted. Harness: `ping -c 3 10.0.2.2`. (SLIRP answers ICMP echo for the
 gateway. Pinging outside hosts may not work, depending on the host OS's
 ICMP permissions, so don't test it.)
 
-## Phase 7C: UDP, DHCP, DNS
+## Phase 7C: UDP, DHCP, DNS (done)
 
 - UDP with ports, checksums and a per-port receive queue.
 - DHCP client (DISCOVER, OFFER, REQUEST, ACK) at boot, with lease
@@ -1683,6 +1685,94 @@ SLIRP's DNS forwards to the host's resolver, so the harness test needs a
 local fake instead (serve a tiny DNS responder on the host, and use
 `-netdev user,dns=...` or `guestfwd` to point at it). Resolving real
 names is a manual check.
+
+### Notes from 7A–7C (as built)
+
+Files: `net_packet.swift` (Packet, checksums, `NetRNG`), `net_device.swift`
+(NetDevice, Loopback, LinkPair/LinkEnd), `virtio_net.swift`,
+`net_stack.swift` (Ethernet, ARP, IPv4, reassembly, ICMP, timers, hooks),
+`net_udp.swift`, `net_dhcp.swift`, `net_dns.swift`, `net_commands.swift`
+(`netInit`, `netd`, `netBlock`, ifconfig/arp/ping/host), `net_selftest.swift`
+(`NetRig`, `NetWire`, the tests).
+
+- **Parsing.** `lib/bytes/reader.swift` (`ByteReader`) is compiled into the
+  kernel by adding it to build.sh's swiftc inputs (documented there); it is
+  the only lib/ file in the kernel so far. Packet accessors return nil
+  rather than trap.
+- **netd.** One `NetStack` on eth0, owned by the CPU-0 task `netd`, which
+  sleeps in `waitEvent()`. `pollEvents` calls `netPollHook()`, which posts
+  netd a `.message` when `stack.needsPoll(ticks)` (NIC frames, a due timer,
+  local packets). 7F's MSI-X handler should post the same message. Shell
+  commands call into the stack directly (cooperative CPU-0 tasks, so never
+  concurrently with netd) and wait with
+  `netBlock(timeout:ticks) { condition }`, which sleeps the task until netd
+  has run again, a deadline passes, or Ctrl-C.
+- **Time is ticks (100 Hz).** `stack.now` is set by `poll(now:)`; selftests
+  drive virtual time, so tests are deterministic and fast.
+- **Hooks for 7D (TCP)**, all on `NetStack` (net_stack.swift header comment):
+  - `registerProtocol(6) { (IPv4Header, Packet) in ... }`: the packet's
+    `start` is the first byte of the TCP segment (IP header just before it in
+    `buf`), already trimmed to the IP length and reassembled. The packet is
+    borrowed: copy what you keep (`p.bytes()`). `h.src`, `h.dst`, `h.ttl`,
+    `h.broadcast` are in the header. With no handler the stack sends ICMP
+    protocol unreachable.
+  - `sendIP(proto: 6, dst:, payload, src:, ttl:)`: `payload` is a
+    `Packet.make()` with the segment appended; headers go into the headroom
+    (128 bytes). The stack takes ownership, resolves ARP, queues (max 4 per
+    address). It refuses payloads over `mtu - 20` (never fragments), so MSS =
+    `dev.mtu - 40`. Pseudo-header sum: `pseudoHeaderSum(src:dst:proto:length:)`
+    plus `csumAdd`/`csumFold`.
+  - `setErrorHandler(proto: 6) { ICMPError in ... }`: destination
+    unreachable / time exceeded for our datagrams, with `code`, `mtu`
+    (fragmentation needed), the quoted `originalSrc/Dst`, ports and the TCP
+    `seq` from the first 8 quoted bytes. Only quotes from our own address are
+    delivered.
+  - Timers: `let id = stack.schedule(after: ticks) { ... }`, `cancel(id)`,
+    `nextDeadline`. They run inside `poll` (netd). Reschedule from the closure
+    for repeating work. Resolution is one tick, so RTO values are multiples of
+    10 ms; keep a closure's work short (it blocks netd).
+  - Randomness: `netRandom()` (xorshift seeded from the TSC) is fine for
+    ports; mix RDRAND into initial sequence numbers yourself.
+  - Tests: `NetRig` (stacks `a` = 10.1.0.1 and `b` = 10.1.0.2 on a
+    `LinkPair`; `rig.pair.lossPct/reorderPct/dupPct/delay`, `rig.step()`,
+    `rig.run(n)`, `rig.run(until:limit:)`) and `NetWire` (one stack fed
+    hand-made frames). Time starts at tick 1000.
+- **ARP.** Cache of 32 entries, 60 s TTL (`arpTTL`), 3 requests 1 s apart,
+  wait queue of 4. Replies are learned only for addresses we asked about;
+  requests addressed to us are learned. Own address and 127/8 are delivered
+  locally without touching the wire.
+- **IPv4.** Fragments are reassembled (8 datagrams, 256 KiB total, 30 s,
+  duplicates tolerated, overlaps drop the datagram, ICMP time-exceeded if the
+  first fragment arrived). Reassembled datagrams are bigger than a pooled
+  `Packet` (2 KiB), so they arrive in an unpooled `Packet.large`. DF is set on
+  everything we send. ICMP errors are rate limited (10 per second) and never
+  sent about errors, broadcasts or non-first fragments.
+- **Sockets so far.** `stack.udpBind(port)` gives a `UDPSocket` (queue of
+  32, `onReceive` callback, `lastError` from ICMP). 7E wraps this.
+- **DHCP** (`DHCPClient`, started by `netInit`): fallback to the static
+  10.0.2.15/24 after 5 s, discovery continues and a later ACK replaces it.
+  `ifconfig` says `dhcp: lease from ...` or `no offer, static fallback`.
+- **DNS** (`DNSResolver`, `stack.resolver`): `start(name, server:port:)`
+  returns a `DNSQuery` that netd finishes; `host` and `ping` wait on it with
+  `netBlock`. 2 s per attempt, 3 attempts, CNAME chains up to 8, cache of 32
+  names honouring TTLs (capped at a day). No TCP fallback for truncated
+  replies.
+- **Harness DNS.** `host <name> <ip[:port]>` queries a chosen server, so the
+  harness runs a Python UDP responder on the host and the guest reaches it at
+  10.0.2.2:<port> (SLIRP maps the gateway address to the host). That also
+  serves hostile replies (self-referencing pointer, truncation, oversize
+  rdlength). SLIRP's `guestfwd` is TCP only, which is why it isn't used.
+  Real names (`host example.com`) work against SLIRP's 10.0.2.3 and are a
+  manual check.
+- **run.sh / harness.** SLIRP NIC by default, `--nonet` (also
+  `WIFFER_NONET=1` for the harness), `--pcap` (build/net.pcap). Every
+  harness `Session` gets the NIC (`Session(net=False)` opts out).
+- **Deviations.** The 7A3 harness helper that starts Python HTTP and echo
+  servers is left to 7D (nothing needs it yet); only the DNS responder exists.
+  `Loopback` is a device only: sends to our own address are short-circuited
+  inside the stack. `ping` prints `time=<10 ms` below one tick. The shell
+  command table has four new names (`ifconfig`, `arp`, `ping`, `host`), so the
+  "h" completion test now lists `host`.
 
 ## Phase 7D: TCP
 

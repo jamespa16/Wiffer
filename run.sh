@@ -7,6 +7,9 @@
 #   ./run.sh --test   headless: scripted shell checks + in-kernel selftest
 #   ./run.sh --test --uefi   the same, booted through OVMF
 #   ./run.sh --smp N   N virtual CPUs (default 4, or env WIFFER_SMP); works with --test
+#   ./run.sh --nonet   no virtio-net NIC (default: SLIRP user networking: guest
+#                      10.0.2.15, gateway/host 10.0.2.2, DNS 10.0.2.3)
+#   ./run.sh --pcap    also dump the NIC's traffic to build/net.pcap
 #   ./run.sh --nodisk  no virtio disk (default: build/disk.img, 64 MiB FAT32,
 #                      mounted at /disk; made by tests/fat32.py if missing,
 #                      never touched if present); with --test the harness's
@@ -19,7 +22,7 @@ cd "$(dirname "$0")"
 
 if [[ "${1:-}" == "--hosttest" ]]; then shift; exec hosttest/hosttest.sh "$@"; fi
 
-TEST=0 UEFI=0 NODESKTOP=0 NOGRAPHIC=0 NODISK=0
+TEST=0 UEFI=0 NODESKTOP=0 NOGRAPHIC=0 NODISK=0 NONET=0 PCAP=0
 SMP="${WIFFER_SMP:-4}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -28,6 +31,8 @@ while [[ $# -gt 0 ]]; do
     --nographic) NOGRAPHIC=1 ;;
     --nodesktop) NODESKTOP=1 ;;
     --nodisk) NODISK=1 ;;
+    --nonet) NONET=1 ;;
+    --pcap) PCAP=1 ;;
     --smp)
       [[ $# -ge 2 ]] || { echo "--smp needs a count" >&2; exit 1; }
       SMP="$2"; shift ;;
@@ -57,6 +62,7 @@ if (( TEST )); then
   export WIFFER_SMP="$SMP"
   (( UEFI )) && export WIFFER_UEFI=1
   (( NODISK )) && export WIFFER_NODISK=1
+  (( NONET )) && export WIFFER_NONET=1
   exec python3 tests/serial_session.py
 fi
 
@@ -77,6 +83,11 @@ if (( ! NODISK )); then
       python3 tests/fat32.py put "$DISK" - /README.TXT
   fi
   EXTRA+=(-drive "file=$DISK,if=none,id=vd0,format=raw" -device virtio-blk-pci,drive=vd0,disable-legacy=off,disable-modern=on)
+fi
+# Part 7 (Phase 7A): legacy virtio-net on QEMU's user-mode network (SLIRP).
+if (( ! NONET )); then
+  EXTRA+=(-netdev user,id=n0 -device virtio-net-pci,netdev=n0,disable-legacy=off,disable-modern=on)
+  (( PCAP )) && EXTRA+=(-object filter-dump,id=f0,netdev=n0,file=build/net.pcap)
 fi
 exec qemu-system-x86_64 -M q35 -m 256M -cpu max -smp "$SMP" -cdrom "$ISO" -boot d -no-reboot -no-shutdown \
   ${EXTRA[@]+"${EXTRA[@]}"} "${DISPLAY_ARGS[@]}"
