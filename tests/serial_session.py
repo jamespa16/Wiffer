@@ -36,6 +36,34 @@ if os.environ.get("WIFFER_UEFI"):
 # Virtual CPU count for every QEMU (run.sh --smp N sets WIFFER_SMP).
 SMP = os.environ.get("WIFFER_SMP", "4")
 
+# Phase V: the main session gets a fresh blank 64 MiB scratch disk (never
+# build/disk.img) as a legacy virtio-blk device, unless run.sh --nodisk
+# (WIFFER_NODISK=1) or --nodisk here.
+DISK_MIB = 64
+def disk_args(path):
+    return ["-drive", f"file={path},if=none,id=vd0,format=raw",
+            "-device", "virtio-blk-pci,drive=vd0,disable-legacy=off,disable-modern=on"]
+
+def scratch_disk(mib=DISK_MIB):
+    """A blank raw image in a new temp dir: (path, dir to remove)."""
+    d = tempfile.mkdtemp(prefix="wifferdisk")
+    path = os.path.join(d, "scratch.img")
+    with open(path, "wb") as f:
+        f.truncate(mib << 20)
+    return path, d
+
+# Phase V: PCI and the disk, when the main session has one.
+DISK_CHECKS = [
+    ("lspci", "1af4:1001 01.00"),
+    ("lspci", "00:00.0 8086:29c0 06.00 host bridge"),
+    ("disks", "vda   64 MiB    131072"),
+    ("help", "disks           list block devices"),
+]
+NODISK_CHECKS = [
+    ("disks", "no disks"),
+    ("lspci", "00:00.0 8086:29c0 06.00 host bridge"),
+]
+
 PROMPT = b"> "
 # The prompt is coloured (Phase G): "> " wrapped in SGR escapes.
 SGR = rb"(?:\x1b\[[0-9;]*m)*"
@@ -558,8 +586,11 @@ def main():
     ap.add_argument("--timeout", type=float, default=10.0)
     ap.add_argument("--screendump", metavar="PPM", help="with -c: dump the display at the end")
     ap.add_argument("--nodesktop", action="store_true", help="with -c: boot the full-screen shell")
+    ap.add_argument("--nodisk", action="store_true", default=bool(os.environ.get("WIFFER_NODISK")),
+                    help="no scratch virtio disk on the main session")
     opts = ap.parse_args()
-    print(f"harness: -smp {SMP}")
+    print(f"harness: -smp {SMP}" + (", no disk" if opts.nodisk else f", {DISK_MIB} MiB scratch disk"))
+    disk, disk_dir = (None, None) if opts.nodisk else scratch_disk()
 
     # Each fault halts its machine, so every kind gets its own QEMU, booted now
     # so they run alongside the main session.
@@ -569,7 +600,8 @@ def main():
     fault_screen = None if opts.command else Session(monitor=True, exit_device=False)
     # The Part 2 checks (full-screen shell, screen vs serial, selftest) boot
     # the `nodesktop` entry (Phase L).
-    s = Session(monitor=True, iso=NODESKTOP_ISO if opts.nodesktop or not opts.command else ISO)
+    s = Session(monitor=True, iso=NODESKTOP_ISO if opts.nodesktop or not opts.command else ISO,
+                extra_args=disk_args(disk) if disk else ())
     # Phase K runs on its own machine: `desktop` switches the full-screen
     # shell to the WM (the console becomes window #1).
     desk = None if opts.command else Session(monitor=True, iso=NODESKTOP_ISO)
@@ -599,6 +631,15 @@ def main():
             failures += not ok
             print(f"{'PASS' if ok else 'FAIL'}: {cmd!r}" + ("" if ok else f"\n  wanted {want!r}\n  got {got!r}"))
         print(f"{len(CHECKS) - failures}/{len(CHECKS)} shell checks passed")
+
+        disk_failures = 0
+        for cmd, want in (NODISK_CHECKS if opts.nodisk else DISK_CHECKS):
+            s.send(cmd)
+            got = s.read_prompt(opts.timeout).decode(errors="replace")
+            ok = want in got
+            disk_failures += not ok
+            print(f"{'PASS' if ok else 'FAIL'}: {cmd!r} (disk)" + ("" if ok else f"\n  wanted {want!r}\n  got {got!r}"))
+        failures += disk_failures
 
         # uptime: the tick count must grow between two calls.
         samples = []
@@ -762,6 +803,9 @@ def main():
         return 1 if failures else 0
     finally:
         s.close()
+        if disk_dir:
+            os.unlink(disk)
+            os.rmdir(disk_dir)
         for _, _, fs in faults:
             fs.close()
         if fault_screen:

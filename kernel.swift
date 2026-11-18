@@ -77,6 +77,8 @@ func kernelMain() -> Never {
     // Phase R: start the other CPUs (needs pmm, heap, ticks and the IDT).
     smpInit()
 
+    diskInit() // Phase V: PCI scan, virtio-blk disks (vda, ...)
+
     if ps2.mouse { cursorDraw(x: mouse.x, y: mouse.y) }
 
     fsInit() // RAM filesystem from the rootfs.tar module (Phase M)
