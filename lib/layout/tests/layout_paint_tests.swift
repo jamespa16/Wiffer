@@ -379,6 +379,12 @@ func layoutSiteTests(_ t: Tests) {
         let paint = (hostMillis() - t1) / 20
         print("  Wikipedia relayout \(relayout) ms, paint \(paint) ms per 1024x768 frame")
         t.check(paint < 200, "paint time", "\(paint) ms")
+        if let link = e.document.firstElement(where: { $0.name == "a" && $0.attribute("href") != nil && e.box(for: $0) != nil }) {
+            let th = hostMillis()
+            let changed = e.setHover(link)
+            e.update()
+            print("  Wikipedia hover over a link: \(hostMillis() - th) ms (repaint \(changed), in place \(e.incrementalRestyles))")
+        }
         let t2 = hostMillis()
         e.setViewport(width: 700, height: 600)
         e.update()
