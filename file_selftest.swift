@@ -96,6 +96,9 @@ func fileTests(_ t: inout SelfTest) {
     programTests(&t)
 }
 
+var ctrlcHelperDone = false
+var ctrlcHelperExited = false
+
 func programTests(_ t: inout SelfTest) {
     guard let me = scheduler.current, (try? vfs.lookup("/bin/iotest")) != nil else {
         t.check("6E: /bin/iotest in the rootfs", false)
@@ -172,11 +175,13 @@ func programTests(_ t: inout SelfTest) {
             var sent = false
             // Nothing wakes the pump while the spin runs (a real shell is
             // woken by keys): a helper task does it after a while.
-            spawn("ctrlc-wake", affinity: .cpu(0), { for _ in 0..<40 { sleepMilliseconds(50); unpark(me) } })
+            spawn("ctrlc-wake", affinity: .cpu(0), { for _ in 0..<40 where !ctrlcHelperDone { sleepMilliseconds(50); unpark(me) }; ctrlcHelperExited = true })
             let s = waitProcesses([p], console: channel, keys: {
                 if ticks - begin >= 10 && (!sent || ticks - begin >= 30) { sent = true; return ([.char(0x03)], false) } // (re-sent once)
                 return ([], false)
             })
+            ctrlcHelperDone = true
+            while !ctrlcHelperExited { yield() }
             t.check("6E2: Ctrl-C kills a spin", s[0] == .killed)
         } catch {
             t.check("6E2: Ctrl-C kills a spin", false)
