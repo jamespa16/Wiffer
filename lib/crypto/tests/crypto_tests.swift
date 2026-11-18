@@ -1,7 +1,7 @@
 // Host tests for lib/crypto. Vectors come from the standards (FIPS 180-4,
 // FIPS 197, RFC 4231, RFC 5869, RFC 8446/8448, the GCM spec test cases, RFC
 // 8439, RFC 7748, Wycheproof-style edge cases) or from fixtures generated
-// with host OpenSSL / Python `cryptography` (lib/crypto/fixtures/README).
+// with Python hashlib / `cryptography` (OpenSSL) by lib/crypto/fixtures/gen_*.py.
 
 func libTests(_ t: Tests) {
     hashTests(t)

@@ -5,6 +5,7 @@
 //   var p = Poly1305(key: k32); p.update(m); p.finalize()  -> 16-byte tag
 //   let c = ChaCha20Poly1305(key: k32)!                    // CryptoAEAD
 //   c.seal(nonce:aad:plaintext:) -> ct || tag;  c.open(...) -> plaintext?
+//   (seal traps on a nonce that isn't 12 bytes; open returns nil)
 //
 // Both are constant-time by construction (no secret-dependent branches or
 // table lookups). Poly1305 uses five 26-bit limbs ("donna-32" layout).

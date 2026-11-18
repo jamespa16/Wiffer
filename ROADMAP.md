@@ -1767,14 +1767,67 @@ user space (see the design decisions). They can start before Parts 6 and
   Record the choice here. Each primitive can be decided separately: for
   example, port the symmetric ciphers and write X25519, ECDSA and TLS
   ourselves.
+
+  **Decision: write every primitive ourselves** (no ported code in
+  `lib/crypto`). Survey:
+  - *CryptoSwift* (hashes, HMAC, HKDF, AES-GCM, ChaCha20-Poly1305): pure
+    Swift, but built around untyped `throws` and protocol existentials
+    (`Cipher`, `BlockMode`, `Padding` used as `any`), `Data`/Foundation
+    extensions, and `Array` extension sugar throughout. Embedded needs
+    typed throws and no `any`, so nearly every file would be rewritten.
+    It has no elliptic curves or RSA verify.
+  - *swift-ssl* / 1amageek's *swift-crypto* fork: new, single-maintainer
+    pure-Swift stacks that claim Embedded support (X25519, P-256). Too young
+    to trust over our own vector-tested code, CryptoKit-shaped APIs that
+    clash with our one-module naming rule, and auditing an unknown
+    codebase costs about as much as writing the primitives.
+  - *BigInt* (attaswift), *SwiftECC*, *BlueECC*: generic-protocol-heavy
+    bignums and Foundation, or wrappers around OpenSSL/Security.framework.
+  - *swift-crypto* (Apple), *swift-nio-ssl*: BoringSSL. Out.
+
+  Per primitive: SHA-2, HMAC, HKDF, ChaCha20, Poly1305 (26-bit limbs),
+  X25519 (51-bit limbs, UInt128 products) and the DRBG are small enough
+  that writing them against the RFCs was quicker than adapting anything.
+  AES is a T-table implementation (written; not constant-time against
+  cache timing; AES-NI later). GHASH uses BearSSL's masked-multiply
+  ("holes") carry-less multiplication idea, independently implemented.
+  ECDSA uses one generic Montgomery engine (`CryptoMontgomery`, CIOS
+  over 64-bit limbs) shared with RSA, and the complete a = -3 addition
+  formulas of Renes–Costello–Batina, so there is no special-case code.
+
 - **Primitives**, each checked against official test vectors: SHA-256,
   SHA-384, HMAC, HKDF, AES-128-GCM and AES-256-GCM (software AES; AES-NI
   as a later speedup), ChaCha20-Poly1305, X25519, ECDSA P-256 and P-384
   verify, RSA PKCS#1 v1.5 and PSS verify (a small bignum with Montgomery
   multiplication, up to 4096 bits).
+
+  **Done** (`lib/crypto`: `sha2.swift`, `hmac.swift`, `aes.swift`,
+  `chacha.swift`, `x25519.swift`, `bigint.swift`, `ecdsa.swift`,
+  `rsa.swift`, `drbg.swift`; each file starts with its API). Also SHA-512,
+  AES-192, P-256/P-384 ECDH (for the HelloRetryRequest key share),
+  TLS 1.3 `HKDF.expandLabel` / `deriveSecret`, and `ChaChaDRBG`, the
+  fast-key-erasure generator the kernel's `getrandom` will wrap.
+  `./run.sh --hosttest crypto` checks FIPS 180-4, FIPS 197, RFC 4231,
+  RFC 5869, the RFC 8448 key schedule, the GCM spec test cases, RFC 8439,
+  RFC 7748 (including 1000 iterations), RFC 6979 and RFC 5903 vectors,
+  plus fixtures from Python `cryptography` (`lib/crypto/fixtures/gen_*.py`):
+  every SHA-2 length to 260, AEAD lengths across block boundaries,
+  ECDSA/ECDH on both curves (including the degenerate keys G, 2G, -G),
+  and RSA 1024–4096 PKCS#1 v1.5 and PSS (salt 0, 20 and hash length,
+  emBits a multiple of 8). Negative tests: every bit flip of AEAD
+  output, tampered signatures and digests, r/s out of range, off-curve,
+  compressed and out-of-range points, small-order X25519 points, strict
+  DER. The verify entry points are fuzzed. Host -Osize on an M-series
+  Mac: AES-128-GCM ~200 MB/s, ChaCha20-Poly1305 ~320 MB/s, SHA-256
+  ~320 MB/s, X25519 ~42 µs, P-256 verify ~1.7 ms, RSA-2048 verify ~50 µs.
+  Gaps: AES is not cache-timing safe, P-256/P-384 field arithmetic
+  allocates per operation (fine for a handshake, slow for anything bulk),
+  no compressed points, no SHA-1 (old chains), no RSA signing or
+  decryption.
 - **Randomness:** a `getrandom` syscall backed by a kernel ChaCha20 DRBG,
   seeded from RDSEED/RDRAND, plus RDTSC jitter and interrupt timing as
-  extra input.
+  extra input. (The DRBG is `ChaChaDRBG` in `lib/crypto`; the syscall
+  and seeding are still to do.)
 - **ASN.1 DER and X.509:** parse certificates, check the chain to a
   bundled root store (Mozilla's, as `/etc/roots.der` in rootfs), validity
   dates from the RTC, the hostname against SAN (with wildcards), basic

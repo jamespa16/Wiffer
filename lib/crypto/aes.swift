@@ -6,6 +6,10 @@
 //   let sealed = g.seal(nonce: n12, aad: a, plaintext: p)   // ct || tag
 //   let plain = g.open(nonce: n12, aad: a, ciphertextAndTag: sealed)  // nil if forged
 //
+// Nonces should be 12 bytes (TLS); other non-empty lengths go through
+// GHASH as SP 800-38D says. AESGCM.keySize is 16, but 32-byte keys give
+// AES-256-GCM (TLS_AES_256_GCM_SHA384).
+//
 // TLS only needs the forward cipher (GCM is CTR mode), so there is no
 // decryptBlock. AES here is table-based (one 1 KiB T-table, rotated): fast
 // in software but not constant-time against cache-timing attackers; AES-NI
