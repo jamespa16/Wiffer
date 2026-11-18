@@ -117,6 +117,10 @@ func lockedAllocatorTests(_ t: inout SelfTest) {
             && pmmLock.acquisitions == pmmBefore + 2)
     t.check("heap/pmm locks released", heapLock.ownerWord == 0 && pmmLock.ownerWord == 0)
     t.check("interrupts still on after allocating", interruptsEnabled)
-    t.check("no lock contention on one CPU",
-            heapLock.contended == 0 && pmmLock.contended == 0 && stdoutLock.contended == 0)
+    // Counted since boot. With other CPUs online, some contention is
+    // legitimate (and timing-dependent), so this holds only on one CPU.
+    if onlineCPUCount() == 1 {
+        t.check("no lock contention on one CPU",
+                heapLock.contended == 0 && pmmLock.contended == 0 && stdoutLock.contended == 0)
+    }
 }

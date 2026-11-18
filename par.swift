@@ -2,8 +2,10 @@
 // online CPU, then with a single task, and compare wall time. Workers never
 // print (CPU 0's console flush isn't synchronised with stdoutLock); each
 // posts one `.message` to the shell's task, packed as
-//   worker << 48 | cpu << 40 | count
-// (count < 2^40). Workers share nothing and write nothing shared.
+//   worker << 48 | cpusSeen << 32 | count
+// (count < 2^32, as n <= parMaxN; cpusSeen is a mask of the CPUs, 0-15, the
+// worker ran on: it yields after every chunk, so it may migrate). Workers
+// share nothing and write nothing shared.
 
 let parChunk = 4096
 let parDefaultN = 3_000_000
@@ -33,9 +35,16 @@ func countPrimes(from lo: Int, to hi: Int) -> Int {
 /// the work balances (larger numbers cost more). Yields after each chunk so
 /// the watchdog sees a cooperating task.
 func countPrimesStrided(below n: Int, worker w: Int, of workers: Int, yielding: Bool = true) -> Int {
+    var seen = 0
+    return countPrimesStrided(below: n, worker: w, of: workers, yielding: yielding, cpusSeen: &seen)
+}
+
+/// The same, also ORing `1 << cpu` (CPUs 0-15) into `cpusSeen` for each chunk.
+func countPrimesStrided(below n: Int, worker w: Int, of workers: Int, yielding: Bool, cpusSeen: inout Int) -> Int {
     var total = 0
     var lo = w * parChunk
     while lo < n {
+        cpusSeen |= 1 << min(currentCPU(), 15)
         total += countPrimes(from: lo, to: min(lo + parChunk, n))
         lo += workers * parChunk
         if yielding { yield() }
@@ -43,7 +52,14 @@ func countPrimesStrided(below n: Int, worker w: Int, of workers: Int, yielding: 
     return total
 }
 
-struct ParResult { var worker: Int; var cpu: Int; var count: Int }
+/// "0,1,3" for a cpusSeen mask.
+func cpuList(_ mask: Int) -> String {
+    var parts: [String] = []
+    for c in 0..<16 where mask & (1 << c) != 0 { parts.append("\(c)") }
+    return parts.joined(separator: ",")
+}
+
+struct ParResult { var worker: Int; var cpus: Int; var count: Int }
 
 /// Run `workers` tasks and gather their messages in the current task. Other
 /// events that arrive meanwhile (keys...) are kept and re-posted afterwards.
@@ -52,8 +68,9 @@ func parRun(n: Int, workers: Int, me: Task) -> [ParResult]? {
     var spawned = 0
     for w in 0..<workers {
         let t = spawn("par\(w)", affinity: .any) {
-            let c = countPrimesStrided(below: n, worker: w, of: workers)
-            me.post(.message(w << 48 | currentCPU() << 40 | c))
+            var seen = 0
+            let c = countPrimesStrided(below: n, worker: w, of: workers, yielding: true, cpusSeen: &seen)
+            me.post(.message(w << 48 | (seen & 0xFFFF) << 32 | c))
         }
         if t == nil { break }
         spawned += 1
@@ -63,7 +80,7 @@ func parRun(n: Int, workers: Int, me: Task) -> [ParResult]? {
     while results.count < spawned {
         let e = waitEvent()
         if case .message(let m) = e {
-            results.append(ParResult(worker: m >> 48, cpu: (m >> 40) & 0xFF, count: m & 0xFF_FFFF_FFFF))
+            results.append(ParResult(worker: m >> 48, cpus: (m >> 32) & 0xFFFF, count: m & 0xFFFF_FFFF))
         } else {
             stash.append(e) // a key, say: hand it back below
         }
@@ -82,7 +99,7 @@ func parReport(n: Int, me: Task) -> [String] {
     let parTicks = Int(ticks - t0)
     var total = 0
     for r in par {
-        out.append("  worker \(r.worker)  cpu \(r.cpu)  primes \(r.count)")
+        out.append("  worker \(r.worker)  cpus \(cpuList(r.cpus))  primes \(r.count)")
         total += r.count
     }
     let t1 = ticks
@@ -91,7 +108,7 @@ func parReport(n: Int, me: Task) -> [String] {
     let single = one[0].count
     let ms = 1000 / Int(timerHz)
     out.append("  parallel: \(total) primes in \(parTicks) ticks (\(parTicks * ms) ms)")
-    out.append("  single:   \(single) primes in \(singleTicks) ticks (\(singleTicks * ms) ms) on cpu \(one[0].cpu)")
+    out.append("  single:   \(single) primes in \(singleTicks) ticks (\(singleTicks * ms) ms) on cpus \(cpuList(one[0].cpus))")
     if total != single {
         out.append("par: ERROR totals differ (\(total) parallel, \(single) single)")
     } else {
