@@ -103,6 +103,12 @@ func handleSyscall(_ n: UInt64, _ a1: UInt64, _ a2: UInt64, _ a3: UInt64, _ a4: 
     case SyscallNumber.pipe: return sysPipe(p, a1)
     case SyscallNumber.wait: return sysWait(p, a1, a2, a3)
     case SyscallNumber.consoleMode: return sysConsoleMode(p, a1, a2)
+    // Phase 6F: windows (window_user.swift).
+    case SyscallNumber.winCreate: return sysWinCreate(p, a1, a2, a3, a4, a5)
+    case SyscallNumber.winPresent: return sysWinPresent(p, a1, a2, a3, a4, a5)
+    case SyscallNumber.winResize: return sysWinResize(p, a1, a2, a3, a4)
+    case SyscallNumber.winSetTitle: return sysWinSetTitle(p, a1, a2, a3)
+    case SyscallNumber.sysinfo: return sysSysinfo(p, a1)
     case SyscallNumber.sleep:
         return sysSleep(p, a1)
     case SyscallNumber.now:

@@ -18,3 +18,10 @@ void wiffer_fault_int3(void);
 void wiffer_fault_hlt(void);
 void wiffer_fault_cli(void);
 void wiffer_fault_in(void);
+
+// font.S: the Spleen 8x16 PSF font every program carries (dropped by the
+// linker when unused) and its size in bytes.
+extern const uint8_t wiffer_font_psf[];
+extern const uint64_t wiffer_font_psf_size;
+static inline const uint8_t *wiffer_font_data(void) { return wiffer_font_psf; }
+static inline uint64_t wiffer_font_size(void) { return wiffer_font_psf_size; }

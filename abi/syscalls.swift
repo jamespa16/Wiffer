@@ -92,12 +92,27 @@ enum SyscallNumber {
     /// fstat(fd, StatInfo out).
     static let fstat: UInt64 = 36
 
-    // Windows (6F): 40-49 reserved (win_create, win_present, win_resize,
-    // win_set_title).
+    // Windows (6F). A window is a file descriptor: events are read from it
+    // (WinEvent records, so it works with wait), and closing it, or exiting,
+    // closes the window.
+    /// win_create(width, height, title, titleLen, WinInfo out) -> fd. The
+    /// content size is clamped to the work area (the result is in the
+    /// WinInfo). The pixel buffer (XRGB8888, `stride` pixels per row) is
+    /// mapped read/write, no-exec, at `WinInfo.address`.
     static let winCreate: UInt64 = 40
+    /// win_present(fd, x, y, w, h): the buffer rectangle that changed (it is
+    /// clipped; w or h <= 0 means the whole buffer).
     static let winPresent: UInt64 = 41
+    /// win_resize(fd, w, h, WinInfo out): adopt a new buffer after a resize
+    /// event. w = h = 0: the window's current size (what the event said).
+    /// Otherwise ask for that content size first. Maps the new buffer (old
+    /// pixels copied into its top-left), unmaps the old one: the address
+    /// changes, so redraw through the new WinInfo.
     static let winResize: UInt64 = 42
+    /// win_set_title(fd, title, titleLen).
     static let winSetTitle: UInt64 = 43
+    /// sysinfo(SysInfo out): counters for system monitors.
+    static let sysinfo: UInt64 = 44
 
     // Sockets (7E): 50-59 reserved.
     static let socket: UInt64 = 50
@@ -130,6 +145,7 @@ enum Errno {
     static let EACCES: Int = 13
     static let EFAULT: Int = 14
     static let EEXIST: Int = 17
+    static let ENODEV: Int = 19
     static let EBUSY: Int = 16
     static let EXDEV: Int = 18
     static let ENOTDIR: Int = 20
@@ -257,4 +273,113 @@ enum UserLayout {
     /// Limits on spawn arguments.
     static let maxArgs = 256
     static let maxArgBytes = 64 * 1024
+}
+
+// MARK: Windows (6F)
+
+/// What win_create and win_resize return (24 bytes): the buffer's address in
+/// the process, its size and row length in pixels. Pixels are 0x00RRGGBB.
+struct WinInfo {
+    var address: UInt64 = 0
+    var width: Int32 = 0
+    var height: Int32 = 0
+    var stride: Int32 = 0
+    var reserved: Int32 = 0
+}
+
+/// WinEvent.kind.
+enum WinEventKind {
+    /// a: key code (WinKey); mods: WinMod bits.
+    static let key: UInt16 = 1
+    /// a, b: pointer position in the content area (may be outside it while
+    /// a button is held); mods: buttons held (WinButton bits); c: wheel
+    /// delta (lines; 0 until the mouse driver has a wheel).
+    static let mouse: UInt16 = 2
+    /// a, b: the new content size. Call win_resize to adopt it.
+    static let resize: UInt16 = 3
+    /// a: 1 gained, 0 lost keyboard focus.
+    static let focus: UInt16 = 4
+    /// The user asked to close the window (close box, Alt-F4). Close the fd
+    /// to agree; asking twice with no reply kills the process.
+    static let close: UInt16 = 5
+}
+
+/// One event, as read() returns them: whole 16-byte records only (read at
+/// least 16 bytes). Little endian, in the order below.
+struct WinEvent {
+    var kind: UInt16 = 0
+    var mods: UInt16 = 0
+    var a: Int32 = 0
+    var b: Int32 = 0
+    var c: Int32 = 0
+    static let size = 16
+}
+
+/// WinEvent.mods for keys.
+enum WinMod {
+    static let ctrl: UInt16 = 1
+    static let alt: UInt16 = 2
+    static let shift: UInt16 = 4
+    static let meta: UInt16 = 8
+}
+
+/// WinEvent.mods for mouse events.
+enum WinButton {
+    static let left: UInt16 = 1
+    static let right: UInt16 = 2
+    static let middle: UInt16 = 4
+}
+
+/// WinEvent.a for key events: characters are their byte value (Ctrl-letters
+/// are the control codes, with WinMod.ctrl set); other keys are these.
+enum WinKey {
+    static let up = 0x100
+    static let down = 0x101
+    static let left = 0x102
+    static let right = 0x103
+    static let home = 0x104
+    static let end = 0x105
+    static let pageUp = 0x106
+    static let pageDown = 0x107
+    static let insert = 0x108
+    static let delete = 0x109
+    /// F1...F12 are function + n.
+    static let function = 0x110
+}
+
+/// Limits on windows.
+enum WinLimit {
+    static let maxDimension = 4096
+    static let maxTitle = 128
+    static let maxPerProcess = 8
+}
+
+/// sysinfo's result: every field a UInt64. `busy0`...`busy7` are the CPUs'
+/// cumulative busy timer ticks (compare with `ticks` for a load: the
+/// difference of two samples over the difference of the ticks).
+struct SysInfo {
+    var ticks: UInt64 = 0
+    var totalFrames: UInt64 = 0
+    var usedFrames: UInt64 = 0
+    var heapBytes: UInt64 = 0
+    var heapBlocks: UInt64 = 0
+    var tasks: UInt64 = 0
+    var processes: UInt64 = 0
+    var windows: UInt64 = 0
+    var cpuCount: UInt64 = 0
+    var compositorFrames: UInt64 = 0
+    var year: UInt64 = 0
+    var month: UInt64 = 0
+    var day: UInt64 = 0
+    var hour: UInt64 = 0
+    var minute: UInt64 = 0
+    var second: UInt64 = 0
+    var busy0: UInt64 = 0
+    var busy1: UInt64 = 0
+    var busy2: UInt64 = 0
+    var busy3: UInt64 = 0
+    var busy4: UInt64 = 0
+    var busy5: UInt64 = 0
+    var busy6: UInt64 = 0
+    var busy7: UInt64 = 0
 }

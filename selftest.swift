@@ -128,6 +128,9 @@ func runSelfTests() -> Never {
     // Phase 6E: fds, pipes, console, wait, the ported programs.
     fileTests(&t)
 
+    // Phase 6F: windows for processes.
+    windowTests(&t)
+
     // Phases 7E/7F/8A: sockets from ring 3, MSI-X, getrandom and time.
     socketTests(&t)
 

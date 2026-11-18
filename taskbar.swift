@@ -1,7 +1,7 @@
 // Phase K4: the taskbar, the status bar grown up. A Layer in the panel band
 // along the bottom of the screen, drawn procedurally (no surface of its own):
 //
-//   [+ Terminal] [+ Editor]  [window] [window] ...      up 0:01:23  free ...
+//   [+ Terminal] [+ Editor] [+ Apps]  [window] [window] ...      up 0:01:23  free ...
 //
 // Clicking a window button focuses and raises that window; the launchers call
 // the WM's openTerminal / openEditor hooks. layout(_:) (allocates) rebuilds
@@ -13,6 +13,8 @@ final class Taskbar: Layer {
     enum Action {
         case openTerminal
         case openEditor
+        /// Phase 6F: the launcher menu of programs (only when `showApps`).
+        case openApps
         case focus(Window)
     }
 
@@ -24,6 +26,8 @@ final class Taskbar: Layer {
         var label: String
     }
 
+    /// Phase 6F: a third launcher, "+ Apps" (WindowManager.setApps).
+    var showApps = false
     static let height = 20
     static let buttonWidth = 150
 
@@ -71,7 +75,9 @@ final class Taskbar: Layer {
         let fw = theme.font.width
         var x = frame.x + 2
         let y = frame.y + 2, h = frame.h - 4
-        for (action, label) in [(Action.openTerminal, "+ Terminal"), (Action.openEditor, "+ Editor")] {
+        var launchers = [(Action.openTerminal, "+ Terminal"), (Action.openEditor, "+ Editor")]
+        if showApps { launchers.append((Action.openApps, "+ Apps")) }
+        for (action, label) in launchers {
             let w = (textCells(label) + 2) * fw
             items.append(Item(action: action, rect: Rect(x, y, w, h), label: label))
             x += w + 4
@@ -159,5 +165,57 @@ final class Taskbar: Layer {
             dx += Taskbar.dotSize + Taskbar.dotGap
         }
         s.drawText(status, font: th.font, at: Point(statusX, ty), fg: th.taskbarText, bg: nil)
+    }
+}
+
+// MARK: The launcher menu (Phase 6F)
+
+/// A popup list of program names above the "+ Apps" button, in the panel
+/// band (over the taskbar, under the cursor). Drawn procedurally. The WM
+/// owns it: a click on a row launches that program, any other click or
+/// Escape closes it.
+final class LauncherMenu: Layer {
+    static let rowHeight = 20
+    let items: [String]
+    let font: PSFFont
+    let theme: WindowTheme
+    private(set) var hover = -1
+
+    init(items: [String], font: PSFFont, theme: WindowTheme, anchor: Point) {
+        self.items = items
+        self.font = font
+        self.theme = theme
+        var widest = 0
+        for i in items { widest = max(widest, textCells(i)) }
+        let w = (widest + 3) * font.width
+        let h = items.count * LauncherMenu.rowHeight + 4
+        super.init(frame: Rect(anchor.x, anchor.y - h, w, h), band: .panel, opaque: true)
+    }
+
+    /// The row under `p` (screen coordinates), if any.
+    func item(at p: Point) -> Int? {
+        guard frame.contains(p) else { return nil }
+        let i = (p.y - frame.y - 2) / LauncherMenu.rowHeight
+        return i >= 0 && i < items.count ? i : nil
+    }
+
+    /// Track the pointer; true if the highlighted row changed.
+    func setHover(at p: Point) -> Bool {
+        let h = item(at: p) ?? -1
+        guard h != hover else { return false }
+        hover = h
+        return true
+    }
+
+    override func draw(into s: Surface, clip: Rect) {
+        s.fill(frame, theme.taskbarBG)
+        s.frame(frame, theme.borderFocused)
+        for (i, name) in items.enumerated() {
+            let r = Rect(frame.x + 2, frame.y + 2 + i * LauncherMenu.rowHeight, frame.w - 4, LauncherMenu.rowHeight)
+            if !r.intersects(clip) { continue }
+            if i == hover { s.fill(r, theme.buttonFocusedBG) }
+            s.drawText(name, font: font, at: Point(r.x + font.width, r.y + (r.h - font.height) / 2),
+                       fg: theme.buttonText, bg: nil)
+        }
     }
 }

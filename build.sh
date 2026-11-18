@@ -116,6 +116,7 @@ echo "OK: build/kernel.elf"
 #     Same -disable-swift-specific-llvm-optzns as the kernel (copy-on-write).
 mkdir -p build/user
 clang -target x86_64-unknown-none-elf -c user/libwiffer/start.S -o build/user/start.o
+clang -target x86_64-unknown-none-elf -c user/libwiffer/font.S -o build/user/font.o # Phase 6F: Spleen, for GUIs
 declare -a USER_LIB_ORDER=()
 user_lib_visit() { # <lib>: append it after its DEPS, once
   local n="$1" d
@@ -134,6 +135,17 @@ for dir in user/*/; do
   for l in "${USER_LIB_ORDER[@]+"${USER_LIB_ORDER[@]}"}"; do
     for f in lib/"$l"/*.swift; do [[ -e "$f" ]] && SRCS+=("$f"); done
   done
+  # lib/<n>/SRCS: extra repo files it needs (shared kernel sources, e.g. surface.swift);
+  # lib/<n>/USERSRCS: user-only files (libwiffer's GUI layer). Skip any already listed.
+  for l in "${USER_LIB_ORDER[@]+"${USER_LIB_ORDER[@]}"}"; do
+    for list in SRCS USERSRCS; do
+      [[ -f "lib/$l/$list" ]] || continue
+      for f in $(cat "lib/$l/$list"); do
+        dup=0; for e in "${SRCS[@]}"; do [[ "$e" == "$f" ]] && dup=1; done
+        (( dup )) || SRCS+=("$f")
+      done
+    done
+  done
   swiftc -target x86_64-unknown-none-elf -enable-experimental-feature Embedded -wmo -Osize \
     -Xfrontend -disable-stack-protector -Xfrontend -disable-swift-specific-llvm-optzns \
     -import-objc-header user/libwiffer/libwiffer.h -module-name "$prog" \
@@ -141,7 +153,7 @@ for dir in user/*/; do
   clang -target x86_64-unknown-none-elf -flto -fPIC -Wno-override-module \
     -c "build/user/$prog.ll" -o "build/user/$prog.o"
   ld.lld -T user/user.ld -nostdlib -static --gc-sections -z max-page-size=0x1000 --build-id=none \
-    --lto-O2 -mllvm -relocation-model=pic "build/user/$prog.o" build/user/start.o "$UNICODE_TABLES" \
+    --lto-O2 -mllvm -relocation-model=pic "build/user/$prog.o" build/user/start.o build/user/font.o "$UNICODE_TABLES" \
     -o "build/user/$prog"
   if [[ -n "$(llvm-nm -u "build/user/$prog")" ]]; then
     echo "error: undefined symbols in $prog:" >&2; llvm-nm -u "build/user/$prog" >&2; exit 1

@@ -712,6 +712,7 @@ def main():
     ed = None if opts.command else Session(monitor=True)  # Phase N, in the boot desktop
     term = None if opts.command else Session(monitor=True)  # Phase L, in the boot desktop
     pre = None if opts.command else Session(monitor=True)  # Phase 6D, in the boot desktop
+    gui = None if opts.command else Session(monitor=True)  # Phase 6F, in the boot desktop
     # Phase Y: persistence (boot 1 of 2, in the desktop, on its own FAT32
     # image) and mkfs on a blank image. Not with --nodisk.
     persist = blank = None
@@ -910,6 +911,8 @@ def main():
             failures += terminal_checks(term, opts.timeout)
         if pre:
             failures += preempt_desktop_checks(pre, opts.timeout)
+        if gui:
+            failures += gui_checks(gui, opts.timeout)
         if blank:
             failures += mkfs_checks(blank, blank_img[0], opts.timeout)
         if persist:
@@ -961,6 +964,8 @@ def main():
             term.close()
         if pre:
             pre.close()
+        if gui:
+            gui.close()
 
 
 def fake_dns_server():
@@ -1305,6 +1310,151 @@ def preempt_desktop_checks(s: Session, timeout: float) -> int:
     return failures
 
 
+def gui_checks(s: Session, timeout: float) -> int:
+    """Phase 6F on the desktop: ring-3 windows. wintest paints a marker
+    rectangle (0x2040C0) that the screendump must show; a drag and a resize
+    follow; keys and clicks reach the program; the taskbar's + Apps menu
+    launches clock (redrawn every second) and sysmon; killing the focused
+    program removes its window, moves focus and returns its memory; an
+    event flood at a program that never reads changes nothing."""
+    failures = 0
+    dump = os.path.join(ROOT, "build", "gui.ppm")
+    MARKER = bytes.fromhex("2040C0")
+
+    def check(ok, label, detail=""):
+        nonlocal failures
+        failures += not ok
+        print(f"{'PASS' if ok else 'FAIL'}: 6F gui: {label}" + ("" if ok or not detail else f"\n  {detail}"))
+        return ok
+
+    def find(title):
+        wins, _ = s.windows()
+        for i, w in wins.items():
+            if w[5] == title:
+                return i, w
+        return None, None
+
+    def used_frames():
+        m = re.search(r"(\d+) used", s.command("mem"))
+        return int(m.group(1)) if m else -1
+
+    boot = s.read_prompt(boot_timeout(timeout))
+    if not check(PROMPT_RE.search(boot) and b"desktop: on" in s.log, "boots into the desktop", repr(boot[-200:])):
+        return failures
+    # Warm up (first spawn allocates tables), then take the baseline.
+    s.command("wintest &", timeout)
+    time.sleep(0.8)
+    _, w = find("wintest")
+    pid = re.search(r"^\s*(\d+)\s+\d+\s+running\s+\d+\s+wintest", s.command("ps"), re.M)
+    if pid:
+        s.command(f"kill {pid.group(1)}", timeout)
+    time.sleep(0.8)
+    base_frames = used_frames()
+
+    got = s.command("wintest &", timeout)
+    check("[" in got, "wintest & starts", repr(got))
+    time.sleep(0.8)
+    wid, w = find("wintest")
+    if not check(w is not None and w[4], "a window titled wintest opens, focused", str(s.windows())):
+        return failures
+    cx, cy = w[0] + 2, w[1] + 22
+    px = s.wait_pixel(cx + 10, cy + 70, MARKER, dump)
+    check(px == MARKER, "the program's pixels are on screen (marker rectangle)", px.hex())
+    check(w[2] == 224 and w[3] == 164, "window is content size + decorations", str(w))
+
+    # Keys and a click reach it.
+    s.sendkeys(["a"])
+    check(b"ev key 97" in s.read_until(b"ev key 97", timeout), "a key typed on the keyboard reaches the program")
+    s.click(cx + 20, cy + 20)
+    check(b"ev click 1" in s.read_until(b"ev click 1", timeout), "a click on its button runs the button's handler")
+
+    # Drag.
+    start = (w[0] + 60, w[1] + 10)
+    end = s.drag(start, (120, 90))
+    s.read_until(b"wm: move", timeout)
+    _, n = find("wintest")
+    check(n and end and (n[0], n[1]) == (w[0] + end[0] - start[0], w[1] + end[1] - start[1]), "drag moves the window",
+          f"{w} -> {n}")
+    cx, cy = n[0] + 2, n[1] + 22
+    px = s.wait_pixel(cx + 10, cy + 70, MARKER, dump)
+    check(px == MARKER, "its pixels moved with it", px.hex())
+
+    # Resize with the grip.
+    grip = (n[0] + n[2] - 3, n[1] + n[3] - 3)
+    end = s.drag(grip, (60, 40))
+    s.read_until(b"wm: resize", timeout)
+    _, r = find("wintest")
+    check(r and end and (r[2], r[3]) == (n[2] + end[0] - grip[0], n[3] + end[1] - grip[1]), "grip drag resizes", f"{n} -> {r}")
+    check(b"ev adopted" in s.read_until(b"ev adopted", timeout) + s.log, "the program adopted the new buffer")
+    time.sleep(0.5)
+    px = s.pixel_at(r[0] + r[2] - 8, r[1] + 22 + 70, dump)
+    check(px == MARKER, "the marker rectangle follows the new width", px.hex())
+
+    # Killing the focused program.
+    pid = re.search(r"^\s*(\d+)\s+\d+\s+running\s+\d+\s+wintest", s.command("ps"), re.M)
+    s.command(f"kill {pid.group(1)}" if pid else "ps", timeout)
+    time.sleep(0.8)
+    wins, _ = s.windows()
+    gone = find("wintest")[0] is None
+    check(gone and any(w[4] for w in wins.values()), "kill removes the window and focus moves on", str(wins))
+    used = used_frames()
+    check(abs(used - base_frames) <= 8, "memory is back to baseline", f"{base_frames} -> {used}")
+    px = s.pixel_at(r[0] + r[2] - 8, r[1] + 22 + 70, dump)
+    check(px != MARKER, "its pixels left the screen", px.hex())
+
+    # The launcher menu.
+    _, buttons = s.windows()
+    apps = [b for b in buttons if b[4] == "+ Apps"]
+    if check(bool(apps), "taskbar has an Apps launcher", str(buttons)):
+        a = apps[0]
+        s.click(a[0] + a[2] // 2, a[1] + a[3] // 2)
+        px = s.pixel_at(a[0] + 20, a[1] - 46, dump)  # the menu's top border
+        check(px == bytes.fromhex("55FFFF"), "the menu opens above the button", px.hex())
+        s.click(a[0] + 20, a[1] - 34)  # first row: clock
+        check(b"launch: clock" in s.read_until(b"launch: clock", timeout), "choosing clock launches /bin/clock")
+        time.sleep(0.8)
+        cid, c = find("Clock")
+        if check(c is not None, "the Clock window opens", str(s.windows())):
+            box = (c[0] + 8, c[1] + 22 + 8, c[2] - 16, 60)
+            def band():
+                s.screendump(dump)
+                w_, h_, pix = read_ppm(dump)
+                return b"".join(pix[((box[1] + y) * w_ + box[0]) * 3:((box[1] + y) * w_ + box[0] + box[2]) * 3]
+                                for y in range(box[3]))
+            a1 = band()
+            time.sleep(1.6)
+            a2 = band()
+            check(a1 != a2, "the clock redraws as time passes")
+        s.click(a[0] + a[2] // 2, a[1] + a[3] // 2)
+        s.click(a[0] + 20, a[1] - 14)  # second row: sysmon
+        check(b"launch: sysmon" in s.read_until(b"launch: sysmon", timeout), "choosing sysmon launches /bin/sysmon")
+        time.sleep(0.8)
+        check(find("System monitor")[0] is not None, "the sysmon window opens")
+    got = s.command("ps")
+    for name in ("clock", "sysmon"):
+        m = re.search(rf"^\s*(\d+)\s+\d+\s+running\s+\d+\s+{name}", got, re.M)
+        if m:
+            s.command(f"kill {m.group(1)}", timeout)
+    time.sleep(0.5)
+
+    # A flood of mouse events at a program that never reads them.
+    s.command("wintest noread &", timeout)
+    time.sleep(0.8)
+    _, f = find("wintest")
+    if check(f is not None, "wintest noread opens a window"):
+        s.warp(f[0] + 100, f[1] + 60)
+        for i in range(40):
+            s.monitor(f"mouse_move {(-1) ** i * 30} {(-1) ** i * 10}")
+        got = s.command("ps", timeout)
+        check("wintest" in got, "the flood didn't hurt the system", repr(got[-200:]))
+        pid = re.search(r"^\s*(\d+)\s+\d+\s+running\s+\d+\s+wintest", got, re.M)
+        if pid:
+            s.command(f"kill {pid.group(1)}", timeout)
+        time.sleep(0.5)
+    check(find("wintest")[0] is None, "and the window goes with the process")
+    return failures
+
+
 def program_io_checks(s: Session, timeout: float, where: str) -> int:
     """Phase 6E: programs reading the terminal (cooked lines, Ctrl-D), a
     pipeline waiting on it, and Ctrl-C killing a `spin` (6D preempts it), typed over serial."""
@@ -1424,7 +1574,7 @@ def desktop_checks(s: Session, timeout: float) -> int:
         return failures
     wins, buttons = s.windows()
     check(list(wins) == [1] and wins[1][4] and wins[1][5] == "Wiffer shell"
-          and [b[4] for b in buttons] == ["+ Terminal", "+ Editor", "#1"],
+          and [b[4] for b in buttons] == ["+ Terminal", "+ Editor", "+ Apps", "#1"],
           "console is window #1, taskbar buttons", f"{wins} {buttons}")
     tx, ty = buttons[0][0] + buttons[0][2] // 2, buttons[0][1] + buttons[0][3] // 2
     check(s.wait_pixel(*title_px(wins[1]), TITLE_FOCUSED, dump) == TITLE_FOCUSED

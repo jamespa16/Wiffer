@@ -154,6 +154,16 @@ class Window: Layer {
         super.init(frame: Rect(origin: origin, w: size.w, h: size.h), band: .windows, opaque: true)
     }
 
+    /// A window whose content is the given surface (Phase 6F: a process's
+    /// pixel buffer, wrapped).
+    init(title: String, surface: Surface, at origin: Point = .zero, task: Task? = nil) {
+        self.title = title
+        self.task = task
+        content = surface
+        let size = Window.frameSize(contentWidth: surface.width, contentHeight: surface.height)
+        super.init(frame: Rect(origin: origin, w: size.w, h: size.h), band: .windows, opaque: true)
+    }
+
     // MARK: Geometry
 
     static func frameSize(contentWidth: Int, contentHeight: Int) -> (w: Int, h: Int) {
