@@ -5,6 +5,7 @@
 // BOOTLOADER_RECLAIMABLE memory (Limine responses, our stack) stays intact.
 //
 // This code must not allocate: it runs underneath the Swift heap.
+// allocate/free hold pmmLock (IRQ-saving spinlock, spinlock.swift).
 
 let frameSize = 4096
 
@@ -146,9 +147,10 @@ struct FrameAllocator {
     /// Allocate `count` physically contiguous frames. Returns the physical
     /// address of the first, or nil if no run is free.
     mutating func allocate(count: Int = 1) -> UInt? {
-        guard count > 0, bitmap != nil, count <= freeFrames else { return nil }
-        let flags = irq_save()
-        defer { irq_restore(flags) }
+        guard count > 0, bitmap != nil else { return nil }
+        let flags = pmmLock.acquireIRQ()
+        defer { pmmLock.releaseIRQ(flags) }
+        guard count <= freeFrames else { return nil }
         // Two passes: from the hint to the end, then from 0.
         for pass in 0..<2 {
             var i = pass == 0 ? hint : 0
@@ -181,8 +183,8 @@ struct FrameAllocator {
 
     /// Free `count` frames starting at physical address `phys`.
     mutating func free(_ phys: UInt, count: Int = 1) {
-        let flags = irq_save()
-        defer { irq_restore(flags) }
+        let flags = pmmLock.acquireIRQ()
+        defer { pmmLock.releaseIRQ(flags) }
         let first = Int(phys) / frameSize
         guard phys % UInt(frameSize) == 0, count > 0, first + count <= frameCount else {
             puts("pmm: bad free at "); printHex(UInt64(phys)); newline()
