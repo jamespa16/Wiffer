@@ -1798,6 +1798,34 @@ check).
 
 ## Phase 8B: URLs, HTTP and inflate (`lib/url`, `lib/http`, `lib/inflate`)
 
+**Status: done except inflate** (lib/inflate is being written separately).
+`lib/url`, `lib/http` and `lib/text` are in, all with host tests and
+fuzzers (`./run.sh --hosttest url http text`).
+
+Decisions and results:
+- **lib/url**: full WHATWG basic URL parser (no setters), IPv4 and IPv6
+  hosts, opaque hosts, file drive letters, `blob:` origin, form-urlencoded
+  encode/decode. Non-ASCII hosts throw `URLError.nonASCIIHost` (no IDNA;
+  `xn--` labels pass through unvalidated). Fixture: the complete WPT
+  `urltestdata.json` (BSD-3, license in `lib/url/fixtures/`): 891 pass,
+  13 skipped (IDNA cases), 0 fail of 904. RFC 3986 section 5.4: 41/41.
+- **lib/http** (DEPS url): no I/O, no clock (`now` is Unix seconds).
+  `httpBuildRequest`, `HTTPResponseParser` (events: head/body/trailers/
+  complete/error, byte-at-a-time safe, limits in `HTTPLimits`),
+  `httpRedirectDecision`, `HTTPCookieJar`, `HTTPCache`,
+  `HTTPConnectionPool`. 166 host checks plus parser and cookie fuzzing.
+  Content-Encoding is a plug point (`HTTPBodyDecoder`, `HTTPBodySink`,
+  `httpDecodeBody`); wiring notes at the top of `lib/http/decoder.swift`.
+- **lib/text**: functions are prefixed `charset...` (lib/font owns
+  `textDecodeUTF8` etc.). UTF-8 (WHATWG replacement semantics),
+  windows-1252 (ISO-8859-1 and ASCII labels map to it), UTF-16, label
+  lookup, detection order header, BOM, meta prescan (1024 bytes), UTF-8.
+  Legacy CJK/other 8-bit labels are recognized as `.unsupported` and
+  decoded as windows-1252.
+- Known gaps: no IDNA/punycode, no public suffix list (small built-in
+  list), no SameSite, no HTTP cache heuristic freshness or Vary
+  support, no cookie persistence, no proxy/auth/Expect: continue.
+
 - **URL parsing** per the WHATWG URL standard (the parts that matter):
   schemes, authority, ports, percent-encoding, relative resolution
   against a base (the RFC 3986 and WHATWG test suites are the test

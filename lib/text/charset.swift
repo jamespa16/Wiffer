@@ -1,10 +1,10 @@
 // lib/text: character decoding for web content (ROADMAP Phase 8B).
 //
-//   - textEncodingForLabel: WHATWG encoding label lookup (common labels)
-//   - textDecode / textDecodeUTF8: bytes -> Unicode scalars / UTF-8 with
+//   - charsetEncodingForLabel: WHATWG encoding label lookup (common labels)
+//   - charsetDecode / charsetDecodeUTF8: bytes -> Unicode scalars / UTF-8 with
 //     U+FFFD replacement, per the WHATWG decoders (UTF-8, windows-1252 incl.
 //     the ISO-8859-1 / latin1 / ascii labels, UTF-16LE/BE)
-//   - textDetectEncoding: header charset, then BOM, then the <meta> prescan
+//   - charsetDetectEncoding: header charset, then BOM, then the <meta> prescan
 //     of the first 1024 bytes, then UTF-8
 //
 // Everything works on [UInt8] and never traps on bad input.
@@ -15,7 +15,7 @@ enum TextEncoding: Equatable {
     case utf16le
     case utf16be
     /// A known label of a legacy multi-byte encoding (Shift_JIS, GBK, Big5,
-    /// EUC-*, ...) that this library does not decode. textDecode treats it as
+    /// EUC-*, ...) that this library does not decode. charsetDecode treats it as
     /// windows-1252 so the page is at least readable; callers can check.
     case unsupported
 }
@@ -33,28 +33,28 @@ struct TextDetection: Equatable {
 
 // MARK: byte helpers
 
-@inline(__always) func textIsASCIIWhitespace(_ c: UInt8) -> Bool {
+@inline(__always) func charsetIsASCIIWhitespace(_ c: UInt8) -> Bool {
     c == 0x20 || c == 0x09 || c == 0x0a || c == 0x0c || c == 0x0d
 }
 
-@inline(__always) func textLower(_ c: UInt8) -> UInt8 {
+@inline(__always) func charsetLower(_ c: UInt8) -> UInt8 {
     (c >= 0x41 && c <= 0x5a) ? c + 32 : c
 }
 
 /// ASCII-lowercased copy with leading/trailing ASCII whitespace removed.
-func textTrimLower(_ s: [UInt8]) -> [UInt8] {
+func charsetTrimLower(_ s: [UInt8]) -> [UInt8] {
     var a = 0, b = s.count
-    while a < b && textIsASCIIWhitespace(s[a]) { a += 1 }
-    while b > a && textIsASCIIWhitespace(s[b - 1]) { b -= 1 }
+    while a < b && charsetIsASCIIWhitespace(s[a]) { a += 1 }
+    while b > a && charsetIsASCIIWhitespace(s[b - 1]) { b -= 1 }
     var out: [UInt8] = []
     out.reserveCapacity(b - a)
-    for i in a..<b { out.append(textLower(s[i])) }
+    for i in a..<b { out.append(charsetLower(s[i])) }
     return out
 }
 
 // MARK: labels
 
-private func textLabelTable() -> [(String, TextEncoding)] {
+private func charsetLabelTable() -> [(String, TextEncoding)] {
     return [
     ("utf-8", .utf8), ("utf8", .utf8), ("unicode-1-1-utf-8", .utf8),
     ("unicode11utf8", .utf8), ("unicode20utf8", .utf8), ("x-unicode20utf8", .utf8),
@@ -86,34 +86,34 @@ private func textLabelTable() -> [(String, TextEncoding)] {
 
 /// WHATWG "get an encoding": ASCII-case-insensitive, surrounding whitespace
 /// ignored. nil for an unknown label.
-func textEncodingForLabel(_ label: [UInt8]) -> TextEncoding? {
-    let l = textTrimLower(label)
+func charsetEncodingForLabel(_ label: [UInt8]) -> TextEncoding? {
+    let l = charsetTrimLower(label)
     if l.isEmpty || l.count > 40 { return nil }
-    for (name, enc) in textLabelTable() {
+    for (name, enc) in charsetLabelTable() {
         if Array(name.utf8) == l { return enc }
     }
     return nil
 }
 
-func textEncodingForLabel(_ label: String) -> TextEncoding? {
-    textEncodingForLabel(Array(label.utf8))
+func charsetEncodingForLabel(_ label: String) -> TextEncoding? {
+    charsetEncodingForLabel(Array(label.utf8))
 }
 
 // MARK: decoding
 
 /// windows-1252 0x80...0x9F.
-private let textCP1252High: [UInt16] = [
+private let charsetCP1252High: [UInt16] = [
     0x20AC, 0x0081, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021,
     0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0x008D, 0x017D, 0x008F,
     0x0090, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014,
     0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0x009D, 0x017E, 0x0178,
 ]
 
-let textReplacement: UInt32 = 0xFFFD
+let charsetReplacement: UInt32 = 0xFFFD
 
 /// WHATWG UTF-8 decoder (no BOM handling). Invalid sequences give one U+FFFD
 /// per maximal subpart, exactly as the spec's decoder does.
-func textDecodeUTF8(_ bytes: [UInt8], from start: Int = 0) -> [UInt32] {
+func charsetDecodeUTF8(_ bytes: [UInt8], from start: Int = 0) -> [UInt32] {
     var out: [UInt32] = []
     out.reserveCapacity(bytes.count)
     var needed = 0
@@ -137,14 +137,14 @@ func textDecodeUTF8(_ bytes: [UInt8], from start: Int = 0) -> [UInt32] {
                 if b == 0xF0 { lower = 0x90 }
                 if b == 0xF4 { upper = 0x8F }
                 needed = 3; cp = UInt32(b & 0x07)
-            default: out.append(textReplacement)
+            default: out.append(charsetReplacement)
             }
             i += 1
             continue
         }
         if b < lower || b > upper {
             cp = 0; needed = 0; seen = 0; lower = 0x80; upper = 0xBF
-            out.append(textReplacement)
+            out.append(charsetReplacement)
             continue // reprocess this byte
         }
         lower = 0x80; upper = 0xBF
@@ -156,24 +156,24 @@ func textDecodeUTF8(_ bytes: [UInt8], from start: Int = 0) -> [UInt32] {
             cp = 0; needed = 0; seen = 0
         }
     }
-    if needed != 0 { out.append(textReplacement) }
+    if needed != 0 { out.append(charsetReplacement) }
     return out
 }
 
-func textDecodeWindows1252(_ bytes: [UInt8], from start: Int = 0) -> [UInt32] {
+func charsetDecodeWindows1252(_ bytes: [UInt8], from start: Int = 0) -> [UInt32] {
     var out: [UInt32] = []
     out.reserveCapacity(bytes.count)
     var i = max(start, 0)
     while i < bytes.count {
         let b = bytes[i]
-        if b >= 0x80 && b < 0xA0 { out.append(UInt32(textCP1252High[Int(b) - 0x80])) }
+        if b >= 0x80 && b < 0xA0 { out.append(UInt32(charsetCP1252High[Int(b) - 0x80])) }
         else { out.append(UInt32(b)) }
         i += 1
     }
     return out
 }
 
-func textDecodeUTF16(_ bytes: [UInt8], bigEndian: Bool, from start: Int = 0) -> [UInt32] {
+func charsetDecodeUTF16(_ bytes: [UInt8], bigEndian: Bool, from start: Int = 0) -> [UInt32] {
     var out: [UInt32] = []
     out.reserveCapacity(bytes.count / 2)
     var i = max(start, 0)
@@ -189,30 +189,30 @@ func textDecodeUTF16(_ bytes: [UInt8], bigEndian: Bool, from start: Int = 0) -> 
                 out.append(0x10000 + ((lead - 0xD800) << 10) + (unit - 0xDC00))
                 continue
             }
-            out.append(textReplacement) // lone lead; reprocess this unit
+            out.append(charsetReplacement) // lone lead; reprocess this unit
         }
         if unit >= 0xD800 && unit <= 0xDBFF { lead = unit; haveLead = true }
-        else if unit >= 0xDC00 && unit <= 0xDFFF { out.append(textReplacement) }
+        else if unit >= 0xDC00 && unit <= 0xDFFF { out.append(charsetReplacement) }
         else { out.append(unit) }
     }
-    if haveLead || i < bytes.count { out.append(textReplacement) }
+    if haveLead || i < bytes.count { out.append(charsetReplacement) }
     return out
 }
 
 /// Decode `bytes` (skipping `from` leading bytes, e.g. a BOM) to scalars.
-func textDecode(_ bytes: [UInt8], _ encoding: TextEncoding, from start: Int = 0) -> [UInt32] {
+func charsetDecode(_ bytes: [UInt8], _ encoding: TextEncoding, from start: Int = 0) -> [UInt32] {
     switch encoding {
-    case .utf8: return textDecodeUTF8(bytes, from: start)
-    case .utf16le: return textDecodeUTF16(bytes, bigEndian: false, from: start)
-    case .utf16be: return textDecodeUTF16(bytes, bigEndian: true, from: start)
-    case .windows1252, .unsupported: return textDecodeWindows1252(bytes, from: start)
+    case .utf8: return charsetDecodeUTF8(bytes, from: start)
+    case .utf16le: return charsetDecodeUTF16(bytes, bigEndian: false, from: start)
+    case .utf16be: return charsetDecodeUTF16(bytes, bigEndian: true, from: start)
+    case .windows1252, .unsupported: return charsetDecodeWindows1252(bytes, from: start)
     }
 }
 
 /// Append one scalar as UTF-8 (surrogates and out-of-range become U+FFFD).
-func textAppendUTF8(_ cp: UInt32, to out: inout [UInt8]) {
+func charsetAppendUTF8(_ cp: UInt32, to out: inout [UInt8]) {
     var c = cp
-    if c > 0x10FFFF || (c >= 0xD800 && c <= 0xDFFF) { c = textReplacement }
+    if c > 0x10FFFF || (c >= 0xD800 && c <= 0xDFFF) { c = charsetReplacement }
     if c < 0x80 { out.append(UInt8(c)) }
     else if c < 0x800 {
         out.append(UInt8(0xC0 | (c >> 6))); out.append(UInt8(0x80 | (c & 0x3F)))
@@ -228,35 +228,35 @@ func textAppendUTF8(_ cp: UInt32, to out: inout [UInt8]) {
     }
 }
 
-func textEncodeUTF8(_ scalars: [UInt32]) -> [UInt8] {
+func charsetEncodeUTF8(_ scalars: [UInt32]) -> [UInt8] {
     var out: [UInt8] = []
     out.reserveCapacity(scalars.count)
-    for s in scalars { textAppendUTF8(s, to: &out) }
+    for s in scalars { charsetAppendUTF8(s, to: &out) }
     return out
 }
 
 /// Decode to well-formed UTF-8 bytes.
-func textDecodeToUTF8(_ bytes: [UInt8], _ encoding: TextEncoding, from start: Int = 0) -> [UInt8] {
-    textEncodeUTF8(textDecode(bytes, encoding, from: start))
+func charsetDecodeToUTF8(_ bytes: [UInt8], _ encoding: TextEncoding, from start: Int = 0) -> [UInt8] {
+    charsetEncodeUTF8(charsetDecode(bytes, encoding, from: start))
 }
 
 // MARK: detection
 
 /// The charset parameter of a Content-Type value ("text/html; charset=UTF-8"),
 /// as a label (not yet looked up).
-func textCharsetFromContentType(_ value: [UInt8]) -> [UInt8]? {
+func charsetFromContentType(_ value: [UInt8]) -> [UInt8]? {
     let n = value.count
     var i = 0
     while i < n && value[i] != 0x3b { i += 1 } // skip the media type
     while i < n {
         i += 1 // past ';'
-        while i < n && textIsASCIIWhitespace(value[i]) { i += 1 }
+        while i < n && charsetIsASCIIWhitespace(value[i]) { i += 1 }
         var name: [UInt8] = []
-        while i < n && value[i] != 0x3d && value[i] != 0x3b { name.append(textLower(value[i])); i += 1 }
+        while i < n && value[i] != 0x3d && value[i] != 0x3b { name.append(charsetLower(value[i])); i += 1 }
         var val: [UInt8] = []
         if i < n && value[i] == 0x3d {
             i += 1
-            while i < n && textIsASCIIWhitespace(value[i]) { i += 1 }
+            while i < n && charsetIsASCIIWhitespace(value[i]) { i += 1 }
             if i < n && value[i] == 0x22 {
                 i += 1
                 while i < n && value[i] != 0x22 {
@@ -269,9 +269,9 @@ func textCharsetFromContentType(_ value: [UInt8]) -> [UInt8]? {
                 while i < n && value[i] != 0x3b { val.append(value[i]); i += 1 }
             }
         }
-        while let l = name.last, textIsASCIIWhitespace(l) { name.removeLast() }
+        while let l = name.last, charsetIsASCIIWhitespace(l) { name.removeLast() }
         if name == Array("charset".utf8) {
-            while let l = val.last, textIsASCIIWhitespace(l) { val.removeLast() }
+            while let l = val.last, charsetIsASCIIWhitespace(l) { val.removeLast() }
             if !val.isEmpty { return val }
         }
     }
@@ -280,19 +280,19 @@ func textCharsetFromContentType(_ value: [UInt8]) -> [UInt8]? {
 
 /// Extract an encoding label from a <meta content="..."> value
 /// ("text/html; charset=utf-8").
-func textCharsetFromMetaContent(_ v: [UInt8]) -> [UInt8]? {
+func charsetFromMetaContent(_ v: [UInt8]) -> [UInt8]? {
     let key = Array("charset".utf8)
     let n = v.count
     var i = 0
     while i + key.count <= n {
         var match = true
-        for k in 0..<key.count where textLower(v[i + k]) != key[k] { match = false; break }
+        for k in 0..<key.count where charsetLower(v[i + k]) != key[k] { match = false; break }
         if !match { i += 1; continue }
         var j = i + key.count
-        while j < n && textIsASCIIWhitespace(v[j]) { j += 1 }
+        while j < n && charsetIsASCIIWhitespace(v[j]) { j += 1 }
         if j >= n || v[j] != 0x3d { i += 1; continue }
         j += 1
-        while j < n && textIsASCIIWhitespace(v[j]) { j += 1 }
+        while j < n && charsetIsASCIIWhitespace(v[j]) { j += 1 }
         if j >= n { return nil }
         var out: [UInt8] = []
         if v[j] == 0x22 || v[j] == 0x27 {
@@ -300,64 +300,64 @@ func textCharsetFromMetaContent(_ v: [UInt8]) -> [UInt8]? {
             while j < n && v[j] != q { out.append(v[j]); j += 1 }
             if j >= n { return nil }
         } else {
-            while j < n && !textIsASCIIWhitespace(v[j]) && v[j] != 0x3b { out.append(v[j]); j += 1 }
+            while j < n && !charsetIsASCIIWhitespace(v[j]) && v[j] != 0x3b { out.append(v[j]); j += 1 }
         }
         return out.isEmpty ? nil : out
     }
     return nil
 }
 
-private func textMatchAt(_ b: [UInt8], _ n: Int, _ i: Int, _ s: String) -> Bool {
+private func charsetMatchAt(_ b: [UInt8], _ n: Int, _ i: Int, _ s: String) -> Bool {
     let u = Array(s.utf8)
     if i < 0 || i + u.count > n { return false }
-    for k in 0..<u.count where textLower(b[i + k]) != u[k] { return false }
+    for k in 0..<u.count where charsetLower(b[i + k]) != u[k] { return false }
     return true
 }
 
-private func textIsAlpha(_ c: UInt8) -> Bool {
+private func charsetIsAlpha(_ c: UInt8) -> Bool {
     (c >= 0x41 && c <= 0x5a) || (c >= 0x61 && c <= 0x7a)
 }
 
 /// One attribute for the prescan ("get an attribute"). Returns nil at the end
 /// of the tag. Names and values are lowercased.
-private func textPrescanAttribute(_ bytes: [UInt8], _ n: Int, _ i: inout Int) -> ([UInt8], [UInt8])? {
-    while i < n && (textIsASCIIWhitespace(bytes[i]) || bytes[i] == 0x2f) { i += 1 }
+private func charsetPrescanAttribute(_ bytes: [UInt8], _ n: Int, _ i: inout Int) -> ([UInt8], [UInt8])? {
+    while i < n && (charsetIsASCIIWhitespace(bytes[i]) || bytes[i] == 0x2f) { i += 1 }
     if i >= n || bytes[i] == 0x3e { return nil }
     var name: [UInt8] = [], value: [UInt8] = []
     while true {
         if i >= n { return (name, value) }
         let c = bytes[i]
         if c == 0x3d && !name.isEmpty { break }
-        if textIsASCIIWhitespace(c) { break }
+        if charsetIsASCIIWhitespace(c) { break }
         if c == 0x2f || c == 0x3e { return (name, value) }
-        name.append(textLower(c)); i += 1
+        name.append(charsetLower(c)); i += 1
     }
-    while i < n && textIsASCIIWhitespace(bytes[i]) { i += 1 }
+    while i < n && charsetIsASCIIWhitespace(bytes[i]) { i += 1 }
     if i >= n || bytes[i] != 0x3d { return (name, value) }
     i += 1
-    while i < n && textIsASCIIWhitespace(bytes[i]) { i += 1 }
+    while i < n && charsetIsASCIIWhitespace(bytes[i]) { i += 1 }
     if i >= n { return (name, value) }
     let c = bytes[i]
     if c == 0x22 || c == 0x27 {
         i += 1
-        while i < n && bytes[i] != c { value.append(textLower(bytes[i])); i += 1 }
+        while i < n && bytes[i] != c { value.append(charsetLower(bytes[i])); i += 1 }
         if i < n { i += 1 }
         return (name, value)
     }
     if c == 0x3e { return (name, value) }
-    while i < n && !textIsASCIIWhitespace(bytes[i]) && bytes[i] != 0x3e {
-        value.append(textLower(bytes[i])); i += 1
+    while i < n && !charsetIsASCIIWhitespace(bytes[i]) && bytes[i] != 0x3e {
+        value.append(charsetLower(bytes[i])); i += 1
     }
     return (name, value)
 }
 
 /// The HTML "prescan a byte stream to determine its encoding" algorithm over
 /// the first 1024 bytes. Returns the encoding found in a <meta>, or nil.
-func textPrescanMeta(_ bytes: [UInt8]) -> TextEncoding? {
+func charsetPrescanMeta(_ bytes: [UInt8]) -> TextEncoding? {
     let n = min(bytes.count, 1024)
     var i = 0
     while i < n {
-        if textMatchAt(bytes, n, i, "<!--") {
+        if charsetMatchAt(bytes, n, i, "<!--") {
             var j = i + 2
             var found = false
             while j + 2 < n {
@@ -368,15 +368,15 @@ func textPrescanMeta(_ bytes: [UInt8]) -> TextEncoding? {
             i = j + 3
             continue
         }
-        if textMatchAt(bytes, n, i, "<meta") && i + 5 < n
-            && (textIsASCIIWhitespace(bytes[i + 5]) || bytes[i + 5] == 0x2f) {
+        if charsetMatchAt(bytes, n, i, "<meta") && i + 5 < n
+            && (charsetIsASCIIWhitespace(bytes[i + 5]) || bytes[i + 5] == 0x2f) {
             i += 5
             var seen: [[UInt8]] = []
             var contentValue: [UInt8]? = nil
             var gotPragma = false
             var needPragma: Bool? = nil
             var charset: TextEncoding? = nil
-            while let (name, value) = textPrescanAttribute(bytes, n, &i) {
+            while let (name, value) = charsetPrescanAttribute(bytes, n, &i) {
                 if seen.contains(name) { continue }
                 seen.append(name)
                 if name == Array("http-equiv".utf8) {
@@ -384,11 +384,11 @@ func textPrescanMeta(_ bytes: [UInt8]) -> TextEncoding? {
                 } else if name == Array("content".utf8) {
                     contentValue = value
                 } else if name == Array("charset".utf8) {
-                    charset = textEncodingForLabel(value); needPragma = false
+                    charset = charsetEncodingForLabel(value); needPragma = false
                 }
             }
             if let cv = contentValue, charset == nil && needPragma == nil {
-                if let lab = textCharsetFromMetaContent(cv), let e = textEncodingForLabel(lab) {
+                if let lab = charsetFromMetaContent(cv), let e = charsetEncodingForLabel(lab) {
                     charset = e; needPragma = true
                 }
             }
@@ -398,11 +398,11 @@ func textPrescanMeta(_ bytes: [UInt8]) -> TextEncoding? {
             return cs
         }
         if i + 1 < n && bytes[i] == 0x3c
-            && (textIsAlpha(bytes[i + 1]) || (bytes[i + 1] == 0x2f && i + 2 < n && textIsAlpha(bytes[i + 2]))) {
+            && (charsetIsAlpha(bytes[i + 1]) || (bytes[i + 1] == 0x2f && i + 2 < n && charsetIsAlpha(bytes[i + 2]))) {
             i += 1
             if bytes[i] == 0x2f { i += 1 }
-            while i < n && !textIsASCIIWhitespace(bytes[i]) && bytes[i] != 0x3e && bytes[i] != 0x2f { i += 1 }
-            while textPrescanAttribute(bytes, n, &i) != nil {}
+            while i < n && !charsetIsASCIIWhitespace(bytes[i]) && bytes[i] != 0x3e && bytes[i] != 0x2f { i += 1 }
+            while charsetPrescanAttribute(bytes, n, &i) != nil {}
             i += 1
             continue
         }
@@ -420,10 +420,10 @@ func textPrescanMeta(_ bytes: [UInt8]) -> TextEncoding? {
 /// the <meta> prescan, then UTF-8. An unknown header label falls through to
 /// the next step. (Note: the HTML spec lets a BOM beat the header; the
 /// roadmap order is header first, which is what this does.)
-func textDetectEncoding(contentType: [UInt8]?, body: [UInt8]) -> TextDetection {
+func charsetDetectEncoding(contentType: [UInt8]?, body: [UInt8]) -> TextDetection {
     let hasUTF8BOM = body.count >= 3 && body[0] == 0xEF && body[1] == 0xBB && body[2] == 0xBF
-    if let ct = contentType, let label = textCharsetFromContentType(ct),
-       let enc = textEncodingForLabel(label) {
+    if let ct = contentType, let label = charsetFromContentType(ct),
+       let enc = charsetEncodingForLabel(label) {
         return TextDetection(encoding: enc, source: .header,
                              bomLength: (enc == .utf8 && hasUTF8BOM) ? 3 : 0)
     }
@@ -434,14 +434,14 @@ func textDetectEncoding(contentType: [UInt8]?, body: [UInt8]) -> TextDetection {
     if body.count >= 2 && body[0] == 0xFE && body[1] == 0xFF {
         return TextDetection(encoding: .utf16be, source: .bom, bomLength: 2)
     }
-    if let e = textPrescanMeta(body) {
+    if let e = charsetPrescanMeta(body) {
         return TextDetection(encoding: e, source: .meta, bomLength: 0)
     }
     return TextDetection(encoding: .utf8, source: .fallback, bomLength: 0)
 }
 
 /// Detect and decode in one step.
-func textDecodeDocument(contentType: [UInt8]?, body: [UInt8]) -> (scalars: [UInt32], detection: TextDetection) {
-    let d = textDetectEncoding(contentType: contentType, body: body)
-    return (textDecode(body, d.encoding, from: d.bomLength), d)
+func charsetDecodeDocument(contentType: [UInt8]?, body: [UInt8]) -> (scalars: [UInt32], detection: TextDetection) {
+    let d = charsetDetectEncoding(contentType: contentType, body: body)
+    return (charsetDecode(body, d.encoding, from: d.bomLength), d)
 }
