@@ -104,7 +104,15 @@ COPYFILE_DISABLE=1 bsdtar --format ustar --no-mac-metadata --no-xattrs --no-ffla
 # 7. Bootable hybrid BIOS/UEFI ISOs. wiffer.iso boots limine.conf's first
 #    entry (the desktop); wiffer-nodesktop.iso is the same plus
 #    `default_entry: 2`: the `nodesktop` cmdline, the Part 2 full-screen shell.
-LIMINE_SHARE="$(brew --prefix limine)/share/limine"
+#    Limine's boot files: Homebrew on macOS; elsewhere, share/limine next to
+#    the `limine` binary's prefix (or set LIMINE_SHARE).
+if [[ -z "${LIMINE_SHARE:-}" ]]; then
+  if command -v brew >/dev/null; then
+    LIMINE_SHARE="$(brew --prefix limine)/share/limine"
+  else
+    LIMINE_SHARE="$(dirname "$(dirname "$(readlink -f "$(command -v limine)")")")/share/limine"
+  fi
+fi
 make_iso() { # <iso path> <default entry>
   local root=build/iso_root
   rm -rf "$root"

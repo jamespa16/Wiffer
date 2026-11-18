@@ -23,11 +23,15 @@ import argparse, os, re, select, socket, struct, subprocess, sys, tempfile, time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ISO = os.path.join(ROOT, "build", "wiffer.iso")  # boots into the desktop
 NODESKTOP_ISO = os.path.join(ROOT, "build", "wiffer-nodesktop.iso")  # cmdline `nodesktop`
-# WIFFER_UEFI=1 boots through OVMF (Homebrew qemu's edk2) instead of SeaBIOS.
+# WIFFER_UEFI=1 boots through OVMF instead of SeaBIOS: WIFFER_OVMF (run.sh sets
+# it), else Homebrew qemu's edk2.
 FIRMWARE = []
 if os.environ.get("WIFFER_UEFI"):
-    _prefix = subprocess.run(["brew", "--prefix", "qemu"], capture_output=True, text=True).stdout.strip()
-    FIRMWARE = ["-drive", f"if=pflash,format=raw,readonly=on,file={_prefix}/share/qemu/edk2-x86_64-code.fd"]
+    _ovmf = os.environ.get("WIFFER_OVMF")
+    if not _ovmf:
+        _prefix = subprocess.run(["brew", "--prefix", "qemu"], capture_output=True, text=True).stdout.strip()
+        _ovmf = f"{_prefix}/share/qemu/edk2-x86_64-code.fd"
+    FIRMWARE = ["-drive", f"if=pflash,format=raw,readonly=on,file={_ovmf}"]
 
 PROMPT = b"> "
 # The prompt is coloured (Phase G): "> " wrapped in SGR escapes.
