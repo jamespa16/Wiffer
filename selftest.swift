@@ -124,6 +124,9 @@ func runSelfTests() -> Never {
     ringThreeTests(&t)
     processTests(&t)
 
+    // Phase 6E: fds, pipes, console, wait, the ported programs.
+    fileTests(&t)
+
     puts("selftest: "); printDec(UInt64(t.passed)); puts(" passed, ")
     printDec(UInt64(t.failed)); puts(" failed\n")
     qemuExit(t.failed == 0 ? 0 : 1)

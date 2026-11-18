@@ -124,6 +124,13 @@ def boot_timeout(timeout: float) -> float:
 SGR = rb"(?:\x1b\[[0-9;]*m)*"
 PROMPT_RE = re.compile(rb"(?:\n|\x1b\[H)" + SGR + rb"> " + SGR)
 
+def _readme_wc():
+    data = open(os.path.join(ROOT, "rootfs", "README"), "rb").read()
+    lines, words = data.count(b"\n"), len(data.split())
+    return f"{lines} {words} {len(data)}"
+
+README_WC = _readme_wc()  # what /bin/wc prints for /README
+
 # (input, substring expected in the output that follows it)
 CHECKS = [
     ("help", "echo <text>"),
@@ -208,6 +215,25 @@ CHECKS = [
     ("nosuchprog", "unknown command: nosuchprog"),
     ("help", "ps              list processes"),
     ("kill 9999", "kill: no such process: 9999"),
+    # Phase 6E: the ported commands give the built-ins' output.
+    ("/bin/ls /src", "  hello.swift\r\n"),
+    ("/bin/ls /", "  README\r\n"),
+    ("/bin/ls /nosuch", "ls: /nosuch: no such file or directory"),
+    ("/bin/cat /src/hello.swift", "struct Greeter {"),
+    ("/bin/cat /moved", "cat: /moved: no such file or directory"),
+    ("/bin/echo hello world", "hello world"),
+    ("/bin/wc /README", f"{README_WC} /README"),
+    ("/bin/hexdump /motd", "00000000  57 65 6c 63 6f 6d 65 20  74 6f 20 57 69 66 66 65  |Welcome to Wiffe|"),
+    # Pipelines: every stage is a program (a bare name is /bin/<name>).
+    ("/bin/cat /README | /bin/wc", f"\r\n{README_WC}\r\n"),
+    ("cat /README | wc", f"\r\n{README_WC}\r\n"),
+    ("cat /README | cat | cat | wc", f"\r\n{README_WC}\r\n"),
+    ("cat /README | hexdump", "|Wiffer RAM files|"),
+    ("cat /README | nosuchprog", "nosuchprog: command not found"),
+    ("cat /README |", "syntax error: empty command in pipeline"),
+    ("/bin/iotest", " 0 failed"),
+    ("/bin/iotest /disk", " 0 failed"),
+    ("echo after the programs", "\r\nafter the programs\r\n"),
 ]
 
 MOUSE_RE = re.compile(r"mouse: x=(\d+) y=(\d+) buttons=(\d+)")
@@ -737,6 +763,7 @@ def main():
 
         failures += smp_checks(s, opts.timeout)
         failures += process_checks(s, opts.timeout)
+        failures += program_io_checks(s, opts.timeout, "6E")
         failures += net_checks(s, opts.timeout)
 
         # fault <kind>: a report, then QEMU exits via isa-debug-exit.
@@ -1084,6 +1111,64 @@ def process_checks(s: Session, timeout: float) -> int:
     check(gone, "6C: kill stops it (gone from ps)", repr(got))
     got = s.command("hello", timeout)
     check("Hello from ring 3!" in got, "6C: the shell still runs programs after kill", repr(got))
+    return failures
+
+
+def program_io_checks(s: Session, timeout: float, where: str) -> int:
+    """Phase 6E: programs reading the terminal (cooked lines, Ctrl-D), a
+    pipeline waiting on it, and Ctrl-C killing a `spin` (on CPU 1: until 6D
+    nothing interrupts a ring-3 spin on CPU 0), typed over serial."""
+    failures = 0
+    def check(ok, label, detail=""):
+        nonlocal failures
+        failures += not ok
+        print(f"{'PASS' if ok else 'FAIL'}: {where}: {label}" + ("" if ok else f"\n  {detail}"))
+        return ok
+    def ctrl(ch: int):
+        s.p.stdin.write(bytes([ch]))
+        s.p.stdin.flush()
+    # /bin/cat reads the terminal: the line is echoed, then cat prints it.
+    s.send("/bin/cat")
+    time.sleep(0.3)
+    s.send("typed line")
+    time.sleep(0.3)
+    ctrl(0x04)  # Ctrl-D on an empty line: end of file
+    got = s.read_prompt(timeout).decode(errors="replace")
+    check("typed line\r\ntyped line\r\n" in got, "cat reads a cooked line from the terminal", repr(got))
+    # Backspace edits the line.
+    s.send("/bin/cat")
+    time.sleep(0.3)
+    s.p.stdin.write(b"abx\x7fc\r")
+    s.p.stdin.flush()
+    time.sleep(0.3)
+    ctrl(0x04)
+    got = s.read_prompt(timeout).decode(errors="replace")
+    check("abc\r\n" in got.replace("abx\x08 \x08c", "abc"), "Backspace edits the line before cat sees it", repr(got))
+    # A pipeline whose first stage reads the terminal.
+    s.send("/bin/cat | /bin/wc")
+    time.sleep(0.3)
+    s.send("one two")
+    time.sleep(0.3)
+    ctrl(0x04)
+    got = s.read_prompt(timeout).decode(errors="replace")
+    check("\r\n1 2 8\r\n" in got, "cat | wc ends on Ctrl-D and counts the line", repr(got))
+    if int(SMP) >= 2:
+        s.command("set affinity 1", timeout)
+        s.send("spin")
+        time.sleep(0.5)
+        ctrl(0x03)
+        got = s.read_prompt(timeout).decode(errors="replace")
+        check("^C" in got and "(spin): killed" in got, "Ctrl-C kills a running spin", repr(got))
+        s.send("/bin/cat | /bin/spin")
+        time.sleep(0.5)
+        ctrl(0x03)
+        got = s.read_prompt(timeout).decode(errors="replace")
+        check("^C" in got and "(spin): killed" in got, "Ctrl-C kills a whole pipeline", repr(got))
+        s.command("set affinity -1", timeout)
+    got = s.command("echo shell is back", timeout)
+    check("\r\nshell is back\r\n" in got, "the shell carries on", repr(got))
+    got = s.command("ps", timeout)
+    check(len(re.findall(r"^\s*\d+\s+\d+\s", got, re.M)) == 0, "no processes left", repr(got))
     return failures
 
 
@@ -1560,6 +1645,10 @@ def terminal_checks(s: Session, timeout: float) -> int:
     got = s.command("open log")
     wins, _ = s.windows()
     check("open log: #6" in got and wins.get(6, (0,) * 6)[5] == "Log", "open log shows the kernel log", repr(got))
+    # Phase 6E: programs and pipelines in a terminal window (serial follows #5).
+    got = s.command("/bin/cat /README | /bin/wc")
+    check(f"\r\n{README_WC}\r\n" in got, "/bin/cat /README | /bin/wc works in a terminal window", repr(got))
+    failures += program_io_checks(s, timeout, "terminal window")
     return failures
 
 

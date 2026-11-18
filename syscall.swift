@@ -59,7 +59,7 @@ public func syscallDispatch(_ f: UnsafeMutablePointer<interrupt_frame>) -> UInt6
     let e = thisCPU()
     e.pointee.syscalls &+= 1
     e.pointee.inSyscall = 1
-    let result = handleSyscall(f.pointee.rax, f.pointee.rdi, f.pointee.rsi, f.pointee.rdx, f.pointee.r10)
+    let result = handleSyscall(f.pointee.rax, f.pointee.rdi, f.pointee.rsi, f.pointee.rdx, f.pointee.r10, f.pointee.r8)
     thisCPU().pointee.inSyscall = 0 // (maybe another CPU by now)
     f.pointee.rax = UInt64(bitPattern: Int64(result))
     if f.pointee.rip >= UInt64(userSpaceEnd) { markLeaving(.killed) } // can't happen: be safe
@@ -69,7 +69,7 @@ public func syscallDispatch(_ f: UnsafeMutablePointer<interrupt_frame>) -> UInt6
 /// -errno as a result.
 @inline(__always) func fail(_ errno: Int) -> Int { -errno }
 
-func handleSyscall(_ n: UInt64, _ a1: UInt64, _ a2: UInt64, _ a3: UInt64, _ a4: UInt64) -> Int {
+func handleSyscall(_ n: UInt64, _ a1: UInt64, _ a2: UInt64, _ a3: UInt64, _ a4: UInt64, _ a5: UInt64 = 0) -> Int {
     guard let p = currentProcess() else { return fail(Errno.ENOSYS) }
     switch n {
     case SyscallNumber.exit:
@@ -82,8 +82,27 @@ func handleSyscall(_ n: UInt64, _ a1: UInt64, _ a2: UInt64, _ a3: UInt64, _ a4: 
         return sysDebugWrite(p, a1, a2)
     case SyscallNumber.getpid:
         return p.pid
-    case SyscallNumber.write:
-        return sysWrite(p, a1, a2, a3)
+    // Phase 6E: files, pipes, wait, processes (sysfile.swift).
+    case SyscallNumber.spawn: return sysSpawn(p, a1, a2, a3, a4, a5)
+    case SyscallNumber.waitpid: return sysWaitpid(p, a1, a2, a3)
+    case SyscallNumber.kill: return sysKill(p, a1)
+    case SyscallNumber.open: return sysOpen(p, a1, a2, a3)
+    case SyscallNumber.close: return sysClose(p, a1)
+    case SyscallNumber.read: return sysRead(p, a1, a2, a3)
+    case SyscallNumber.write: return sysWrite(p, a1, a2, a3)
+    case SyscallNumber.seek: return sysSeek(p, a1, a2, a3)
+    case SyscallNumber.stat: return sysStat(p, a1, a2, a3)
+    case SyscallNumber.fstat: return sysFstat(p, a1, a2)
+    case SyscallNumber.readdir: return sysReaddir(p, a1, a2, a3)
+    case SyscallNumber.mkdir: return sysMkdir(p, a1, a2)
+    case SyscallNumber.unlink: return sysUnlink(p, a1, a2)
+    case SyscallNumber.rename: return sysRename(p, a1, a2, a3, a4)
+    case SyscallNumber.getcwd: return sysGetcwd(p, a1, a2)
+    case SyscallNumber.chdir: return sysChdir(p, a1, a2)
+    case SyscallNumber.dup2: return sysDup2(p, a1, a2)
+    case SyscallNumber.pipe: return sysPipe(p, a1)
+    case SyscallNumber.wait: return sysWait(p, a1, a2, a3)
+    case SyscallNumber.consoleMode: return sysConsoleMode(p, a1, a2)
     case SyscallNumber.map:
         return p.mapAnonymous(hint: UInt(a1), length: a2, prot: a3)
     case SyscallNumber.unmap:
@@ -110,22 +129,6 @@ func sysDebugWrite(_ p: Process, _ buf: UInt64, _ len: UInt64) -> Int {
     stdoutLock.release()
     p.noteDebug(bytes)
     return bytes.count
-}
-
-/// write(fd, buf, len): fds 1 and 2 go to the process's output (6C; 6E
-/// replaces this with real file descriptors).
-func sysWrite(_ p: Process, _ fd: UInt64, _ buf: UInt64, _ len: UInt64) -> Int {
-    guard fd == 1 || fd == 2 else { return fail(Errno.EBADF) }
-    guard len <= 1 << 30 else { return fail(Errno.EINVAL) }
-    var done = 0
-    while done < Int(len) {
-        let n = min(Int(len) - done, 4096)
-        guard let bytes = copyIn(buf + UInt64(done), n) else { return done > 0 ? done : fail(Errno.EFAULT) }
-        p.emit(bytes)
-        done += n
-        if p.killRequested { break }
-    }
-    return done
 }
 
 /// Selftests: wait with interrupts on until `count` interrupts have hit

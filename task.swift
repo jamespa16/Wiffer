@@ -712,6 +712,7 @@ func runMainLoop(_ route: (Event) -> Void) -> Never {
     scheduler.start()
     while true {
         pollEvents()
+        wakeDueDeadlines() // Phase 6E4: timed waits (deadline.swift)
         while let event = events.next() { route(event) }
         if scheduler.hasReady {
             // Busy (e.g. CPU 0 running a share of `par`): still redraw,

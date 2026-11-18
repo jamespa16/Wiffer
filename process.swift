@@ -17,9 +17,11 @@
 //   zombie (waitProcess). A zombie with parent 0 and no waiter is reaped at
 //   once; a process's children are reparented to 0 when it exits (and
 //   reaped if already zombies). 6E adds waitpid for processes.
-// - Output (6C): fds 1 and 2 write to a ProcessOutput the waiter drains
-//   (the shell copies it to its terminal). With no output, writes go to the
-//   kernel log. 6E replaces this with file descriptors.
+// - Console and fds (6E): fds 0-2 are a ConsoleFile over the ConsoleChannel
+//   the waiting shell pumps (see fileobject.swift and waitProcesses); a
+//   process with no channel (a background job) logs to the kernel log.
+//   processLeave closes every fd. A process spawned by another (the spawn
+//   syscall) has its parent's thread as waiter and is reaped by waitpid.
 // - kill sets killRequested and kicks the thread: unparks it if it's
 //   blocked, or IPIs the CPU it runs on, so the next return to ring 3
 //   leaves instead (userLeavePoint). A process spinning in ring 3 on CPU 0
@@ -36,53 +38,8 @@ enum ExitStatus: Equatable {
 
 enum ProcessState: Equatable { case running, zombie }
 
-/// All ProcessOutput buffers (a short critical section: append or take).
+/// All ConsoleChannel buffers (a short critical section: append or take).
 var outputLock = SpinLock()
-
-/// Bytes written by a process to fds 1 and 2, drained by its waiter.
-/// A writer blocks while `cap` bytes are waiting.
-final class ProcessOutput {
-    static let cap = 64 * 1024
-    var bytes: [UInt8] = []
-    /// Unparked when bytes arrive (the shell waiting on the process).
-    var reader: Task?
-    /// A writer parked because the buffer was full.
-    var blockedWriter: Task?
-
-    init(reader: Task?) { self.reader = reader }
-
-    /// Append (any CPU, task context), blocking while the buffer is full.
-    func write(_ data: [UInt8], killed: () -> Bool) {
-        while true {
-            let flags = outputLock.acquireIRQ()
-            if bytes.count < ProcessOutput.cap || reader == nil {
-                if reader != nil { bytes.append(contentsOf: data) }
-                let r = reader
-                outputLock.releaseIRQ(flags)
-                if let r { unpark(r) }
-                return
-            }
-            blockedWriter = scheduler.current
-            let r = reader
-            outputLock.releaseIRQ(flags)
-            if let r { unpark(r) }
-            park()
-            if killed() { return }
-        }
-    }
-
-    /// Everything written so far (the reader).
-    func take() -> [UInt8] {
-        let flags = outputLock.acquireIRQ()
-        let out = bytes
-        bytes = []
-        let w = blockedWriter
-        blockedWriter = nil
-        outputLock.releaseIRQ(flags)
-        if let w { unpark(w) }
-        return out
-    }
-}
 
 final class Process {
     let pid: Int
@@ -98,7 +55,12 @@ final class Process {
     var regions: [MemoryRegion] = []
     /// Its thread, until it leaves.
     var thread: Task?
-    var output: ProcessOutput?
+    /// The console of the command line it belongs to (6E): its fds 0-2 by
+    /// default, and where a fault report goes. Nil: the kernel log.
+    var output: ConsoleChannel?
+    /// 6E1: open files, and the working directory (absolute).
+    var fds = FdTable()
+    var cwd = "/"
     /// Kernel task to unpark at exit (it will reap).
     var waiter: Task?
     var killRequested = false
@@ -122,15 +84,6 @@ final class Process {
     /// return to the stub.
     func exit(_ s: ExitStatus) {
         if status == nil { status = s }
-    }
-
-    func emit(_ bytes: [UInt8]) {
-        if let out = output {
-            out.write(bytes) { self.killRequested }
-        } else {
-            let text = String(decoding: bytes, as: UTF8.self)
-            onCPU0 { printRaw(text) }
-        }
     }
 
     func noteDebug(_ bytes: [UInt8]) {
@@ -265,21 +218,22 @@ func printRaw(_ text: String) {
 /// Start `path` (resolved against `cwd`, from the VFS: rootfs or /disk)
 /// with `argv` (argv[0] included). The process is running when this
 /// returns. `waiter` (usually the caller) will reap it.
-func spawnProcess(path: String, cwd: String = "/", argv: [String], output: ProcessOutput?, waiter: Task?,
-                  affinity: Affinity = .any) throws(ExecError) -> Process {
+func spawnProcess(path: String, cwd: String = "/", argv: [String], output: ConsoleChannel?, waiter: Task?,
+                  affinity: Affinity = .any, stdio: [FileObject?]? = nil) throws(ExecError) -> Process {
     guard let file = onCPU0({ () -> [UInt8]? in try? vfs.read(path, cwd: cwd) }) else { throw .notFound }
     guard let space = AddressSpace() else { throw .noMemory }
     let image = try loadELF(file, into: space)
     let sp = try buildInitialStack(space, argv: argv, image: image)
     let name = String(FileSystem.components(path, cwd: cwd).last ?? path)
     return try startProcess(name: name, space: space, regions: image.regions, entry: image.entry, stack: sp,
-                            output: output, waiter: waiter, affinity: affinity)
+                            output: output, waiter: waiter, affinity: affinity, cwd: FileSystem.normalize(cwd),
+                            stdio: stdio)
 }
 
 /// Selftests (6B): run `code` (a few hand-assembled bytes) at
 /// UserLayout.imageBase (read + exec), with `data` at imageBase + 4 KiB
 /// (read + write) and a normal stack.
-func spawnBlob(_ name: String, code: [UInt8], data: [UInt8] = [], output: ProcessOutput?, waiter: Task?,
+func spawnBlob(_ name: String, code: [UInt8], data: [UInt8] = [], output: ConsoleChannel?, waiter: Task?,
                affinity: Affinity = .any) throws(ExecError) -> Process {
     guard let space = AddressSpace() else { throw .noMemory }
     let base = UInt(UserLayout.imageBase)
@@ -299,7 +253,8 @@ func spawnBlob(_ name: String, code: [UInt8], data: [UInt8] = [], output: Proces
 }
 
 func startProcess(name: String, space: AddressSpace, regions: [MemoryRegion], entry: UInt64, stack: UInt64,
-                  output: ProcessOutput?, waiter: Task?, affinity: Affinity) throws(ExecError) -> Process {
+                  output: ConsoleChannel?, waiter: Task?, affinity: Affinity, cwd: String = "/",
+                  stdio: [FileObject?]? = nil) throws(ExecError) -> Process {
     let stackRegion = MemoryRegion(start: UInt(UserLayout.stackTop - UserLayout.stackSize),
                                    end: UInt(UserLayout.stackTop), prot: MapProt.read | MapProt.write)
     let parentPID = currentProcess()?.pid ?? 0
@@ -317,11 +272,21 @@ func startProcess(name: String, space: AddressSpace, regions: [MemoryRegion], en
     p.initialStack = stack
     p.output = output
     p.waiter = waiter
+    p.cwd = cwd
+    // fds 0-2: the given objects, else the console (EOF in, log out if it
+    // has no pump), else the kernel-log console.
+    if let stdio {
+        for (i, o) in stdio.enumerated() { if let o { _ = p.fds.set(i, o) } }
+    } else {
+        let console = ConsoleFile(output ?? ConsoleChannel(reader: nil))
+        for i in 0..<3 { _ = p.fds.set(i, console) }
+    }
     let thread = spawn(name, affinity: affinity, setup: { t in
         t.process = p
         p.thread = t
     }, { processMain() })
     guard thread != nil else {
+        p.fds.closeAll()
         p.space = nil
         onCPU0 { p.state = .zombie; reap(p) }
         throw .noMemory
@@ -364,6 +329,7 @@ func processLeave() {
     p.exitCPU = currentCPU()
     p.regions = []
     p.space = nil // frees its page tables and frames
+    p.fds.closeAll() // pipes see their end go; written files reach the disk
     if let r = p.report {
         if let out = p.output {
             out.write(Array((r + "\n").utf8)) { false }
@@ -376,6 +342,7 @@ func processLeave() {
         for c in p.children {
             guard let child = findProcess(c) else { continue }
             child.parent = 0
+            if child.waiter === me { child.waiter = nil } // this process was its waiter (waitpid)
             if child.state == .zombie && child.waiter == nil { reap(child) }
         }
         p.children = []
@@ -391,24 +358,48 @@ func processLeave() {
 
 // MARK: Waiting and killing
 
-/// Block until `p` exits, copying its output to `sink` as it arrives; then
-/// reap it. The caller must be p's waiter, on CPU 0. `interrupt` is polled
-/// on every wakeup: true kills the process (Ctrl-C).
-func waitProcess(_ p: Process, sink: ([UInt8]) -> Void = { _ in }, interrupt: () -> Bool = { false }) -> ExitStatus {
+/// Block until every process of a command line has exited, then reap them
+/// (the caller must be their waiter, on CPU 0). This is the console's pump:
+/// on every wakeup it copies the console's output to `sink`, feeds the keys
+/// `keys()` returns (and whether the window closed) to the console's line
+/// discipline, echoing through `sink`, and kills the processes on Ctrl-C
+/// or a close. The console is detached at the end.
+func waitProcesses(_ procs: [Process], console: ConsoleChannel?, sink: ([UInt8]) -> Void = { _ in },
+                   keys: () -> (keys: [KeyEvent], closed: Bool) = { ([], false) }) -> [ExitStatus] {
     while true {
-        let zombie = p.state == .zombie // before the last take: nothing comes after
-        if let out = p.output {
-            let bytes = out.take()
+        var done = true
+        for p in procs where p.state != .zombie { done = false } // before the last take: nothing comes after
+        if let console {
+            let bytes = console.take()
             if !bytes.isEmpty { sink(bytes) }
         }
-        if zombie { break }
-        if interrupt() { killProcess(p.pid) }
+        if done { break }
+        let (typed, closed) = keys()
+        var interrupt = closed
+        for k in typed {
+            guard let console else { break }
+            let r = console.feed(k)
+            if !r.echo.isEmpty { sink(r.echo) }
+            if r.interrupt { interrupt = true }
+        }
+        if interrupt { for p in procs { killProcess(p.pid) } }
         park()
     }
-    reap(p)
-    p.waiter = nil
-    p.output = nil
-    return p.status ?? .killed
+    var out: [ExitStatus] = []
+    for p in procs {
+        reap(p)
+        p.waiter = nil
+        p.output = nil
+        out.append(p.status ?? .killed)
+    }
+    console?.detach()
+    return out
+}
+
+/// One process, with `interrupt` polled on every wakeup (true kills it).
+func waitProcess(_ p: Process, sink: ([UInt8]) -> Void = { _ in }, interrupt: () -> Bool = { false }) -> ExitStatus {
+    let statuses = waitProcesses([p], console: p.output, sink: sink, keys: { ([], interrupt()) })
+    return statuses[0]
 }
 
 /// Ask a process to exit. False if there's no such running process. CPU 0.
