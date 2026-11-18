@@ -83,10 +83,13 @@ func hammerTest(_ t: inout SelfTest) {
     t.check("sched: hammer tasks freed", allFreed)
     t.check("sched: heap live count back to baseline", HeapUsage() == base)
     t.check("sched: hammer stacks returned", pmm.freeFrames == frames)
+    // The shell's task waits by yielding, so CPU 0 is busy and (soft
+    // affinity) doesn't adopt them: they spread over the APs.
     if cpus == 1 {
         t.check("sched: one CPU: all .any work ran on CPU 0", hammerCPUs == 1)
     } else {
-        t.check("sched: hammer tasks ran on more than one CPU", popCount(hammerCPUs) >= 2)
+        t.check("sched: hammer tasks ran on the APs", hammerCPUs & ~1 != 0)
+        if cpus >= 3 { t.check("sched: hammer tasks ran on more than one CPU", popCount(hammerCPUs) >= 2) }
     }
     print("  sched: hammer \(elapsed * 1000 / timerHz) ms on CPUs mask \(hammerCPUs), lock contended \(hammerLock.contended)x")
 }
@@ -96,7 +99,11 @@ func anyPingPongTest(_ t: inout SelfTest) {
     let cpus = onlineCPUCount()
     let base = HeapUsage(), frames = pmm.freeFrames
     let freed = withUnsafeMutablePointer(to: &tasksFreed) { atomicLoad($0) }
+    // Homes would keep both tasks put; without them every wait may resume on
+    // another CPU, which is what this test is for (the onCPU handoff).
+    softAffinity = false
     let r = runPingPong(10_000, affinity: .any)
+    softAffinity = true
     let allFreed = waitTasksFreed(since: freed, 2)
     t.check("sched: .any ping-pong 10,000 messages finished", r.finished && r.rounds == 10_000 && r.bothRan)
     t.check("sched: .any ping-pong replies all right", r.errors == 0 && r.sumsOK)
@@ -110,6 +117,38 @@ func anyPingPongTest(_ t: inout SelfTest) {
         if cpus == 1 { t.check("sched: one CPU: ping-pong ran on CPU 0", r.pingCPUs | r.pongCPUs == 1) }
     }
     print("  sched: .any ping-pong CPUs ping \(r.pingCPUs) pong \(r.pongCPUs), \(r.migrations) migrations")
+}
+
+/// CPU mask the lone soft-affinity task was seen on (atomic).
+var homeCPUs: UInt64 = 0
+var homeDone: UInt64 = 0
+
+/// Soft affinity: a lone `.any` task that yields 2,000 times, with every
+/// other CPU free to take it, stays on the CPU it started on.
+@inline(never)
+func softAffinityTest(_ t: inout SelfTest) {
+    homeCPUs = 0
+    homeDone = 0
+    let freed = withUnsafeMutablePointer(to: &tasksFreed) { atomicLoad($0) }
+    // Keep no reference to the Task: waitTasksFreed waits for its deinit.
+    let spawned = spawn("home", affinity: .any) {
+        for _ in 0..<2000 {
+            markCPU(&homeCPUs)
+            yield()
+        }
+        markCPU(&homeCPUs)
+        _ = withUnsafeMutablePointer(to: &homeDone) { atomic_fetch_add64($0, 1) }
+    } != nil
+    let deadline = ticks + 20 * timerHz
+    while withUnsafeMutablePointer(to: &homeDone, { atomicLoad($0) }) == 0 && ticks < deadline { yield() }
+    let allFreed = waitTasksFreed(since: freed, 1)
+    t.check("sched: soft affinity: a yielding .any task finished and was freed",
+            spawned && homeDone == 1 && allFreed)
+    t.check("sched: soft affinity: it stayed on one CPU", popCount(homeCPUs) == 1)
+    if onlineCPUCount() >= 2 {
+        t.check("sched: soft affinity: on an AP, not the desktop's CPU 0", homeCPUs & 1 == 0)
+    }
+    if popCount(homeCPUs) != 1 { print("  sched: lone task CPU mask \(homeCPUs)") }
 }
 
 /// CPU mask the pinned task was seen on (atomic).
@@ -163,5 +202,6 @@ func schedTests(_ t: inout SelfTest) {
     t.check("sched: idle APs run their idle task", idleOK)
     hammerTest(&t)
     anyPingPongTest(&t)
+    softAffinityTest(&t)
     pinnedTest(&t)
 }

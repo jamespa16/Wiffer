@@ -224,6 +224,15 @@ func wmScenario(_ t: inout SelfTest, _ font: PSFFont) {
 
     // K4: taskbar buttons.
     guard let tb = wm.taskbar else { return }
+    // Phase T: CPU usage meters (rows lit per percentage, redraw on change).
+    let rows = Taskbar.meterRows
+    t.check("wm: CPU meter levels (idle, any use, half, full)",
+            Taskbar.level(0) == 0 && Taskbar.level(1) == 1 && Taskbar.level(50) == rows / 2
+                && Taskbar.level(100) == rows && Taskbar.level(250) == rows)
+    let first = tb.setCPUs(count: 2, usage: [100, 0])
+    t.check("wm: CPU meters change only when a level does",
+            tb.setCPUs(count: 2, usage: [100, 0]) == false && tb.setCPUs(count: 2, usage: [100, 1])
+                && tb.cpuLevels == [rows, 1] && (first || tb.cpuCount == 2))
     let b2 = TestWindow("B2", 160, 80, color: 0xB2)
     wm.add(b2, at: Point(300, 150))
     var opened = 0, edited = 0

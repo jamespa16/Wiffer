@@ -124,7 +124,7 @@ func handleIRQ(_ irq: UInt8) {
         return
     }
     switch irq {
-    case 0: ticks &+= 1; watchdogTick()
+    case 0: ticks &+= 1; cpuUsageTick(); watchdogTick()
     case 1: keyboardIRQ()
     case 12: mouseIRQ()
     default: break

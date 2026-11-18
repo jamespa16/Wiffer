@@ -136,14 +136,22 @@ func pollEvents() {
     }
 }
 
-/// Nothing to do: refresh the status bar, show pending console output (and
-/// echo), and sleep until the next interrupt (the timer bounds the wake-up
-/// latency for the polled UART).
-func idleStep() {
+/// The screen side of the main loop: refresh the status bar (when due) and
+/// show pending console output. Called from idleStep, and at most once per
+/// timer tick while tasks keep CPU 0 busy (runMainLoop), so the desktop
+/// doesn't freeze while CPU 0 runs compute work.
+func refreshStep() {
     let statusDue = statusNextTick
     statusBarRefresh()
     if statusNextTick != statusDue { watchdogStatus() } // the status bar was redrawn
     consoleFlush()
+}
+
+/// Nothing to do: refresh the status bar, show pending console output (and
+/// echo), and sleep until the next interrupt (the timer bounds the wake-up
+/// latency for the polled UART).
+func idleStep() {
+    refreshStep()
     if interruptsEnabled { // hlt with IF=0 would never wake
         // Phase S: let other CPUs' wakeups IPI us rather than wait for the
         // PIT. Not race-free (the PIT still bounds the latency), and harmless.

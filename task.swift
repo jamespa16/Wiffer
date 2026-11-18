@@ -85,8 +85,11 @@ final class Task {
     var body: (() -> Void)?
     /// Times this task was switched in.
     var runs = 0
-    /// CPU it was last switched in on.
+    /// CPU it was last switched in on: its home, which it goes back to when
+    /// that CPU is free (soft affinity; see takeRunnable). -1: never ran.
     var lastCPU = -1
+    /// `ticks` when it last entered the run queue.
+    var readySince: UInt64 = 0
 
     var isMain: Bool { id == 0 }
     var stackTop: UInt { stackBottom + UInt(stackFrames * frameSize) }
@@ -130,7 +133,7 @@ final class Task {
         inbox.post(event)
         if state == .blocked {
             state = .ready
-            scheduler.runQueue.append(self)
+            enqueue(self)
             wakeIdleCPU(for: self)
         }
         schedLock.releaseIRQ(flags)
@@ -215,12 +218,13 @@ final class Scheduler {
     /// This CPU's zombies (a copy).
     var zombies: [Task] { thisSched()?.zombies ?? [] }
 
-    /// A task this CPU may run is waiting in the run queue.
+    /// A task this CPU would take now is waiting in the run queue (as its
+    /// idle context would: see takeRunnable).
     var hasReady: Bool {
         let cpu = currentCPU()
         let flags = schedLock.acquireIRQ()
         defer { schedLock.releaseIRQ(flags) }
-        return runQueue.contains { $0.affinity.allows(cpu) }
+        return runnableIndex(cpu, stealing: true) != nil
     }
 
     /// Tasks not yet finished (task 0 included).
@@ -267,18 +271,31 @@ func wakeIdleCPU(for task: Task) {
     let me = cpuIndex()
     let idle = withUnsafeMutablePointer(to: &idleCPUMask) { atomic_load64($0) }
     let allowed = idle & task.affinity.mask & ~(1 << me)
-    // Prefer an idle AP; CPU 0 (the desktop) only if it's the only choice.
+    guard allowed != 0, x2apicEnabled else { return }
+    func wake(_ cpu: Int) {
+        _ = withUnsafeMutablePointer(to: &idleCPUMask) { atomic_fetch_and64($0, ~(1 << UInt64(cpu))) }
+        sendIPI(apicID: UInt32(perCPUEntry(cpu).pointee.apicID), vector: Vector.reschedule)
+    }
+    // Its home CPU first, if that one is idle (soft affinity).
+    let home = task.lastCPU
+    if softAffinity && home >= 0 && home < 64 && allowed & (1 << UInt64(home)) != 0 { wake(home); return }
+    // Else spread: prefer an idle AP; CPU 0 (the desktop) only if it's the
+    // only choice.
     let candidates = allowed & ~1 != 0 ? allowed & ~1 : allowed
-    guard candidates != 0, x2apicEnabled else { return }
     let n = max(smpStarted, 1)
     for k in 0..<n {
         let cpu = (wakeCursor + 1 + k) % n
         guard candidates & (1 << UInt64(cpu)) != 0 else { continue }
         wakeCursor = cpu
-        _ = withUnsafeMutablePointer(to: &idleCPUMask) { atomic_fetch_and64($0, ~(1 << UInt64(cpu))) }
-        sendIPI(apicID: UInt32(perCPUEntry(cpu).pointee.apicID), vector: Vector.reschedule)
+        wake(cpu)
         return
     }
+}
+
+/// Put a ready task at the back of the run queue. Under schedLock.
+func enqueue(_ task: Task) {
+    task.readySince = ticks
+    scheduler.runQueue.append(task)
 }
 
 func setIdle(_ on: Bool) {
@@ -306,7 +323,7 @@ func spawn(_ name: String, affinity: Affinity = .cpu(0), stackSize: Int = Task.d
         task.id = scheduler.nextID
         scheduler.nextID += 1
         scheduler.all.append(task)
-        scheduler.runQueue.append(task)
+        enqueue(task)
         wakeIdleCPU(for: task)
     }
     return task
@@ -361,10 +378,71 @@ func switchStacks(_ save: UnsafeMutablePointer<UInt64>, _ load: UnsafeMutablePoi
     context_switch(save, atomic_load64(load), save + 1)
 }
 
-/// The first task in the run queue that CPU `cpu` may run, removed. Under
-/// schedLock.
-func takeRunnable(_ cpu: Int) -> Task? {
-    guard let i = scheduler.runQueue.firstIndex(where: { $0.affinity.allows(cpu) }) else { return nil }
+// MARK: Soft affinity
+//
+// A task goes back to the CPU it last ran on (its home) when it can, so it
+// isn't bounced between CPUs. Only a CPU with nothing else to do (its idle
+// context: an AP's idle task, CPU 0's main task, or a task that is
+// blocking or exiting) takes another CPU's task, and only if:
+// - the task never ran (no home), on an AP; or
+// - its home is busy running something else; or
+// - it has waited stealDelayTicks in the queue (its home didn't come).
+// CPU 0 runs the desktop, so it takes a task homed elsewhere (or a new one)
+// only after that delay, or when no AP may run it: APs get first claim.
+// A busy CPU that yields picks only tasks homed on it, so CPUs that each
+// have work don't trade tasks back and forth.
+
+/// Queue time after which any CPU allowed to may take a task (2 ticks: at
+/// least 10 ms).
+let stealDelayTicks: UInt64 = 2
+
+/// Off: every CPU takes the first task it may run, and wakeups ignore the
+/// home CPU (the Phase S behaviour). The .any ping-pong selftest turns it
+/// off to keep stressing cross-CPU handoff, which homes otherwise avoid.
+var softAffinity = true
+
+/// Online CPUs, as a mask.
+func onlineCPUMask() -> UInt64 {
+    var mask: UInt64 = 0
+    for i in 0..<max(smpStarted, 1) where perCPUEntry(i).pointee.online { mask |= 1 << UInt64(i) }
+    return mask == 0 ? 1 : mask
+}
+
+/// `cpu` is `task`'s home: it last ran there, or it may run nowhere else.
+func isHome(_ task: Task, _ cpu: Int, online: UInt64) -> Bool {
+    task.lastCPU == cpu || task.affinity.mask & online == 1 << UInt64(cpu)
+}
+
+/// CPU `cpu`, in its idle context, may take `task` (not homed on it) now.
+func mayAdopt(_ task: Task, _ cpu: Int, online: UInt64, now: UInt64) -> Bool {
+    if now &- task.readySince >= stealDelayTicks { return true }
+    if cpu == 0 { return task.affinity.mask & online & ~1 == 0 } // no AP may run it
+    let home = task.lastCPU
+    guard home >= 0 && home < 64 else { return true } // never ran: any AP may start it
+    return perCPUEntry(home).pointee.watchdogActive != 0 // home is busy with another task
+}
+
+/// Index of the task CPU `cpu` should run next: the first homed on it, else
+/// (when `stealing`) the first it may adopt. Under schedLock.
+func runnableIndex(_ cpu: Int, stealing: Bool) -> Int? {
+    guard softAffinity else { return scheduler.runQueue.firstIndex(where: { $0.affinity.allows(cpu) }) }
+    let online = onlineCPUMask()
+    if let i = scheduler.runQueue.firstIndex(where: { $0.affinity.allows(cpu) && isHome($0, cpu, online: online) }) {
+        return i
+    }
+    guard stealing else { return nil }
+    let now = ticks
+    return scheduler.runQueue.firstIndex(where: {
+        $0.affinity.allows(cpu) && mayAdopt($0, cpu, online: online, now: now)
+    })
+}
+
+/// The task CPU `cpu` should run next (runnableIndex), removed. With
+/// `force`, failing that, any task it may run at all (the caller has
+/// nothing else to switch to). Under schedLock.
+func takeRunnable(_ cpu: Int, stealing: Bool, force: Bool = false) -> Task? {
+    if let i = runnableIndex(cpu, stealing: stealing) { return scheduler.runQueue.remove(at: i) }
+    guard force, let i = scheduler.runQueue.firstIndex(where: { $0.affinity.allows(cpu) }) else { return nil }
     return scheduler.runQueue.remove(at: i)
 }
 
@@ -379,7 +457,13 @@ func prepareSwitch(_ why: SwitchReason) -> (UnsafeMutablePointer<UInt64>, Unsafe
     defer { schedLock.releaseIRQ(flags) }
     if why == .block && !prev.inbox.isEmpty { return nil } // an event arrived: don't sleep
     let next: Task
-    if let n = takeRunnable(sched.cpu) {
+    // Yielding from a real task: only tasks homed here (no stealing while
+    // busy). Blocking or exiting, or task 0 yielding, is this CPU's idle
+    // context. CPU 0 has no idle task, so a block or exit there must find
+    // something (task 0 is always queued then; `force` is a safety net).
+    let stealing = why != .yield || prev.isMain
+    let force = why != .yield && sched.idle == nil
+    if let n = takeRunnable(sched.cpu, stealing: stealing, force: force) {
         next = n
     } else if why == .yield {
         watchdogSwitch(from: prev, toIdle: false) // cooperating counts, even with no switch
@@ -395,7 +479,7 @@ func prepareSwitch(_ why: SwitchReason) -> (UnsafeMutablePointer<UInt64>, Unsafe
     switch why {
     case .yield:
         prev.state = .ready
-        scheduler.runQueue.append(prev)
+        enqueue(prev)
         wakeIdleCPU(for: prev)
     case .block:
         prev.state = .blocked
@@ -520,7 +604,7 @@ func idlePick() -> (UnsafeMutablePointer<UInt64>, UnsafeMutablePointer<UInt64>)?
     guard let sched = thisSched(), let idle = sched.idle else { return nil }
     schedLock.acquire()
     defer { schedLock.release() }
-    guard let next = takeRunnable(sched.cpu) else {
+    guard let next = takeRunnable(sched.cpu, stealing: true) else {
         setIdle(true)
         thisCPU().pointee.watchdogActive = 0
         return nil
@@ -543,9 +627,20 @@ func runMainLoop(_ route: (Event) -> Void) -> Never {
     while true {
         pollEvents()
         while let event = events.next() { route(event) }
-        if scheduler.hasReady { yield() } else { idleStep() }
+        if scheduler.hasReady {
+            // Busy (e.g. CPU 0 running a share of `par`): still redraw,
+            // once per tick, before letting the tasks run.
+            let t = ticks
+            if t != lastBusyRefresh { lastBusyRefresh = t; refreshStep() }
+            yield()
+        } else {
+            idleStep()
+        }
     }
 }
+
+/// `ticks` at the main loop's last refresh while tasks were ready.
+var lastBusyRefresh: UInt64 = 0
 
 /// Part 2 on Phase H: the shell runs in its own task (LiveTerminal.read
 /// blocks on that task's inbox) and the main loop sends it every key.

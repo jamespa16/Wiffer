@@ -55,6 +55,10 @@ struct PerCPU {
     var watchdogMark: UInt64 = 0
     var watchdogActive: UInt64 = 0
     var watchdogTripped: UInt64 = 0
+    /// Timer ticks (100 Hz, sampled by the BSP's IRQ) at which this CPU was
+    /// running a real task: off its idle task (APs), or not in idleStep's
+    /// hlt (CPU 0). The taskbar's usage meters are deltas of it.
+    var busyTicks: UInt64 = 0
 }
 
 var perCPU = InlineArray<64, PerCPU>(repeating: PerCPU())

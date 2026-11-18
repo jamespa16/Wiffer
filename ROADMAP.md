@@ -732,3 +732,30 @@ used when `-smp` >= 2, the speedup line and bad input; a `help` line check
 for `par`; selftests cover `countPrimes` (pi(10)=4, pi(100)=25,
 pi(10000)=1229) and the strided split.
 - Update "Where we are" and README.md's Wiffer entry. **Done.**
+
+## After Part 4: soft affinity, usage meters
+
+**Done** (task.swift, sched_selftest.swift, smp.swift, taskbar.swift,
+events.swift, wm_selftest.swift).
+
+- **Soft affinity.** A task's home is the CPU it last ran on. Each CPU
+  takes tasks homed on it first. Only a CPU in its idle context steals:
+  an AP's idle task, task 0, or a task that is blocking or exiting. A busy
+  CPU that yields never takes another CPU's task, so busy CPUs don't trade
+  work.
+- **When a task can be adopted.** It's new (on an AP), its home is busy,
+  or it has waited `stealDelayTicks` (2). CPU 0 adopts only after that
+  delay, or when no AP may run the task, so APs get first claim on compute
+  work.
+- **Wakeups** go to the home CPU when it's idle.
+- **Effect.** Under `par`, workers stay on one CPU each. Before, they
+  bounced through CPU 0. Throughput is unchanged: the working set is tiny.
+- **`softAffinity = false`** restores the Phase S behaviour. The `.any`
+  ping-pong selftest uses it to keep stressing cross-CPU handoff.
+- **Taskbar usage meters.** CPU 0's timer IRQ samples every CPU at 100 Hz
+  into `PerCPU.busyTicks` (an AP is busy when off its idle task, CPU 0
+  when not in idleStep's `hlt`). Each meter fills by its share of the last
+  half-second. They replace Phase T's instantaneous busy dots.
+- **Desktop no longer freezes while CPU 0 computes.** runMainLoop calls
+  `refreshStep()` (status bar and console flush, the screen half of
+  idleStep) at most once per tick while tasks are ready.

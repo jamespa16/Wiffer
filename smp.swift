@@ -161,19 +161,37 @@ func panicHaltThisCPU() -> Never {
 
 // MARK: cpus command, selftests
 
-/// Bit i set if CPU i is running a non-idle task, for the taskbar. Lock-free
-/// word reads (a stale answer is fine). An AP is busy while its watchdog is
-/// active (it runs a real task, not its idle task). CPU 0 is the one reading
-/// this, from the main loop, so it counts as busy if its switch count moved
-/// since the last call (some task ran there in between).
-var lastCPU0Switches: UInt64 = 0
-func cpuBusyMask() -> UInt64 {
-    var mask: UInt64 = 0
-    for i in 1..<max(smpStarted, 1) where perCPUEntry(i).pointee.watchdogActive != 0 { mask |= 1 << UInt64(i) }
-    let sw = perCPUEntry(0).pointee.switches
-    if sw != lastCPU0Switches { mask |= 1 }
-    lastCPU0Switches = sw
-    return mask
+/// Timer IRQ (BSP, 100 Hz): count a busy tick for every CPU running a real
+/// task right now. An AP is busy while its watchdog is active (off its idle
+/// task); CPU 0 while it isn't in idleStep's hlt (its idle bit; the IRQ that
+/// samples it is what wakes that hlt). Allocation- and lock-free word reads.
+func cpuUsageTick() {
+    for i in 0..<max(smpStarted, 1) {
+        let e = perCPUEntry(i)
+        let busy = i == 0 ? idleCPUMask & 1 == 0 : e.pointee.watchdogActive != 0
+        if busy { e.pointee.busyTicks &+= 1 }
+    }
+}
+
+/// Per-CPU usage in percent since the previous call, for the taskbar (called
+/// twice a second): the share of timer ticks each CPU spent busy. A
+/// statistical sample at 100 Hz, so it's a meter, not an exact account.
+var usageLastTicks: UInt64 = 0
+var usageLastBusy = InlineArray<64, UInt64>(repeating: 0)
+func cpuUsagePercent() -> [Int] {
+    let n = max(smpStarted, 1)
+    let now = ticks
+    let elapsed = now &- usageLastTicks
+    usageLastTicks = now
+    var out: [Int] = []
+    out.reserveCapacity(n)
+    for i in 0..<n {
+        let b = perCPUEntry(i).pointee.busyTicks
+        let delta = b &- usageLastBusy[i]
+        usageLastBusy[i] = b
+        out.append(elapsed == 0 ? 0 : Int(min(delta * 100 / elapsed, 100)))
+    }
+    return out
 }
 
 func cpusInfo() -> [String] {
