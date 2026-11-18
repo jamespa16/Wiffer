@@ -29,6 +29,8 @@ gdt_load:
 // One stub per vector. The CPU pushes an error code only for these vectors;
 // for every other vector the stub pushes a dummy 0, so the frame layout
 // (struct interrupt_frame in bridge.h) is the same for all of them.
+// All 256 vectors; .altmacro lets %isr_i turn the counter into a symbol suffix.
+.altmacro
 .macro ISR_STUB n
     .p2align 4
 isr_stub_\n:
@@ -39,9 +41,12 @@ isr_stub_\n:
     jmp isr_common
 .endm
 
-.irp n, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47
-    ISR_STUB \n
+.set isr_i, 0
+.rept 256
+    ISR_STUB %isr_i
+    .set isr_i, isr_i + 1
 .endr
+.noaltmacro
 
 // Save the general-purpose registers and the SSE/x87 state, call the Swift
 // dispatcher with a pointer to the frame, restore, drop vector + error code,
@@ -209,9 +214,16 @@ check_callee_saved:
     .p2align 3
     .globl isr_stub_table
 isr_stub_table:
-.irp n, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47
+.altmacro
+.macro ISR_ENTRY n
     .quad isr_stub_\n
+.endm
+.set isr_i, 0
+.rept 256
+    ISR_ENTRY %isr_i
+    .set isr_i, isr_i + 1
 .endr
+.noaltmacro
 
     .globl task_trampoline_address
 task_trampoline_address:

@@ -57,8 +57,7 @@ func gdtInit() {
 
 // MARK: IDT
 
-/// 256 16-byte gates as pairs of words. Vectors without a stub stay
-/// not-present (an interrupt there raises #NP, which gets reported).
+/// 256 16-byte gates as pairs of words, one stub per vector (cpu.S).
 var idt = InlineArray<512, UInt64>(repeating: 0)
 let idtVectors = 256
 let doubleFaultVector = 8
@@ -74,12 +73,9 @@ func setGate(_ vector: Int, handler: UInt64, ist: UInt64 = 0) {
 }
 
 func idtInit() {
-    withUnsafePointer(to: isr_stub_table) { table in
-        table.withMemoryRebound(to: UInt64.self, capacity: 48) { stubs in
-            for v in 0..<48 {
-                setGate(v, handler: stubs[v], ist: v == doubleFaultVector ? 1 : 0)
-            }
-        }
+    let stubs = isr_stubs()! // a pointer: no copy of the 2 KiB table onto the boot stack
+    for v in 0..<idtVectors {
+        setGate(v, handler: stubs[v], ist: v == doubleFaultVector ? 1 : 0)
     }
     var idtr = descriptor_ptr(limit: UInt16(idtVectors * 16 - 1), base: address(of: &idt))
     lidt(&idtr)

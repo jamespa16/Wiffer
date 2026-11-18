@@ -49,7 +49,8 @@ struct __attribute__((packed)) descriptor_ptr {
 void gdt_load(const struct descriptor_ptr *gdtr, uint16_t code_sel,
               uint16_t data_sel, uint16_t tss_sel);
 // cpu.S: entry stub addresses for vectors 0-47 (exceptions + PIC IRQs).
-extern const uint64_t isr_stub_table[48];
+extern const uint64_t isr_stub_table[256];
+static inline const uint64_t *isr_stubs(void) { return isr_stub_table; }
 
 static inline void lidt(const struct descriptor_ptr *idtr) {
     __asm__ volatile ("lidt %0" : : "m"(*idtr) : "memory");
@@ -248,3 +249,27 @@ extern const uint64_t task_trampoline_address;
 // changed (bits 0-5 registers in that order, 6 MXCSR control bits, 7 FCW).
 // Restores the caller's MXCSR and control word.
 uint32_t check_callee_saved(void (*fn)(void), uint64_t seed, uint32_t mxcsr, uint32_t fcw);
+
+// ---- Phase Q: MSRs, CPUID, x2APIC ------------------------------------------
+
+static inline uint64_t rdmsr(uint32_t msr) {
+    uint32_t lo, hi;
+    __asm__ volatile ("rdmsr" : "=a"(lo), "=d"(hi) : "c"(msr));
+    return ((uint64_t)hi << 32) | lo;
+}
+
+static inline void wrmsr(uint32_t msr, uint64_t value) {
+    __asm__ volatile ("wrmsr" : : "c"(msr), "a"((uint32_t)value), "d"((uint32_t)(value >> 32))
+                      : "memory");
+}
+
+struct cpuid_result { uint32_t eax, ebx, ecx, edx; };
+
+static inline struct cpuid_result cpuid(uint32_t leaf, uint32_t subleaf) {
+    struct cpuid_result r;
+    __asm__ volatile ("cpuid" : "=a"(r.eax), "=b"(r.ebx), "=c"(r.ecx), "=d"(r.edx)
+                      : "a"(leaf), "c"(subleaf));
+    return r;
+}
+
+static inline void cpu_pause(void) { __asm__ volatile ("pause" : : : "memory"); }

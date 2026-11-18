@@ -64,6 +64,7 @@ func kernelMain() -> Never {
 
     // PIC is remapped before any IRQ can arrive, then the timer, then sti.
     picInit()
+    apicInit() // x2APIC if present; the PIC then runs through LINT0 (Phase Q)
     pitInit()
     ps2Init() // unmasks IRQ1/IRQ2/IRQ12 if the devices answer
     sti()

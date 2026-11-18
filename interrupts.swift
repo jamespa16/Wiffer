@@ -11,6 +11,8 @@ public func interruptDispatch(_ frame: UnsafeMutablePointer<interrupt_frame>) {
         exceptionReport(frame.pointee)
     } else if vector < 48 {
         handleIRQ(UInt8(truncatingIfNeeded: vector - 32))
+    } else if vector >= 0xF0 {
+        apicInterrupt(UInt8(truncatingIfNeeded: vector))
     }
 }
 

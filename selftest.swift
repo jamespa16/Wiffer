@@ -35,7 +35,7 @@ func runSelfTests() -> Never {
     let idtr = read_idtr()
     t.check("IDT loaded", idtr.base == address(of: &idt) && Int(idtr.limit) == idtVectors * 16 - 1)
     t.check("#DF gate uses IST1", (idt[doubleFaultVector * 2] >> 32) & 7 == 1)
-    t.check("IRQ gates present", (idt[47 * 2] >> 47) & 1 == 1 && (idt[48 * 2] >> 47) & 1 == 0)
+    t.check("IRQ gates present", (idt[47 * 2] >> 47) & 1 == 1 && (idt[48 * 2] >> 47) & 1 == 1)
 
     // Phase B: PIC, timer, idle.
     t.check("PIC unmasks IRQ0/1/2/12 only", inb(PIC.masterData) == 0xF8 && inb(PIC.slaveData) == 0xEF)
@@ -46,6 +46,9 @@ func runSelfTests() -> Never {
     let wait = ticks
     while ticks < wait + 10 { hlt() }
     t.check("timer keeps firing (EOI sent)", ticks >= wait + 10)
+
+    // Phase Q: x2APIC, IPIs, 256 vectors.
+    apicTests(&t)
 
     // Phase C: frame allocator and heap.
     memoryTests(&t)
