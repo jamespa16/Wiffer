@@ -1854,22 +1854,48 @@ check).
   understands (8F). Media queries: `screen`, `min-width`, `max-width`,
   `prefers-color-scheme: light`. Everything else is parsed and ignored.
 
-## Phase 8E: fonts and text (`lib/font`)
+## Phase 8E: fonts and text (`lib/font`) (done)
 
-- **TrueType reader:** `cmap` (format 4 and 12), `glyf`/`loca`, `hmtx`,
-  `hhea`, `head`, `kern` (format 0). CFF/OTF outlines are a stretch.
-- **Rasterizer:** quadratic outlines flattened to lines, then a coverage
-  (antialiased) scanline fill with the nonzero rule. A glyph cache keyed
-  by (font, size, glyph). Subpixel positioning is a stretch.
-- **Text runs:** UTF-8 to glyphs, advances plus kerning, font fallback
-  (DejaVu covers a lot; tofu boxes for the rest), and line breaking at
-  spaces and after hyphens (a simplified UAX #14). No complex-script
-  shaping (Arabic, Indic) at first, which is a known limit.
-- **Bundled:** DejaVu Sans, Serif and Sans Mono, regular and bold (and
-  italics if space allows), in rootfs `/fonts`. Map `font-family`
-  generic names (`serif`, `sans-serif`, `monospace`) and common names
-  (Arial, Helvetica, Times, Georgia, Courier) onto them.
-- The taskbar and window titles can switch to these too (optional).
+Pure Swift, host-tested (`./run.sh --hosttest font`, 516 checks).
+
+- **TrueType reader** (`ttfont.swift`, `TTFont`): table directory, `head`,
+  `hhea`, `maxp`, `hmtx`, `cmap` (formats 4 and 12; prefers (3,10), then
+  Unicode platform 0, then (3,1)), `loca` short/long, `glyf` simple and
+  composite (2x2 transforms, point matching, depth 6, 64 components,
+  20000 points), `kern` format 0, OS/2 (x-height, cap height), `name`.
+  All reads go through bounds checks (`ByteReader` or checked helpers);
+  fuzzed. CFF/OTF and collections are rejected (stretch).
+- **Rasterizer** (`fontraster.swift`): quadratics flattened to 0.1 px, signed-area
+  accumulation (font-rs method), 8-bit coverage with bearings.
+  Overlapping contours clamp (approximates nonzero). ~840k glyphs/s at
+  16 px on the host, uncached. `GlyphCache` keyed by (font id, size in
+  1/8 px, glyph, synthetic style) with a byte cap, cleared when full
+  (default 4 MiB). Synthetic bold (horizontal dilation by size/20 and a
+  wider advance) and oblique (shear 0.2). `fontBlit` alpha-blends a
+  coverage bitmap into an XRGB `UnsafeMutablePointer<UInt32>` or
+  `[UInt32]`, clipped, independent of `Surface`.
+- **Text** (`textrun.swift`): `TextEngine.shape` gives one glyph per
+  scalar with kerning (same face only), fallback down a `FontChain`, a
+  tofu box (`fontTofuGlyph`, 0.6 em advance) when no face has the
+  character, zero-width controls. `TextRun` has `xs` (pen positions),
+  `width`, `breaks`, `nextBreak(after:)` and `fitLine(from:maxWidth:breakWords:)`.
+  Line breaking (`textBreakOpportunities`): after spaces and hyphens (not
+  before digits), between CJK ideographs, never before closing
+  punctuation or after opening, NBSP/word joiner glue, ZWSP, soft
+  hyphen, mandatory at newlines.
+- **Registry** (`fontregistry.swift`): `FontRegistry.add/face/chain`
+  maps family names (Arial, Helvetica, Times, Times New Roman, Georgia,
+  Verdana, Courier, Courier New, system-ui, serif, sans-serif,
+  monospace, ...) plus weight and style onto faces, with synthetic
+  bold/italic flags when the exact face is missing. `fontBundled` lists
+  the rootfs files.
+- **Bundled** (rootfs `/fonts`, 5.26 MB, with the DejaVu `LICENSE`): DejaVu 2.37
+  Sans, Serif, Sans Mono, each regular, bold, oblique/italic, bold
+  oblique/italic (12 faces). The ISO boots and passes `--test` with them.
+- **Known gaps:** no GSUB/GPOS (kerning is the legacy `kern` table only,
+  so DejaVu Sans Mono has none), no complex-script shaping or bidi, no
+  ligatures, glyph positions are rounded to whole pixels (no subpixel),
+  no hinting, no CFF/WOFF. The taskbar and window titles do not use it yet.
 
 ## Phase 8F: layout and paint (`lib/layout`)
 
