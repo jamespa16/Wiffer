@@ -1,0 +1,7 @@
+g_basic256.gif 70 50 4c052e42f5ed7952
+g_interlaced.gif 40 37 10158a59e1b6f094
+g_transparent.gif 33 21 fefed8958ac19622
+g_palette4.gif 31 29 f42d4c169d220e21
+g_palette16.gif 50 50 205d9b8e651b063c
+g_local_offset.gif 40 30 e2448667066bab67
+g_bigcodes.gif 200 100 4154fb751ccdb570
