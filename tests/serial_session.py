@@ -252,7 +252,7 @@ if int(SMP) >= 2:
 
 
 class Session:
-    def __init__(self, extra_args=(), monitor=False, exit_device=True, iso=ISO, net=True):
+    def __init__(self, extra_args=(), monitor=False, exit_device=True, iso=ISO, net=True, hostfwd=None):
         self.monitor_path = None
         self.mon = None  # connected monitor socket, opened on first use
         self.cursor = None  # mouse sprite (x, y) on screen, if known
@@ -266,6 +266,9 @@ class Session:
                 "-serial", "stdio", "-monitor", mon, *FIRMWARE, *extra_args]
         if net and not NONET:
             args += NET_ARGS
+            if hostfwd:  # Part 7D: (host port, guest port) for `tcplisten`
+                i = args.index("user,id=n0")
+                args[i] += f",hostfwd=tcp:127.0.0.1:{hostfwd[0]}-:{hostfwd[1]}"
         if exit_device:  # without it, a fault or selftest leaves QEMU running
             args += ["-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"]
         self.p = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -676,7 +679,7 @@ def main():
     # The Part 2 checks (full-screen shell, screen vs serial, selftest) boot
     # the `nodesktop` entry (Phase L).
     s = Session(monitor=True, iso=NODESKTOP_ISO if opts.nodesktop or not opts.command else ISO,
-                extra_args=disk_args(disk) if disk else ())
+                extra_args=disk_args(disk) if disk else (), hostfwd=(TCP_FWD_HOST, TCP_FWD_GUEST))
     # Phase K runs on its own machine: `desktop` switches the full-screen
     # shell to the WM (the console becomes window #1).
     desk = None if opts.command else Session(monitor=True, iso=NODESKTOP_ISO)
@@ -1002,6 +1005,89 @@ def fake_dns_server():
     return port, stop
 
 
+def free_port():
+    """An unused 127.0.0.1 TCP port (bound, then released)."""
+    with socket.socket() as so:
+        so.bind(("127.0.0.1", 0))
+        return so.getsockname()[1]
+
+# Part 7D: `tcplisten` in the main session is reached through SLIRP hostfwd.
+TCP_FWD_HOST = free_port()
+TCP_FWD_GUEST = 7777
+
+def fnv1a64(data: bytes, h=0xcbf29ce484222325) -> int:
+    for b in data:
+        h = ((h ^ b) * 0x100000001b3) & 0xFFFFFFFFFFFFFFFF
+    return h
+
+def http_server(body: bytes):
+    """Part 7D: a Python HTTP server on 127.0.0.1 (ephemeral port) serving
+    `body` at /data (the guest reaches it at 10.0.2.2). Returns (port, stop)."""
+    import http.server, threading
+    class Handler(http.server.BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.0"
+        def do_GET(self):
+            if self.path != "/data":
+                self.send_error(404)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        def log_message(self, *args):
+            pass
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    def stop():
+        srv.shutdown()
+        srv.server_close()
+    return srv.server_address[1], stop
+
+def tcp_checks(s: Session, timeout: float, check):
+    """Part 7D on the machine: download 1 MiB from the host over SLIRP and
+    compare hashes; a closed port is refused; the host connects in through
+    hostfwd to `tcplisten`, which echoes 256 KiB back."""
+    import random
+    body = random.Random(7).randbytes(1 << 20)
+    want = f"{fnv1a64(body):016x}"
+    port, stop = http_server(body)
+    try:
+        got = s.command(f"tcpget 10.0.2.2 {port} /data", 60.0)
+        m = re.search(r"tcpget: (\d+) body bytes .*fnv1a ([0-9a-f]{16}), (\d+) ms, (\d+) KiB/s", got)
+        ok = check(m is not None and m.group(1) == str(len(body)) and m.group(2) == want and "200 OK" in got,
+                   "net: tcpget downloads 1 MiB from the host, hash matches", repr(got))
+        if ok:
+            print(f"harness: 1 MiB over SLIRP in {m.group(3)} ms ({m.group(4)} KiB/s)")
+        got = s.command(f"tcpget 10.0.2.2 {port} /nothing", 30.0)
+        check("404" in got and "tcpget: " in got, "net: tcpget gets a 404 for a missing path", repr(got))
+    finally:
+        stop()
+    got = s.command(f"tcpget 10.0.2.2 {free_port()} /", 40.0)
+    check("connection refused" in got or "connection reset" in got, "net: tcpget to a closed host port fails (RST)", repr(got))
+    data = random.Random(8).randbytes(256 * 1024)
+    s.send(f"tcplisten {TCP_FWD_GUEST}")
+    s.read_until(b"listening on port", 20.0)
+    echoed = b""
+    err = None
+    try:
+        with socket.create_connection(("127.0.0.1", TCP_FWD_HOST), timeout=30) as so:
+            so.sendall(data)
+            so.shutdown(socket.SHUT_WR)
+            while True:
+                chunk = so.recv(65536)
+                if not chunk:
+                    break
+                echoed += chunk
+    except OSError as e:
+        err = e
+    got = s.read_prompt(30.0).decode(errors="replace")
+    check(err is None and echoed == data and f"echoed {len(data)} bytes, fnv1a {fnv1a64(data):016x}" in got
+          and "connection from 10.0.2.2:" in got,
+          "net: the host connects in through hostfwd; tcplisten echoes 256 KiB", f"{err!r} {len(echoed)} bytes {got!r}")
+    got = s.command("netstat", timeout)
+    check("segments in" in got, "net: netstat lists TCP state", repr(got))
+
 def net_checks(s: Session, timeout: float) -> int:
     """Part 7 (7A-7C) on the machine: virtio-net comes up, DHCP gives
     10.0.2.15, the gateway answers ping, and the resolver talks to a fake DNS
@@ -1050,6 +1136,7 @@ def net_checks(s: Session, timeout: float) -> int:
         check("1 packets transmitted, 1 received" in got, "net: the stack still answers after hostile DNS replies", repr(got))
     finally:
         stop()
+    tcp_checks(s, timeout, check)
     return failures
 
 

@@ -17,7 +17,7 @@
 // `delayedAckTicks`) except for out-of-order data, holes filled, and FINs.
 
 /// A fixed-capacity byte FIFO.
-struct ByteRing {
+struct TCPRing {
     private(set) var storage: [UInt8] = []
     private(set) var head = 0
     private(set) var count = 0
@@ -142,7 +142,7 @@ final class TCPConnection {
     var maxSndWnd = 0
     var sndWl1: UInt32 = 0
     var sndWl2: UInt32 = 0
-    var sendBuf = ByteRing(capacity: 0)
+    var sendBuf = TCPRing(capacity: 0)
     var finQueued = false
     var finSent = false
     /// close() (not shutdown()): we won't read any more.
@@ -180,7 +180,7 @@ final class TCPConnection {
     var rcvNxt: UInt32 = 0
     /// Highest right edge advertised.
     var rcvAdv: UInt32 = 0
-    var rcvBuf = ByteRing(capacity: 0)
+    var rcvBuf = TCPRing(capacity: 0)
     var ooo: [TCPOutOfOrder] = []
     var oooBytes = 0
     var oooFin: UInt32? = nil
@@ -350,7 +350,7 @@ final class TCPConnection {
         case .listen:
             closeListener()
         case .synReceived, .established, .finWait1, .finWait2, .closeWait:
-            sendSegment(seq: sndNxt, flags: TCPFlag.rst | TCPFlag.ack)
+            sendSegment(seq: sndMax, flags: TCPFlag.rst | TCPFlag.ack)
             fail(.aborted)
         case .closed:
             break
@@ -372,8 +372,8 @@ final class TCPConnection {
     // MARK: Lifecycle
 
     func allocateBuffers() {
-        if sendBuf.capacity == 0 { sendBuf = ByteRing(capacity: max(options.sendBuffer, 1024)) }
-        if rcvBuf.capacity == 0 { rcvBuf = ByteRing(capacity: max(options.recvBuffer, 1024)) }
+        if sendBuf.capacity == 0 { sendBuf = TCPRing(capacity: max(options.sendBuffer, 1024)) }
+        if rcvBuf.capacity == 0 { rcvBuf = TCPRing(capacity: max(options.recvBuffer, 1024)) }
     }
 
     var rcvCapacity: Int { rcvBuf.capacity > 0 ? rcvBuf.capacity : max(options.recvBuffer, 1024) }
@@ -511,8 +511,11 @@ final class TCPConnection {
         sendSegment(seq: iss, flags: TCPFlag.syn)
     }
 
+    /// A bare ACK, numbered sndMax like BSD: after an RTO rewinds sndNxt, an
+    /// ACK numbered below the peer's rcvNxt would be unacceptable there, and
+    /// its acknowledgment ignored (two rewound ends would then deadlock).
     func sendACK() {
-        sendSegment(seq: sndNxt, flags: TCPFlag.ack)
+        sendSegment(seq: sndMax, flags: TCPFlag.ack)
     }
 
     private func challengeAck() {
@@ -663,7 +666,7 @@ final class TCPConnection {
         stats.timeouts += 1
         layer.stats.timeouts += 1
         if retries > layer.maxRetries {
-            sendSegment(seq: sndNxt, flags: TCPFlag.rst | TCPFlag.ack)
+            sendSegment(seq: sndMax, flags: TCPFlag.rst | TCPFlag.ack)
             fail(.timedOut)
             return
         }
@@ -766,6 +769,10 @@ final class TCPConnection {
             if parent != nil { finish() } else { fail(.refused) }
         case .established, .finWait1, .finWait2, .closeWait:
             fail(.reset)
+        case .timeWait:
+            // RFC 1337: an RST must not cut TIME_WAIT short (a stray or
+            // duplicate ACK of ours drawing a RST from a listener would).
+            break
         default:
             rcvBuf.release()
             finish()
@@ -1018,7 +1025,7 @@ final class TCPConnection {
         }
         if userClosed && n > 0 {
             // Data for a closed reader (RFC 2525 2.17).
-            sendSegment(seq: sndNxt, flags: TCPFlag.rst | TCPFlag.ack)
+            sendSegment(seq: sndMax, flags: TCPFlag.rst | TCPFlag.ack)
             fail(.aborted)
             return
         }
@@ -1103,8 +1110,16 @@ final class TCPConnection {
         default:
             break
         }
-        sendACK()
+        // (processData ACKs it: one ACK, or a second one would meet a listener and draw a RST into TIME_WAIT)
         layer.notify(self)
+    }
+
+    /// One line of internals, for netstat -v and failing tests.
+    var debugLine: String {
+        func t(_ v: UInt64) -> String { v == UInt64.max ? "-" : "\(v)" }
+        return "\(state.name) una \(sndUna &- iss) nxt \(sndNxt &- iss) max \(sndMax &- iss) wnd \(sndWnd) cwnd \(cwnd) ssth \(ssthresh)"
+            + " sbuf \(sendBuf.count) fin \(finQueued)/\(finSent) rcvnxt \(rcvNxt &- irs) rwnd \(rcvWindow) rbuf \(rcvBuf.count) ooo \(ooo.count)"
+            + " rto \(rto) at \(t(rtoAt)) persist \(t(persistAt)) delack \(t(delAckAt)) linger \(t(lingerAt)) retries \(retries) rec \(inRecovery)"
     }
 
     // MARK: ICMP
