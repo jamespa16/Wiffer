@@ -1957,8 +1957,6 @@ Decisions and results:
   cascade (layout propagates it); no `counter()`, no `border-radius`,
   `outline`, `box-shadow`, `letter-spacing` or grid properties.
 
-
-## Phase 8E: fonts and text (`lib/font`)
 ## Phase 8E: fonts and text (`lib/font`) (done)
 
 Pure Swift, host-tested (`./run.sh --hosttest font`, 516 checks).
