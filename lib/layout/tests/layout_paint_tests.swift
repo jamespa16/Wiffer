@@ -179,8 +179,27 @@ func layoutAPITests(_ t: Tests) {
     t.check(e.setHover(nil), "unhover")
     e.update()
     t.check(e.box(for: a)?.style.color == CSSColor(r: 0, g: 0, b: 255), "unhovered color")
+    t.check(e.incrementalRestyles == 2, "hover handled in place", "\(e.incrementalRestyles)")
     e = layoutPage(t, "<a href=x id=a>link</a>")
     t.check(!e.setHover(e.document.getElementById("a")), "no hover rules: no restyle")
+    // Hover rules that do not match the element: nothing to do.
+    e = layoutPage(t, "<!DOCTYPE html><style>.menu:hover .sub { display: block } .sub { display: none }</style><p id=p>text</p><div class=menu>m<div class=sub id=sub>s</div></div>")
+    t.check(!e.setHover(e.document.getElementById("p")), "unrelated hover: no restyle")
+    // Hover that changes layout falls back to a full restyle.
+    let menu = e.document.firstElement(where: { $0.hasClass("menu") })!
+    t.check(e.rect(of: e.document.getElementById("sub")!) == nil, "submenu hidden")
+    t.check(e.setHover(menu), "menu hover")
+    e.update()
+    t.check(e.rect(of: e.document.getElementById("sub")!) != nil, "submenu shown on hover")
+    t.equal(e.incrementalRestyles, 0, "display change needs a full restyle")
+    // Hover underline (paint only) updates decorations.
+    e = layoutPage(t, "<!DOCTYPE html><style>a { text-decoration: none } a:hover { text-decoration: underline }</style><p><a href=x id=a>link <b id=b>bold</b></a></p>")
+    let la = e.document.getElementById("a")!, lb = e.document.getElementById("b")!
+    t.check(e.box(for: lb)?.deco == 0, "no underline")
+    t.check(e.setHover(lb), "hover bold child")
+    e.update()
+    t.check((e.box(for: lb)?.deco ?? 0) & 1 != 0 && e.incrementalRestyles == 1, "underline propagated in place")
+    _ = la
 
     // Images arriving later.
     var sizes: [String: (Int, Int)] = [:]

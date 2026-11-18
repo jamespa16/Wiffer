@@ -120,6 +120,23 @@ func libTests(_ t: Tests) {
             for _ in 0..<30 { e.invalidateStyle(); e.update() }
         }
     }
+    // WIFFER_LAYOUT_RENDER=page.html[:sheet.css] paints any saved page to build/hosttest/render.ppm.
+    if let spec = hostEnv("WIFFER_LAYOUT_RENDER") {
+        let parts = spec.split(separator: ":").map(String.init)
+        let w = Int(hostEnv("WIFFER_LAYOUT_WIDTH") ?? "1024") ?? 1024
+        let hgt = Int(hostEnv("WIFFER_LAYOUT_HEIGHT") ?? "1400") ?? 1400
+        let sy = Double(Int(hostEnv("WIFFER_LAYOUT_SCROLL") ?? "0") ?? 0)
+        if let h = t.readFileIfPresent(parts[0]) {
+            let e = LayoutEngine(document: htmlParse(h), text: layoutFonts(t), viewportWidth: w, viewportHeight: 768)
+            if parts.count > 1, let c = t.readFileIfPresent(parts[1]) {
+                let sheet = cssParseStylesheet(c)
+                for (i, s) in e.styleSources.enumerated() where s.href != nil { e.setStyleSheets(slot: i, [sheet]) }
+            }
+            e.update()
+            writePPM(e, "build/hosttest/render.ppm", width: w, height: hgt, scrollY: sy)
+            if hostEnv("WIFFER_LAYOUT_DUMP") != nil { print(e.dump()) }
+        }
+    }
     if hostEnv("WIFFER_LAYOUT_PPM") != nil {
         if let (e, _, _, _) = layoutSitePage(t, "lib/layout/fixtures/hn.html", "lib/layout/fixtures/hn.css", width: 1024) {
             writePPM(e, "build/hosttest/hn.ppm", width: 1024, height: 700)

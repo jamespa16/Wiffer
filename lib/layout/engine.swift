@@ -68,6 +68,10 @@ final class LayoutEngine {
     private var slots: [[CSSStylesheet]] = []
     private var extraSheets: [CSSStylesheet] = []
     private(set) var hasHoverRules = false
+    var hoverCompoundList: [CSSCompound] = []
+    private var pendingHover: [HTMLNode] = []
+    /// Hover changes handled without rebuilding the box tree (for tests and timing).
+    private(set) var incrementalRestyles = 0
     private var nodeBoxes: [ObjectIdentifier: LayoutBox] = [:]
     private(set) var controlBoxes: [LayoutBox] = []
     private(set) var imageURLs: [String] = []
@@ -185,6 +189,7 @@ final class LayoutEngine {
         for sh in extraSheets { r.addStyleSheet(sh) }
         resolver = r
         hasHoverRules = LayoutEngine.scanHover(r)
+        hoverCompoundList = LayoutEngine.hoverCompounds(r)
         needsStyle = true
     }
 
@@ -226,14 +231,19 @@ final class LayoutEngine {
     @discardableResult
     func setHover(_ node: HTMLNode?) -> Bool {
         if node === hovered { return false }
+        let oldNode = hovered
+        let old = state.hovered
         hovered = node
         var set: Set<ObjectIdentifier> = []
         var p = node
         var k = 0
         while let n = p, k < 4096 { if n.kind == .element { set.insert(ObjectIdentifier(n)) }; p = n.parent; k += 1 }
         state.hovered = set
-        if hasHoverRules { needsStyle = true; return true }
-        return false
+        if !hasHoverRules || needsStyle { return hasHoverRules }
+        let affected = hoverAffected(old, set, oldNode, node)
+        if affected.isEmpty { return false }
+        pendingHover.append(contentsOf: affected)
+        return true
     }
 
     /// Image sizes changed (call after new images report their size).
@@ -248,6 +258,19 @@ final class LayoutEngine {
 
     /// Restyle and relayout as needed. Cheap when nothing changed.
     func update() {
+        if !needsStyle && !pendingHover.isEmpty && root != nil {
+            let t0 = now()
+            let roots = pendingHover
+            pendingHover = []
+            if restyleInPlace(roots) {
+                incrementalRestyles += 1
+                if !needsLayout, let r = root { computeAbsolute(r); buildDisplay() }
+                timings.styleMs = now() - t0
+            } else {
+                needsStyle = true
+            }
+        }
+        pendingHover = []
         if needsStyle {
             let t0 = now()
             let b = LayoutBuilder(resolver: resolver, state: state, limits: limits)
@@ -302,7 +325,7 @@ final class LayoutEngine {
         return (layoutSan(dx), layoutSan(dy))
     }
 
-    private func computeAbsolute(_ root: LayoutBox) {
+    func computeAbsolute(_ root: LayoutBox) {
         var maxX = viewportWidth, maxY = 0.0
         var stack: [LayoutBox] = [root]
         let inf = LayoutRect.infinite
