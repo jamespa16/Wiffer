@@ -80,6 +80,8 @@ func kernelMain() -> Never {
     smpInit()
 
     diskInit() // Phase V: PCI scan, virtio-blk disks (vda, ...)
+    randomInit() // Phase 8A: seed the getrandom DRBG (RDSEED/RDRAND, TSC jitter, RTC)
+    print("random: ChaCha20 DRBG seeded from \(randomSource)")
     netInit() // Part 7: virtio-net (eth0), DHCP, the netd task
 
     if ps2.mouse { cursorDraw(x: mouse.x, y: mouse.y) }

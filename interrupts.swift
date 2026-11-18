@@ -22,6 +22,8 @@ public func interruptDispatch(_ frame: UnsafeMutablePointer<interrupt_frame>) ->
         handleIRQ(UInt8(truncatingIfNeeded: vector - 32))
     } else if vector == UInt64(Vector.timer) {
         apicTimerInterrupt()
+    } else if vector == UInt64(Vector.net) {
+        netInterrupt() // Phase 7F: virtio-net MSI-X
     } else if vector >= 0xF0 {
         apicInterrupt(UInt8(truncatingIfNeeded: vector))
     }
@@ -142,8 +144,8 @@ func handleIRQ(_ irq: UInt8) {
     }
     switch irq {
     case 0: ticks &+= 1; cpuUsageTick(); watchdogTick(); expireDeadlines(); sliceTick()
-    case 1: keyboardIRQ()
-    case 12: mouseIRQ()
+    case 1: keyboardIRQ(); entropyAddInterrupt(1)
+    case 12: mouseIRQ(); entropyAddInterrupt(12)
     default: break
     }
     picEOI(irq) // IRQ8-15: slave, then master

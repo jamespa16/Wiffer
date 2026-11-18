@@ -413,6 +413,18 @@ static inline int rdrand64(uint64_t *out) {
     }
     return 0;
 }
+// Phase 8A (getrandom seeding): RDSEED (CPUID.7.EBX bit 18), the
+// conditioned entropy source behind RDRAND; it fails more often, so retry.
+static inline int rdseed64(uint64_t *out) {
+    for (int i = 0; i < 64; i++) {
+        uint64_t v;
+        unsigned char ok;
+        __asm__ volatile ("rdseed %0; setc %1" : "=r"(v), "=qm"(ok) : : "cc");
+        if (ok) { *out = v; return 1; }
+        __asm__ volatile ("pause");
+    }
+    return 0;
+}
 // ---- Phase 6A: page tables -------------------------------------------------
 
 // Drop one TLB entry on this CPU.

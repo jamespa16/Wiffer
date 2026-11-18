@@ -201,6 +201,9 @@ final class NetStack {
 
     /// Echo replies for `ping`: source, id, sequence, TTL, payload bytes.
     var onEchoReply: ((IPv4Addr, UInt16, UInt16, UInt8, Int) -> Void)?
+    /// Phase 7E ICMP sockets: echo replies by identifier (source, TTL, the
+    /// whole ICMP message). Called besides onEchoReply.
+    var echoHandlers: [UInt16: (IPv4Addr, UInt8, [UInt8]) -> Void] = [:]
 
     // Layers above (net_udp.swift, net_dhcp.swift, net_dns.swift).
     var udpSockets: [UDPSocket] = []
@@ -735,9 +738,10 @@ final class NetStack {
             r.append(data)
             r.setU16(2, inetChecksum(r.buf, r.start, r.length))
             stats.icmpEchoReplied += 1
-            sendIP(proto: 1, dst: h.src, r, src: h.dst == ip ? ip : nil)
+            sendIP(proto: 1, dst: h.src, r, src: h.dst == ip || h.dst >> 24 == 127 ? h.dst : nil)
         case ICMPType.echoReply:
             if let id = p.u16(4), let seq = p.u16(6) { onEchoReply?(h.src, id, seq, h.ttl, p.length - 8) }
+            if let id = p.u16(4), let handler = echoHandlers[id], let message = p.bytes() { handler(h.src, h.ttl, message) }
         case ICMPType.unreachable, ICMPType.timeExceeded:
             stats.icmpErrorsRx += 1
             handleICMPError(type: type, code: code, p)
@@ -760,6 +764,20 @@ final class NetStack {
                             originalSrc: src, originalDst: dst, proto: proto,
                             srcPort: p.u16(t) ?? 0, dstPort: p.u16(t + 2) ?? 0, seq: p.u32(t + 4) ?? 0)
         errorHandlers[Int(proto)]?(err)
+    }
+
+    /// Send a whole ICMP echo request (`message`: the 8-byte header and the
+    /// data; type, code, identifier and checksum are set here). False if it
+    /// can't be sent (too big, or no route).
+    func sendEchoMessage(to dst: IPv4Addr, id: UInt16, _ message: [UInt8]) -> Bool {
+        guard message.count >= 8, message.count + 28 <= dev.mtu else { return false }
+        let p = Packet.make()
+        p.append(message)
+        p.setU16(0, UInt16(ICMPType.echoRequest) << 8)
+        p.setU16(2, 0)
+        p.setU16(4, id)
+        p.setU16(2, inetChecksum(p.buf, p.start, p.length))
+        return sendIP(proto: 1, dst: dst, p, src: dst >> 24 == 127 ? dst : nil)
     }
 
     /// Send an echo request with `size` payload bytes. False if it can't be sent.
