@@ -3497,8 +3497,8 @@ the resvg-suite stretch. Results:
   Background images honour background-size and background-position.
 - **Harness:** `tests/web/icons.html` (an SVG `<img>`, inline svg with
   currentColor from page CSS, an external `use` sprite, a mask-image icon):
-  9 checks, all pass. Results of `./run.sh --test` / `--test --uefi`: see the
-  phase report.
+  9 checks, all pass. `./run.sh --test` and `./run.sh --test --uefi` both exit
+  0 with 443 PASS and no FAIL; `--hosttest` is all ok (svg's run is about 4 s).
 - **Known gaps:** the target table was not re-run against the live sites
   (no internet in this session), so the Wikipedia/HN/GitHub item of
   "done when" is unverified. `mask-image` masks only the background color,
