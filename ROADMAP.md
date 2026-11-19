@@ -12,8 +12,9 @@
   Part 6: 6A–6E done (page tables, ring 3 and syscalls, processes, ELF
   programs in /bin, libwiffer, preemption and timed sleeps, fds, pipes,
   wait); 6F–6G open.
-  Part 7: 7A–7C done (virtio-net, Ethernet/ARP/IPv4/ICMP, UDP, DHCP, DNS);
-  7D–7F open.
+  Part 7: done (7A–7F: virtio-net with MSI-X, Ethernet/ARP/IPv4/ICMP, UDP,
+  DHCP, DNS, TCP, sockets for user space, /bin/fetch (HTTP and HTTPS), nc,
+  ping, host). 8A's getrandom is in too.
 
 Goal: boot into a desktop with overlapping, draggable windows. Each shell
 runs in its own terminal window, and a text editor can open, edit and save
@@ -2178,7 +2179,7 @@ receive-side PMTU probing (fragmentation-needed only lowers the MSS);
 `netstat` shows counters, not per-connection timers; ICMP soft errors are
 recorded (`softError`) but not reported to readers.
 
-## Phase 7E: sockets for user space
+## Phase 7E: sockets for user space (done)
 
 Needs 6E (fds and `wait`) and 7D.
 
@@ -2193,7 +2194,97 @@ Needs 6E (fds and `wait`) and 7D.
 - Limits: sockets per process, and buffer sizes. Everything is freed when
   a process dies with open sockets.
 
-## Phase 7F: tools and interrupts
+### Notes from 7E (as built)
+
+Files: `abi/netcalls.swift` (numbers, errnos, kinds, flags, SocketAddress,
+limits), `sysnet.swift` (`NetSocket`, the calls, resolve),
+`net_socket_selftest.swift`, `user/libwiffer/net.swift`, `user/nettest`.
+`handleSyscall`'s default case now calls `netSyscall` (50-69), so the
+dispatch table needs no per-call lines.
+
+- **ABI** (all in registers; addresses are IPv4 `UInt32` in host order):
+  50 `socket(kind, flags) -> fd` (`SocketKind.tcp/.udp/.icmp`,
+  `SocketFlag.nonBlocking`); 51 `connect(fd, ip, port)`; 52 `bind(fd,
+  port)` (any local address; 0 = ephemeral); 53 `listen(fd, backlog)`; 54
+  `accept(fd, addrOut) -> fd`; 55 `sendto(fd, buf, len, ip, port)` (ip 0 =
+  the connected peer: that's `send`); 56 `recvfrom(fd, buf, len, addrOut)`
+  (that's `recv` with addrOut 0); 57 `shutdown(fd, SocketShutdown.read|
+  write)`; 58 `socket_control(fd, op, value)` (`SocketControl.nonBlocking`,
+  `.error`, `.localAddress`, `.peerAddress` (ip << 16 | port), `.noDelay`,
+  `.available`, `.connected`; value `UInt64.max` only asks); 59
+  `resolve(name, len, out, outLen, options)`. `SocketAddress` is 8 bytes
+  (ip, port, ttl, 0). Errors are the Linux errno values (`NetErrno`:
+  ECONNREFUSED, ETIMEDOUT, EINPROGRESS, ...).
+- **Decision: one `NetSocket` class** (a FileObject, `needsCPU0`) for all
+  three kinds, holding a `TCPConnection`, a `UDPSocket` or an ICMP echo
+  identifier. `ready()` returns `readyBits`, a cached copy that `refresh()`
+  recomputes on CPU 0 after every call and from the stack's callbacks
+  (TCP `onEvent`, UDP `onReceive`, the echo handler), before waking the wait
+  list, so `wait` and blocked calls on other CPUs never touch stack state.
+  Readable: data, end of stream, an error, a queued connection; writable:
+  connected with send space (or an error); hangup: peer closed / failed.
+  `read`/`write`/`wait` work through 6E's `blockingIO`/`sysWait`
+  unchanged.
+- **Non-blocking is per socket** (set at `socket()` or with
+  `socket_control`; accepted sockets inherit it): calls return -EAGAIN,
+  `connect` -EINPROGRESS (wait for writable, then `.error`).
+- **ICMP sockets** ("ping sockets", for /bin/ping): the program sends an
+  echo request (8-byte header + data); the kernel fills in its random
+  identifier and the checksum and queues replies to that identifier
+  (`NetStack.echoHandlers`, beside the shell's `onEchoReply`), with the
+  TTL in `SocketAddress.ttl`. Loopback (127/8) traffic now keeps 127.x as
+  its source address for UDP and ICMP (TCP already did).
+- **resolve** uses the kernel resolver (shared cache). The result is a
+  `ResolveRecord` (count, cached flag, aliases count, the addresses, then
+  the CNAMEs followed) so /bin/host can print the same lines as the
+  built-in. `options` holds an explicit server (ip << 16 | port, for the
+  harness's fake DNS) and `ResolveOption.nonBlocking`: -EAGAIN while the
+  query runs; in-flight lookups are shared by name and server, and a
+  finished one is kept 10 s for the caller to collect. DNSError maps to
+  ENOENT (NXDOMAIN), ENODATA, ETIMEDOUT, EIO, EMSGSIZE, ELOOP, EINVAL,
+  ENETDOWN.
+- **Limits:** 32 sockets per creating process (EMFILE), 96 in all
+  (ENOBUFS), TCP buffers 128 KiB receive / 64 KiB send, 32 queued
+  datagrams per UDP or ICMP socket, UDP payloads up to 1472 bytes
+  (EMSGSIZE: we never fragment). The last close (an exiting or killed
+  process's fd table included) runs `lastClose` on CPU 0: TCP `close()`
+  (FIN, or RST if unread data is left), UDP unbind, echo identifier
+  dropped, counts returned.
+- Data is copied in the syscall; `recvfrom` and `accept` validate the
+  destination (and the address out-pointer) before taking a datagram or a
+  connection, so a bad pointer loses nothing. Socket calls on CPU 0 wake
+  netd themselves (`netPollHook` from `refresh`) so loopback packets
+  don't wait for the main loop's next tick.
+- **libwiffer** (`net.swift`): `Socket.tcp/udp/icmp(nonBlocking:)`,
+  `connect`, `connectStart` (non-blocking: false = in progress), `bind`,
+  `listen`, `accept`, `send(bytes, to:port:)`, `sendAll`, `receive(max:)`,
+  `receive(into:from:)`, `receiveFrom(max:)`, `shutdown`, `close`,
+  `nonBlocking`/`noDelay` (get/set), `pendingError`, `isConnected`,
+  `available`, `localAddress`, `peerAddress`, `file`;
+  `WaitFD(socket:events:)`; `DNS.resolve(name, server:port:nonBlocking:)
+  -> DNSAnswer` (addresses, aliases, cached); `IPv4.parse/string`;
+  `netErrnoMessage` (SysError.message covers the new errnos).
+- **Tests:** `/bin/nettest` (ring 3, 67 checks): getrandom/time; bad kinds,
+  flags and fds, ENOTSOCK; TCP over 127.0.0.1 (refused, EADDRINUSE,
+  EAGAIN accept/recv, non-blocking connect with EALREADY and wait,
+  accept's peer, 1 MiB each way at once through `wait` with FNV-1a hashes,
+  null/kernel/bad-address pointers that lose no data, read()/write() on a
+  socket, half close, hangup, send after shutdown); UDP (EDESTADDRREQ,
+  EMSGSIZE, recvfrom's sender, truncation, the 32-datagram queue); ICMP
+  echo to 127.0.0.1 with sequence, data and TTL; the 32-socket limit;
+  resolve's argument checks; and a child that holds five sockets (with
+  unread data) and is killed: its ports are free again. The kernel
+  selftest (`socketTests`) runs it and then checks no sockets, UDP ports,
+  echo identifiers or listeners are left, every connection is closed or
+  in TIME_WAIT, and (after dropping those) no frames or heap leaked.
+- Known gaps: no IPv6, no `SO_REUSEADDR` (a TIME_WAIT connection doesn't
+  block a new listener anyway, since bind/listen only check listeners),
+  no out-of-band data, no socket options beyond `noDelay`; ICMP errors for
+  UDP are reported to the next read but don't wake a blocked reader; a
+  blocking `resolve` can't be cut short except by a kill (use
+  `nonBlocking` in event loops).
+
+## Phase 7F: tools and interrupts (done)
 
 - **MSI-X for virtio-net** (needs 6A's `mapMMIO`): one vector for rx and
   tx, aimed at CPU 0's LAPIC. The handler only sets a flag and posts to
@@ -2208,6 +2299,85 @@ Needs 6E (fds and `wait`) and 7D.
 **Done when:** `fetch http://info.cern.ch/` prints the first web page
 from a real server (a manual check), and the harness does the same
 against its local server.
+
+
+### Notes from 7F (as built)
+
+Files: `virtio_net.swift` (MSI-X: `pciEnableMSIX`, `netInterrupt`),
+`apic.swift` (`Vector.net` = 0x50), `interrupts.swift` (dispatch),
+`net_commands.swift` (netd parks; ifconfig's `irq:` line), `lib/fetch/`
+(new, with host tests), `user/{fetch,nc,ping,host}`,
+`user/libwiffer/start.S` (`__lshrti3`/`__ashlti3`: lib/crypto's UInt128
+shifts need them in user space), harness `fetch_checks`.
+
+- **MSI-X.** With an MSI-X capability and the x2APIC on, the table (BAR 1,
+  through `mapMMIO`) has entry 0 aimed at CPU 0's LAPIC (fixed, edge,
+  vector 0x50), every other entry masked, INTx disabled, MSI-X enabled
+  before the queues are set up (the legacy header grows: config vector at
+  0x14, queue vector at 0x16, device config moves to 0x18; the MAC and
+  link status are read from `configBase`). Both queues are bound to
+  vector 0 and read back (0xFFFF would mean the device refused); rx
+  interrupts are turned on (avail flags 0). **Decision:** tx keeps
+  VRING_AVAIL_F_NO_INTERRUPT, since tx slots are reclaimed on the next
+  send and a completion has nothing to wake. The handler counts
+  (`netInterrupts`), feeds the entropy pool, sets `netIRQPending`,
+  `unparkLocked(netd)` under schedLock (allocation-free, as the timer's
+  deadline expiry does) and EOIs. **netd now parks** instead of
+  waiting for an inbox message; `netPollHook` (main loop) unparks it too,
+  so polling stays the fallback (and is all there is without the x2APIC
+  or MSI-X). `ifconfig` shows `irq: msi-x vector 0x50 on cpu 0, N
+  interrupts` (or `irq: none (polled)`); BIOS and UEFI both get MSI-X.
+- **lib/fetch** (DEPS tls http inflate url; I/O-free, host-tested: 28
+  checks) is the reusable client the browser shares: `FetchTransport`
+  (plain or a `TLSClient`: start/write/takeOutput/feed/read/
+  transportClosed/close, `failure`, `inputEnded`), `FetchResponseReader`
+  (`HTTPResponseParser` plus an `Inflater` for gzip/deflate, events
+  `.head/.body(decoded)/.complete(keepAlive:)/.failed(message)`),
+  `FetchExchange` (one request on a transport; `init(next:...)` reuses a
+  kept-alive transport), `fetchRequestBytes`, `fetchEndpoint`,
+  `fetchRedirect`. The caller owns the socket: send `takeOutput()`, feed
+  received bytes with `receive(_:)` / `receiveEOF()`, handle events.
+- **/bin/fetch** `[-o file] [-q] [-v] [-k] [--ca file] [--dns ip[:port]]
+  [--resolve name:ip] [--max-redirs n] <url>`: drives a FetchExchange over a
+  non-blocking socket with `wait` (the browser's pattern), follows up to 10
+  redirects, prints the body to stdout or a file; `-v` prints the headers
+  and `fetch: 200 OK, N bytes, fnv1a H, T ms, R KiB/s` to stderr; exit
+  status 3 for HTTP >= 400, 1 for errors. TLS: `/etc/roots.der` (or
+  `--ca`), `now` from the new `time` call, randomness from `getrandom`.
+  **Decision (test CA):** the harness serves tests/certs/roots.der over
+  HTTP and the guest fetches it to `/testca.der` (`fetch -o`), then uses
+  `--ca /testca.der --resolve localhost:10.0.2.2 https://localhost:PORT/`
+  (the test leaf covers localhost, *.wiffer.test, 127.0.0.1). Nothing
+  test-only goes into the rootfs, and it works without a disk.
+- **/bin/nc** `[-u] [-v] host port` / `nc -l [-v] port`: one `wait` loop
+  over stdin and the socket; Ctrl-D half-closes (TCP shutdown), the peer's
+  close ends it.
+- **/bin/ping** (an ICMP socket) and **/bin/host** (`resolve`) print what
+  the built-ins print. **Decision (6E precedent):** the built-in `ping` and
+  `host` stay (built-ins resolve first, and the selftests and serial checks
+  use them); the harness runs every DNS check with both `host` and
+  `/bin/host`, and `/bin/ping -c 3 10.0.2.2` beside the built-in.
+- **Measured** (Apple-silicon host, TCG, -smp 4): `fetch -q` of 10 MiB from
+  the host's Python server through SLIRP with MSI-X: 440-450 ms in BIOS harness runs (23-24 MB/s), 400 ms under UEFI (26 MB/s), 420 ms by hand;
+  rx raised about one interrupt per 5-6 frames (1303 for 7296; netd drains a batch per wakeup).
+  For comparison, 7D's polled `tcpget` of 1 MiB measured 11-25 MB/s: SLIRP and
+  TCG, not the interrupt path, are now the limit.- **Manual checks** (SLIRP with outbound network): `fetch
+  http://info.cern.ch/` prints the first web page; `fetch -v
+  https://example.com/` handshakes with Cloudflare (TLS 1.3, chain
+  validated against /etc/roots.der), gzip-decoded, 200 OK, 577 bytes in
+  about 240 ms; `/bin/host example.com` resolves through SLIRP's DNS.
+- **Harness** (main session): fetch of 1 MiB (hash), 10 MiB (hash, MB/s
+  printed), a gzip page, a 301 → 302 chain, a 404 (exit status 3), `-o`
+  to a file, HTTPS with the test CA (hash), the same server refused with
+  /etc/roots.der and with a name the certificate doesn't cover, `-k`, a
+  refused port; `nc -l` reached from the host through hostfwd and `nc`
+  connecting out, both directions each; `/bin/ping`; `/bin/host` (all the
+  fake-DNS checks); ifconfig's MSI-X line. Selftest: MSI-X interrupts
+  arrive for a ping of the gateway.
+- Known gaps: fetch is GET only and one connection per request
+  (Connection: close); no proxy, no IPv6, no Brotli; MSI-X needs the
+  x2APIC (no xAPIC MMIO path) and targets CPU 0 only; no interrupt
+  moderation beyond what netd's batch poll gives.
 
 ---
 
@@ -2288,8 +2458,27 @@ user space (see the design decisions). They can start before Parts 6 and
   decryption.
 - **Randomness:** a `getrandom` syscall backed by a kernel ChaCha20 DRBG,
   seeded from RDSEED/RDRAND, plus RDTSC jitter and interrupt timing as
-  extra input. (The DRBG is `ChaChaDRBG` in `lib/crypto`; the syscall
-  and seeding are still to do.)
+  extra input.
+
+  **Done** (`random.swift`; build.sh compiles lib/crypto's common, tables,
+  sha2, chacha and drbg into the kernel as `KERNEL_CRYPTO`). Syscall 60
+  `getrandom(buf, len, flags) -> len` (flags 0, at most 64 KiB per call,
+  the destination checked before anything is generated); libwiffer
+  `Random.fill(buffer)`, `Random.bytes(n)`, `Random.uint64()`. Seed at boot
+  (`randomInit`, before netInit): 32 RDSEED words (RDRAND if there is no
+  RDSEED; QEMU's -cpu max has both), 64 RDTSC deltas around port I/O, the
+  RTC time and the tick count, hashed into `ChaChaDRBG` behind `rngLock`.
+  Interrupt timing: the keyboard, mouse and NIC handlers xor the TSC into an
+  8-word pool (no lock, no allocation); every 256 requests, or after 64
+  interrupts, the pool plus fresh hardware words are reseeded in. Output is
+  generated 4 KiB per lock hold. Also syscall 61 `time() -> Unix seconds`
+  (the RTC read once at boot plus the uptime; libwiffer `Time.unixSeconds`),
+  which /bin/fetch passes to TLS as `now`. The boot log says `random: ChaCha20
+  DRBG seeded from rdseed`. Tests: `randomTests` (Unix-time arithmetic, two
+  outputs differ, 10000 bytes cover every value, deterministic per seed) and
+  nettest's getrandom/time checks from ring 3. Gap: without RDRAND/RDSEED
+  the seed is only TSC jitter and interrupt timing (weak; it says
+  `jitter`).
 - **ASN.1 DER and X.509:** parse certificates, check the chain to a
   bundled root store (Mozilla's, as `/etc/roots.der` in rootfs), validity
   dates from the RTC, the hostname against SAN (with wildcards), basic
@@ -2423,9 +2612,9 @@ user space (see the design decisions). They can start before Parts 6 and
 server, and inside Wiffer, `fetch https://example.com/` works (a manual
 check).
 
-**Status:** the host half is done (above). Left for Parts 6/7: the
-`getrandom` syscall, and `/bin/fetch` driving `TLSClient` over a socket
-with `/etc/roots.der` and the RTC time.
+**Status:** done. `getrandom` is in (above), and `/bin/fetch` (7F) drives
+`TLSClient` over a socket with `/etc/roots.der` and the RTC time:
+`fetch https://example.com/` works inside Wiffer (a manual check; see 7F).
 
 ## Phase 8B: URLs, HTTP and inflate (`lib/url`, `lib/http`, `lib/inflate`)
 
