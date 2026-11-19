@@ -1,16 +1,19 @@
-// The DOM produced by the HTML parser (ROADMAP Phase 8C).
+// The DOM produced by the HTML parser (ROADMAP Phase 8C) and changed by
+// the checked mutation API in HTMLDOM.swift (Phase 9G).
 //
 // Ownership: a parent owns its children (`children` holds strong
 // references); `parent` is unowned(unsafe) (Embedded Swift has no `weak`).
-// So a document frees itself and everything under it when the last
-// reference to the document goes away, and no reference cycles exist. The
-// one rule: do not keep a node and use its `parent` after dropping the
-// document it came from. The parser caps tree depth, so recursive
-// deallocation cannot overflow the stack; `teardown()` frees a tree
-// iteratively if you want it gone at a precise moment.
+// Every node also belongs to a document (`nodeDocument`, unowned), and the
+// document keeps every node created for it alive in an arena
+// (`HTMLDocumentState.arena`) until the document itself goes away. So a
+// detached node's old parent never dangles while its document lives. When
+// the document is freed (or `teardown()` is called on it), every node it
+// owns gets `parent = nil` and the trees are dismantled iteratively, so
+// freeing a deep tree never recurses. A node still held elsewhere after
+// that keeps working as the root of a detached subtree.
 
 public enum HTMLNodeKind: UInt8 {
-    case document, doctype, element, text, comment
+    case document, doctype, element, text, comment, documentFragment
 }
 
 public enum HTMLNamespace: UInt8 {
@@ -33,6 +36,20 @@ public struct HTMLAttribute {
     }
 }
 
+/// Per-document state, allocated only for document nodes.
+final class HTMLDocumentState {
+    /// Every node owned by the document (slot = node.arenaIndex). Adopting a
+    /// node into another document moves it to that document's arena.
+    var arena: [HTMLNode?] = []
+    var observers: [(id: Int, fn: (HTMLMutation) -> Void)] = []
+    var nextObserverID = 1
+    var quirks = false
+    /// True for a template contents owner document.
+    var inert = false
+    /// The template contents owner document (created on first use).
+    var templateDocument: HTMLNode? = nil
+}
+
 public final class HTMLNode {
     public let kind: HTMLNodeKind
     /// Elements: the tag name (lowercase for HTML; SVG names are camelCase,
@@ -41,20 +58,32 @@ public final class HTMLNode {
     /// Known HTML element, or `.unknown` (also for every foreign element).
     let tag: HTMLTag
     public internal(set) var namespace: HTMLNamespace
+    /// Change with setAttribute/removeAttribute (HTMLDOM.swift), so that
+    /// mutation observers hear about it.
     public internal(set) var attributes: [HTMLAttribute]
-    /// Text and comment content as UTF-8 (see `text`).
+    /// Text and comment content as UTF-8 (see `text`). Change with setData.
     public internal(set) var data: [UInt8]
     /// Doctype only.
     public internal(set) var publicID: String?
     public internal(set) var systemID: String?
     public internal(set) unowned(unsafe) var parent: HTMLNode?
     public internal(set) var children: [HTMLNode]
-    /// Position in `parent.children`; valid once the parse has finished
-    /// (the parser fills it in a final pass).
+    /// Position in `parent.children`. Valid once the parse has finished (the
+    /// parser fills it in a final pass), and kept valid by every mutation.
     public internal(set) var index: Int
     /// Document only: true if a parse limit (input bytes, node count) cut the
-    /// parse short.
+    /// parse short. Fragments from htmlParseFragment too.
     public internal(set) var truncated: Bool
+    /// The document this node belongs to (itself for a document).
+    unowned(unsafe) var nodeDocument: HTMLNode?
+    /// Slot in nodeDocument's arena.
+    var arenaIndex: Int
+    /// Document only.
+    var docState: HTMLDocumentState?
+    /// HTML `<template>` only: its contents fragment (see templateContents).
+    var templateStorage: HTMLNode?
+    /// Template contents fragment only: the template element it belongs to.
+    unowned(unsafe) var templateHost: HTMLNode?
 
     init(kind: HTMLNodeKind, name: String = "", tag: HTMLTag = .unknown,
          namespace: HTMLNamespace = .html, attributes: [HTMLAttribute] = [], data: [UInt8] = []) {
@@ -70,6 +99,112 @@ public final class HTMLNode {
         self.children = []
         self.index = 0
         self.truncated = false
+        self.nodeDocument = nil
+        self.arenaIndex = -1
+        self.docState = nil
+        self.templateStorage = nil
+        self.templateHost = nil
+        if kind == .document {
+            docState = HTMLDocumentState()
+            nodeDocument = self
+        }
+    }
+
+    deinit {
+        // Children that outlive this node must not point back at it.
+        for c in children { c.parent = nil }
+        if let t = templateStorage { t.templateHost = nil }
+        if docState != nil { dismantleArena() }
+    }
+
+    // ------------------------------------------------------------ documents
+
+    /// The node's document; nil for a document (as in the DOM).
+    public var ownerDocument: HTMLNode? { kind == .document ? nil : nodeDocument }
+
+    /// Document only: quirks mode (from the doctype; fragment parses inherit
+    /// it from the context's document).
+    public var quirksMode: Bool { docState?.quirks ?? false }
+
+    /// Documents only (0 otherwise): how many nodes the arena keeps alive.
+    /// Detached nodes count until the document goes away.
+    public var arenaNodeCount: Int {
+        guard let st = docState else { return 0 }
+        var n = 0
+        for case .some in st.arena { n += 1 }
+        return n
+    }
+
+    /// Put a freshly created node in this document's arena.
+    func registerNode(_ n: HTMLNode) {
+        guard let st = docState else { return }
+        n.nodeDocument = self
+        n.arenaIndex = st.arena.count
+        st.arena.append(n)
+    }
+
+    /// Move one node (not its subtree) from its document's arena to this one.
+    func takeNode(_ n: HTMLNode) {
+        guard let st = docState else { return }
+        let old = n.nodeDocument
+        if old === self { return }
+        let oldIndex = n.arenaIndex
+        n.nodeDocument = self
+        n.arenaIndex = st.arena.count
+        st.arena.append(n)   // before the old slot lets go of it
+        if let o = old, let ost = o.docState, oldIndex >= 0, oldIndex < ost.arena.count, ost.arena[oldIndex] === n {
+            ost.arena[oldIndex] = nil
+        }
+    }
+
+    /// The template contents owner document: an inert document that owns
+    /// every `<template>`'s contents (an inert document is its own).
+    var templateContentsOwner: HTMLNode {
+        guard let st = docState else { return nodeDocument?.templateContentsOwner ?? self }
+        if st.inert { return self }
+        if let t = st.templateDocument { return t }
+        let t = HTMLNode(kind: .document)
+        t.docState?.inert = true
+        t.docState?.quirks = st.quirks
+        st.templateDocument = t
+        return t
+    }
+
+    /// Release every node this document owns without recursion: a node that
+    /// nobody but the arena holds has its children taken away first, so its
+    /// release never cascades down a deep tree. Nodes held elsewhere survive
+    /// with no document (nodeDocument nil) and no parent if theirs went away.
+    func dismantleArena() {
+        guard let st = docState else { return }
+        var arena = st.arena
+        st.arena = []
+        // Nodes that outlive the document are left without one.
+        for case let n? in arena { n.nodeDocument = nil }
+        for c in children { c.parent = nil }
+        children = []
+        var kids: [HTMLNode] = []
+        var pending: [Int] = []
+        var i = 0
+        while i < arena.count {
+            pending.append(i)
+            while let k = pending.popLast() {
+                if k < 0 || k >= arena.count || arena[k] == nil { continue }
+                if !isKnownUniquelyReferenced(&arena[k]) { continue }
+                guard let n = arena[k] else { continue }
+                arena[k] = nil
+                kids = n.children
+                n.children = []
+                if let t = n.templateStorage { t.templateHost = nil; n.templateStorage = nil }
+                for c in kids {
+                    c.parent = nil
+                    let ci = c.arenaIndex
+                    if ci >= 0 && ci < arena.count && arena[ci] === c { pending.append(ci) }
+                }
+                kids.removeAll()
+            }
+            i += 1
+        }
+        arena.removeAll()
     }
 
     // ---------------------------------------------------------------- kinds
@@ -192,7 +327,10 @@ public final class HTMLNode {
     // ------------------------------------------------------------ teardown
 
     /// Free the whole subtree now, without recursion. The node is left empty.
+    /// On a document this also releases every node in its arena (see the
+    /// ownership note at the top of the file).
     public func teardown() {
+        if docState != nil { dismantleArena(); docState?.templateDocument?.teardown(); return }
         var stack: [HTMLNode] = [self]
         while let n = stack.popLast() {
             for c in n.children { c.parent = nil; stack.append(c) }
@@ -201,14 +339,19 @@ public final class HTMLNode {
     }
 
     // ------------------------------------------------- builder-only mutation
+    // Unchecked, no notifications, and `index` is not maintained (the parser
+    // runs assignIndices at the end). Moving a node under a parent in another
+    // document (a template's contents) adopts it.
 
-    func appendChild(_ c: HTMLNode) {
+    func parserAppend(_ c: HTMLNode) {
+        if c.nodeDocument !== nodeDocument, let d = nodeDocument { d.adoptSubtree(c) }
         c.parent = self
         c.index = children.count
         children.append(c)
     }
-    func insertChild(_ c: HTMLNode, before ref: HTMLNode?) {
-        guard let ref = ref, let i = childIndex(ref) else { appendChild(c); return }
+    func parserInsert(_ c: HTMLNode, before ref: HTMLNode?) {
+        guard let ref = ref, let i = childIndex(ref) else { parserAppend(c); return }
+        if c.nodeDocument !== nodeDocument, let d = nodeDocument { d.adoptSubtree(c) }
         c.parent = self
         children.insert(c, at: i)
     }
@@ -217,18 +360,24 @@ public final class HTMLNode {
         while i >= 0 { if children[i] === c { return i }; i -= 1 }
         return nil
     }
-    func detach() {
+    func parserDetach() {
         guard let p = parent else { return }
         if let i = p.childIndex(self) { p.children.remove(at: i) }
         parent = nil
     }
 
-    /// Fill in `index` for every node under this one.
+    /// Fill in `index` for every node under this one (template contents
+    /// included).
     func assignIndices() {
         var stack: [HTMLNode] = [self]
         while let n = stack.popLast() {
             var i = 0
-            for c in n.children { c.index = i; i += 1; if !c.children.isEmpty { stack.append(c) } }
+            for c in n.children {
+                c.index = i
+                i += 1
+                if !c.children.isEmpty || c.templateStorage != nil { stack.append(c) }
+            }
+            if let t = n.templateStorage { stack.append(t) }
         }
     }
 }

@@ -52,6 +52,8 @@ extension HTMLTreeBuilder {
             if ws { insertCharacter(c) }
         case .afterAfterFrameset:
             if ws { bodyChar(c) }
+        case .inTemplate:
+            bodyChar(c)
         }
     }
 
@@ -96,10 +98,10 @@ extension HTMLTreeBuilder {
         if mode == .inTableText { flushTableText() }
         switch mode {
         case .initial, .beforeHtml, .afterAfterBody, .afterAfterFrameset:
-            doc.appendChild(newNode(.comment, data: data))
+            doc.parserAppend(newNode(.comment, data: data))
         case .afterBody:
-            if let html = open.first { html.appendChild(newNode(.comment, data: data)) }
-            else { doc.appendChild(newNode(.comment, data: data)) }
+            if let html = open.first { html.parserAppend(newNode(.comment, data: data)) }
+            else { doc.parserAppend(newNode(.comment, data: data)) }
         default:
             insertComment(data)
         }
@@ -126,6 +128,14 @@ extension HTMLTreeBuilder {
             case .text:
                 pop()
                 mode = originalMode
+            case .inBody, .inTable, .inCaption, .inColumnGroup, .inTableBody, .inRow, .inCell,
+                 .inSelect, .inSelectInTable, .inTemplate:
+                // "in body" EOF defers to "in template" while templates are open.
+                if templateModes.isEmpty || !templateOnStack { return }
+                popUntil(.template)
+                clearFormattingToMarker()
+                templateModes.removeLast()
+                resetInsertionMode()
             default:
                 return
             }
@@ -134,7 +144,7 @@ extension HTMLTreeBuilder {
 
     func createHTMLRoot(_ attrs: [HTMLAttribute]) {
         let n = newNode(.element, name: "html", tag: .html, attrs: attrs)
-        doc.appendChild(n)
+        doc.parserAppend(n)
         open = [n]
         mode = .beforeHead
     }
@@ -173,7 +183,7 @@ extension HTMLTreeBuilder {
             case .html: bodyStart(t)
             case .body: insertHTML(t); framesetOK = false; mode = .inBody
             case .frameset: insertHTML(t); mode = .inFrameset
-            case .base, .basefont, .bgsound, .link, .meta, .noframes, .script, .style, .title:
+            case .base, .basefont, .bgsound, .link, .meta, .noframes, .script, .style, .template, .title:
                 if let h = headElement {
                     open.append(h)
                     headStart(t)
@@ -203,6 +213,7 @@ extension HTMLTreeBuilder {
             switch t.tag {
             case .html: bodyStart(t)
             case .col: insertVoid(t)
+            case .template: headStart(t)
             default:
                 if currentIs(.colgroup) { pop(); mode = .inTable; modeStart(t) }
             }
@@ -251,7 +262,42 @@ extension HTMLTreeBuilder {
             case .noframes: headStart(t)
             default: break
             }
+        case .inTemplate:
+            templateStart(t)
         }
+    }
+
+    func templateStart(_ t: HTMLStartToken) {
+        switch t.tag {
+        case .base, .basefont, .bgsound, .link, .meta, .noframes, .script, .style, .template, .title:
+            headStart(t)
+        case .caption, .colgroup, .tbody, .tfoot, .thead:
+            switchTemplateMode(.inTable); modeStart(t)
+        case .col:
+            switchTemplateMode(.inColumnGroup); modeStart(t)
+        case .tr:
+            switchTemplateMode(.inTableBody); modeStart(t)
+        case .td, .th:
+            switchTemplateMode(.inRow); modeStart(t)
+        default:
+            switchTemplateMode(.inBody); modeStart(t)
+        }
+    }
+
+    func switchTemplateMode(_ m: HTMLMode) {
+        if !templateModes.isEmpty { templateModes.removeLast() }
+        templateModes.append(m)
+        mode = m
+    }
+
+    /// An end tag "template" (in head rules, reached from most modes).
+    func endTemplate() {
+        if !templateOnStack { return }
+        generateAllImpliedEndTags()
+        popUntil(.template)
+        clearFormattingToMarker()
+        if !templateModes.isEmpty { templateModes.removeLast() }
+        resetInsertionMode()
     }
 
     func genericRaw(_ t: HTMLStartToken, rcdata: Bool) {
@@ -270,6 +316,12 @@ extension HTMLTreeBuilder {
             insertHTML(t)
             mode = .inHeadNoscript
         case .noframes, .style: genericRaw(t, rcdata: false)
+        case .template:
+            insertHTML(t)
+            pushMarker()
+            framesetOK = false
+            mode = .inTemplate
+            templateModes.append(.inTemplate)
         case .script:
             insertHTML(t)
             tokenizer.state = .scriptData
@@ -354,14 +406,14 @@ extension HTMLTreeBuilder {
             popUntil(.table)
             resetInsertionMode()
             modeStart(t)
-        case .style, .script:
+        case .style, .script, .template:
             headStart(t)
         case .input:
             var hidden = false
             for a in t.attrs where a.name == "type" { hidden = htmlLowerASCII(a.value) == "hidden" }
             if hidden { insertVoid(t) } else { tableAnythingElseStart(t) }
         case .form:
-            if formElement != nil { return }
+            if formElement != nil || templateOnStack { return }
             formElement = insertElement(name: t.name, tag: t.tag, attrs: t.attrs, push: false)
         default:
             tableAnythingElseStart(t)
@@ -425,17 +477,18 @@ extension HTMLTreeBuilder {
     func bodyStart(_ t: HTMLStartToken) {
         switch t.tag {
         case .html:
+            if templateOnStack { return }
             if let h = open.first { addMissingAttrs(h, t.attrs) }
-        case .base, .basefont, .bgsound, .link, .meta, .noframes, .script, .style, .title:
+        case .base, .basefont, .bgsound, .link, .meta, .noframes, .script, .style, .template, .title:
             headStart(t)
         case .body:
-            if open.count >= 2 && isHTML(open[1], .body) {
+            if open.count >= 2 && isHTML(open[1], .body) && !templateOnStack {
                 framesetOK = false
                 addMissingAttrs(open[1], t.attrs)
             }
         case .frameset:
             if open.count < 2 || !isHTML(open[1], .body) || !framesetOK { return }
-            open[1].detach()
+            open[1].parserDetach()
             while open.count > 1 { open.removeLast() }
             insertHTML(t)
             mode = .inFrameset
@@ -454,9 +507,11 @@ extension HTMLTreeBuilder {
             ignoreLF = true
             framesetOK = false
         case .form:
-            if formElement != nil { return }
+            let tpl = templateOnStack
+            if formElement != nil && !tpl { return }
             closePIfInButtonScope()
-            formElement = insertHTML(t)
+            let f = insertHTML(t)
+            if !tpl { formElement = f }
         case .li:
             framesetOK = false
             var i = open.count - 1
@@ -619,6 +674,7 @@ extension HTMLTreeBuilder {
             switch t.tag {
             case .head: pop(); mode = .afterHead
             case .body, .html, .br: pop(); mode = .afterHead; modeEnd(t)
+            case .template: endTemplate()
             default: break
             }
         case .inHeadNoscript:
@@ -633,6 +689,7 @@ extension HTMLTreeBuilder {
                 _ = insertHTMLNamed(.body, "body")
                 mode = .inBody
                 modeEnd(t)
+            case .template: endTemplate()
             default: break
             }
         case .inBody:
@@ -655,6 +712,7 @@ extension HTMLTreeBuilder {
             switch t.tag {
             case .colgroup: if currentIs(.colgroup) { pop(); mode = .inTable }
             case .col: break
+            case .template: endTemplate()
             default:
                 if currentIs(.colgroup) { pop(); mode = .inTable; modeEnd(t) }
             }
@@ -688,7 +746,9 @@ extension HTMLTreeBuilder {
         case .inSelect, .inSelectInTable:
             selectEnd(t)
         case .afterBody:
-            if t.tag == .html { mode = .afterAfterBody } else { mode = .inBody; modeEnd(t) }
+            if t.tag == .html {
+                if context == nil { mode = .afterAfterBody }   // fragment case: ignored
+            } else { mode = .inBody; modeEnd(t) }
         case .afterAfterBody:
             mode = .inBody
             modeEnd(t)
@@ -701,6 +761,8 @@ extension HTMLTreeBuilder {
             if t.tag == .html { mode = .afterAfterFrameset }
         case .afterAfterFrameset:
             break
+        case .inTemplate:
+            if t.tag == .template { endTemplate() }
         }
     }
 
@@ -710,6 +772,8 @@ extension HTMLTreeBuilder {
             if !hasInScope(.table, .table) { return }
             popUntil(.table)
             resetInsertionMode()
+        case .template:
+            endTemplate()
         case .body, .caption, .col, .colgroup, .html, .tbody, .td, .tfoot, .th, .thead, .tr:
             break
         default:
@@ -728,6 +792,8 @@ extension HTMLTreeBuilder {
             if currentIs(.option) { pop() }
         case .select:
             if hasInScope(.select, .select) { popUntil(.select); resetInsertionMode() }
+        case .template:
+            endTemplate()
         case .caption, .table, .tbody, .tfoot, .thead, .tr, .td, .th:
             if mode == .inSelectInTable {
                 if hasInScope(t.tag, .table) {
@@ -753,6 +819,12 @@ extension HTMLTreeBuilder {
             generateImpliedEndTags()
             popUntil(t.tag)
         case .form:
+            if templateOnStack {
+                if !hasInScope(.form) { return }
+                generateImpliedEndTags()
+                popUntil(.form)
+                return
+            }
             let node = formElement
             formElement = nil
             guard let f = node, hasNodeInScope(f) else { return }
@@ -782,6 +854,8 @@ extension HTMLTreeBuilder {
             clearFormattingToMarker()
         case .br:
             bodyStart(HTMLStartToken(name: "br", tag: .br, attrs: [], selfClosing: false))
+        case .template:
+            endTemplate()
         default:
             anyOtherEndTag(t.name, t.tag)
         }
@@ -827,10 +901,10 @@ extension HTMLTreeBuilder {
                 if n.namespace == .html || isMathTextIntegrationPoint(n) || isHTMLIntegrationPoint(n) { break }
                 open.removeLast()
             }
-            dispatchStart(t)
+            modeStart(t)
             return
         }
-        let ns = open.last?.namespace ?? .html
+        let ns = adjustedCurrent?.namespace ?? .html
         insertForeign(t, ns)
     }
 
@@ -840,7 +914,7 @@ extension HTMLTreeBuilder {
                 if n.namespace == .html || isMathTextIntegrationPoint(n) || isHTMLIntegrationPoint(n) { break }
                 open.removeLast()
             }
-            dispatchEnd(t)
+            modeEnd(t)
             return
         }
         var idx = open.count - 1
