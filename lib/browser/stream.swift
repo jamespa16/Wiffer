@@ -27,6 +27,8 @@ class BrowserStream {
     func close() {}
     var waitFD: Int { -1 }
     var waitEvents: Int16 { 0 }
+    /// True while progress needs polling on a timer, not an fd (DNS).
+    var needsTimer: Bool { false }
 }
 
 /// TLS 1.3 (lib/tls) over another stream.
@@ -48,7 +50,7 @@ final class BrowserTLSStream: BrowserStream {
         case .idle, .handshaking: return .connecting
         case .connected: return tls.peerClosed ? .closed : .open
         case .closed: return .closed
-        case .failed: return .failed(.tls(tls.error.map { $0.description } ?? "handshake failed"))
+        case .failed: return .failed(.tls(tls.error.map { $0.description } ?? "TLS: handshake failed"))
         }
     }
 
@@ -98,4 +100,5 @@ final class BrowserTLSStream: BrowserStream {
 
     override var waitFD: Int { raw.waitFD }
     override var waitEvents: Int16 { raw.waitEvents }
+    override var needsTimer: Bool { raw.needsTimer }
 }

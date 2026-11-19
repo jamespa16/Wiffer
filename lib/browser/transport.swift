@@ -77,7 +77,7 @@ enum BrowserLoadError: Equatable {
         case .connectionRefused(let h): return h + " refused the connection."
         case .connectionFailed(let m): return m
         case .timedOut(let h): return h + " took too long to respond."
-        case .tls(let m): return "TLS: " + m
+        case .tls(let m): return m
         case .badResponse(let m): return "The server sent something that isn't HTTP: " + m + "."
         case .tooManyRedirects: return "The page redirected too many times."
         case .badRedirect: return "The page redirected to an invalid address."

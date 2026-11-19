@@ -713,6 +713,7 @@ def main():
     term = None if opts.command else Session(monitor=True)  # Phase L, in the boot desktop
     pre = None if opts.command else Session(monitor=True)  # Phase 6D, in the boot desktop
     gui = None if opts.command else Session(monitor=True)  # Phase 6F, in the boot desktop
+    web = None if opts.command else Session(monitor=True)  # Phase 8H, the browser, in the boot desktop
     # Phase Y: persistence (boot 1 of 2, in the desktop, on its own FAT32
     # image) and mkfs on a blank image. Not with --nodisk.
     persist = blank = None
@@ -913,6 +914,8 @@ def main():
             failures += preempt_desktop_checks(pre, opts.timeout)
         if gui:
             failures += gui_checks(gui, opts.timeout)
+        if web:
+            failures += browse_checks(web, opts.timeout)
         if blank:
             failures += mkfs_checks(blank, blank_img[0], opts.timeout)
         if persist:
@@ -966,6 +969,8 @@ def main():
             pre.close()
         if gui:
             gui.close()
+        if web:
+            web.close()
 
 
 def fake_dns_server():
@@ -1589,9 +1594,11 @@ def gui_checks(s: Session, timeout: float) -> int:
     if check(bool(apps), "taskbar has an Apps launcher", str(buttons)):
         a = apps[0]
         s.click(a[0] + a[2] // 2, a[1] + a[3] // 2)
-        px = s.pixel_at(a[0] + 20, a[1] - 46, dump)  # the menu's top border
+        # Rows of 20 px, newest app last (Phase 8H added browse): clock,
+        # sysmon, browse; the menu sits right above the taskbar.
+        px = s.pixel_at(a[0] + 20, a[1] - 66, dump)  # the menu's top border
         check(px == bytes.fromhex("55FFFF"), "the menu opens above the button", px.hex())
-        s.click(a[0] + 20, a[1] - 34)  # first row: clock
+        s.click(a[0] + 20, a[1] - 54)  # first row: clock
         check(b"launch: clock" in s.read_until(b"launch: clock", timeout), "choosing clock launches /bin/clock")
         time.sleep(0.8)
         cid, c = find("Clock")
@@ -1607,12 +1614,18 @@ def gui_checks(s: Session, timeout: float) -> int:
             a2 = band()
             check(a1 != a2, "the clock redraws as time passes")
         s.click(a[0] + a[2] // 2, a[1] + a[3] // 2)
-        s.click(a[0] + 20, a[1] - 14)  # second row: sysmon
+        s.click(a[0] + 20, a[1] - 34)  # second row: sysmon
         check(b"launch: sysmon" in s.read_until(b"launch: sysmon", timeout), "choosing sysmon launches /bin/sysmon")
         time.sleep(0.8)
         check(find("System monitor")[0] is not None, "the sysmon window opens")
+        s.click(a[0] + a[2] // 2, a[1] + a[3] // 2)
+        s.click(a[0] + 20, a[1] - 14)  # third row: browse (Phase 8H)
+        check(b"launch: browse" in s.read_until(b"launch: browse", timeout), "choosing browse launches /bin/browse")
+        s.read_until(b"browse: title 'Home'", 30)
+        time.sleep(0.5)
+        check(find("Home")[0] is not None, "the browser opens about:home", str(s.windows()))
     got = s.command("ps")
-    for name in ("clock", "sysmon"):
+    for name in ("clock", "sysmon", "browse"):
         m = re.search(rf"^\s*(\d+)\s+\d+\s+running\s+\d+\s+{name}", got, re.M)
         if m:
             s.command(f"kill {m.group(1)}", timeout)
@@ -2168,6 +2181,188 @@ def terminal_checks(s: Session, timeout: float) -> int:
     got = s.command("/bin/cat /README | /bin/wc")
     check(f"\r\n{README_WC}\r\n" in got, "/bin/cat /README | /bin/wc works in a terminal window", repr(got))
     failures += program_io_checks(s, timeout, "terminal window")
+    return failures
+
+
+# ---- Phase 8H: the browser -------------------------------------------------
+
+BROWSE_TITLE_RE = re.compile(rb"browse: title '([^']*)'")
+BROWSE_SCROLL_RE = re.compile(rb"browse: scroll y=(\d+)")
+
+
+def browse_checks(s: Session, timeout: float) -> int:
+    """Phase 8H on the desktop: /bin/browse on rootfs /www (file://). The
+    browser writes "browse: ..." lines to serial on navigation, title
+    changes, scrolling, submits, errors and when a load is done; the checks
+    wait for those, then look at `windows` and screendumps. Page pixels:
+    the window's content starts 2 px right and 22 px down from its frame,
+    and the page 30 px below that (the toolbar)."""
+    failures = 0
+    dump = os.path.join(ROOT, "build", "browse.ppm")
+
+    def check(ok, label, detail=""):
+        nonlocal failures
+        failures += not ok
+        print(f"{'PASS' if ok else 'FAIL'}: 8H browse: {label}" + ("" if ok or not detail else f"\n  {detail}"))
+        return ok
+
+    def find(title):
+        wins, _ = s.windows()
+        for i, w in wins.items():
+            if w[5] == title:
+                return i, w
+        return None, None
+
+    def wait_title(title, t=60.0):
+        got = s.read_until(f"browse: title '{title}'".encode(), t)
+        return f"browse: title '{title}'".encode() in got
+
+    def kill_all(name="browse"):
+        for m in re.finditer(rf"^\s*(\d+)\s+\d+\s+running\s+\d+\s+{name}", s.command("ps"), re.M):
+            s.command(f"kill {m.group(1)}", timeout)
+        time.sleep(0.5)
+
+    boot = s.read_prompt(boot_timeout(timeout))
+    if not check(PROMPT_RE.search(boot) and b"desktop: on" in s.log, "boots into the desktop", repr(boot[-200:])):
+        return failures
+    check(b"mouse with wheel" in s.log, "the PS/2 mouse is in IntelliMouse mode (wheel)")
+
+    t0 = time.time()
+    s.command("browse file:///www/index.html &", timeout)
+    got = s.read_until(b"browse: done file:///www/index.html", 120)
+    check(b"browse: done file:///www/index.html" in got, "loads file:///www/index.html", repr(got[-300:]))
+    m = re.search(rb"browse: done file:///www/index.html in (\d+) ms", got)
+    print(f"harness: browse started and loaded the test page in {time.time() - t0:.1f} s"
+          + (f" (load {int(m.group(1))} ms)" if m else ""))
+    time.sleep(0.8)
+    wid, w = find("Wiffer test page")
+    if not check(w is not None and w[4], "the window title is the page <title>", str(s.windows())):
+        return failures
+    px0, py0 = w[0] + 2, w[1] + 22 + 30  # page origin on screen
+
+    def page_pixel(x, y, want, t=5.0):
+        return s.wait_pixel(px0 + x, py0 + y, bytes.fromhex(want), dump, timeout=t)
+
+    px = page_pixel(100, 40, "C02080")
+    check(px == bytes.fromhex("C02080"), "the page's coloured box is on screen", px.hex())
+    px = page_pixel(300, 90, "E0A020")
+    check(px == bytes.fromhex("E0A020"), "a linked stylesheet applies", px.hex())
+
+    # A link click, back and forward.
+    s.click(px0 + 150, py0 + 120)
+    check(wait_title("Second page"), "clicking a link navigates (title changes)")
+    time.sleep(0.5)
+    check(find("Second page")[0] is not None, "the window title follows")
+    px = page_pixel(100, 40, "20A0C0")
+    check(px == bytes.fromhex("20A0C0"), "the second page is drawn", px.hex())
+    s.sendkeys(["alt-left"])
+    check(wait_title("Wiffer test page"), "Alt-Left goes back")
+    s.sendkeys(["alt-right"])
+    check(wait_title("Second page"), "Alt-Right goes forward")
+    s.sendkeys(["alt-left"])
+    wait_title("Wiffer test page")
+    s.read_until(b"browse: done file:///www/index.html", 30)
+    time.sleep(0.5)
+
+    # Scrolling: End, Home, the wheel.
+    s.sendkeys(["end"])
+    got = s.read_until(b"browse: scroll y=", 10) + s.read_until(b"\n", 2)
+    m = BROWSE_SCROLL_RE.search(got)
+    check(m is not None and int(m.group(1)) > 2500, "End scrolls to the bottom", repr(got[-200:]))
+    vh = w[3] - 22 - 2 - 30 - 20
+    px = page_pixel(100, vh - 40, "2060E0")
+    check(px == bytes.fromhex("2060E0"), "the last block is on screen", px.hex())
+    s.sendkeys(["home"])
+    got = s.read_until(b"browse: scroll y=0", 10)
+    check(b"browse: scroll y=0" in got, "Home scrolls to the top", repr(got[-200:]))
+    s.warp(px0 + 600, py0 + 300)
+    s.monitor("mouse_move 0 0 -1")
+    got = s.read_until(b"browse: scroll y=60", 10)
+    check(b"browse: scroll y=60" in got, "the wheel scrolls down 60 px a notch", repr(got[-200:]))
+    s.monitor("mouse_move 0 0 1")
+    got = s.read_until(b"browse: scroll y=0", 10)
+    check(b"browse: scroll y=0" in got, "and back up", repr(got[-200:]))
+    s.sendkeys(["pgdn"])
+    got = s.read_until(b"browse: scroll y=", 10) + s.read_until(b"\n", 2)
+    m = BROWSE_SCROLL_RE.search(got)
+    check(m is not None and int(m.group(1)) > 300, "PgDn pages down", repr(got[-200:]))
+    s.sendkeys(["home"])
+    s.read_until(b"browse: scroll y=0", 10)
+
+    # A form: type into the text field, submit with Enter.
+    s.click(px0 + 440, py0 + 20)
+    time.sleep(0.3)
+    s.sendkeys(["a", "b", "c", "ret"])
+    got = s.read_until(b"browse: title 'Second page'", 30)
+    check(b"submit GET file:///www/page2.html?q=wifferabc&c=on&s=one" in got, "a form submits by GET with the typed text",
+          repr(got[-300:]))
+
+    # Errors and hostile pages, each in its own browser.
+    s.command("browse file:///www/missing.html &", timeout)
+    got = s.read_until(b"browse: title 'File not found'", 60)
+    check(b"browse: error file:///www/missing.html: File not found" in got, "a missing file is an error page", repr(got[-300:]))
+    for name in ("deep", "junk"):
+        s.command(f"browse file:///www/{name}.html &", timeout)
+        got = s.read_until(f"browse: done file:///www/{name}.html".encode(), 120)
+        check(f"browse: done file:///www/{name}.html".encode() in got, f"loads the hostile page {name}.html", repr(got[-300:]))
+    time.sleep(1.0)
+    got = s.command("ps", timeout)
+    n = len(re.findall(r"running\s+\d+\s+browse", got))
+    check(n == 4, "all four browsers still run after the hostile pages", repr(got))
+    m = re.search(r"(\d+) used \((\d+) MiB\)", s.command("mem", timeout))
+    if m:
+        print(f"harness: memory in use with four browsers open: {m.group(2)} MiB")
+    kill_all()
+    check(find("Wiffer test page")[0] is None, "killing the browser closes its window")
+
+    # Over the network: the harness's HTTP server, HTTPS with the test CA
+    # (fetched with /bin/fetch), and a refused connection.
+    certs = os.path.join(ROOT, "tests", "certs")
+    with open(os.path.join(certs, "roots.der"), "rb") as f:
+        ca = f.read()
+    page = (b"<!DOCTYPE html><title>Over HTTP</title><link rel=stylesheet href=/s.css>"
+            b"<div id=b style='width:200px;height:80px;background:#30A050'></div><img src=/g.png>")
+    with open(os.path.join(ROOT, "rootfs", "www", "green.png"), "rb") as f:
+        png = f.read()
+    files = {"/": (page, [("Content-Type", "text/html")]), "/s.css": (b"body{margin:0}", [("Content-Type", "text/css")]),
+             "/g.png": (png, [("Content-Type", "image/png")]), "/testca.der": (ca, []),
+             "/moved": ("redirect", 302, "/")}
+    port, stop = fetch_server(files)
+    tport, tstop = fetch_server({"/": (b"<title>Over HTTPS</title><p>secure", [("Content-Type", "text/html")])},
+                                tls=(os.path.join(certs, "leaf-ec.chain.pem"), os.path.join(certs, "leaf-ec.key.pem")))
+    try:
+        s.command(f"browse http://10.0.2.2:{port}/moved &", timeout)
+        got = s.read_until(b"browse: title 'Over HTTP'", 90)
+        got += s.read_until(b"browse: done http://10.0.2.2", 60)
+        got += s.read_until(b"bytes)", 5)
+        check(b"browse: title 'Over HTTP'" in got and b"2/2 resources" in got,
+              "http://: a redirect, then the page with its stylesheet and image", repr(got[-400:]))
+        time.sleep(0.8)
+        _, w = find("Over HTTP")
+        if check(w is not None, "the HTTP page's window", str(s.windows())):
+            px = s.wait_pixel(w[0] + 2 + 100, w[1] + 22 + 30 + 40, bytes.fromhex("30A050"), dump)
+            check(px == bytes.fromhex("30A050"), "the HTTP page is drawn", px.hex())
+        # (Command lines stay short: the terminal window is 76 columns wide.)
+        s.command(f"fetch -o /ca.der http://10.0.2.2:{port}/testca.der", 30.0)
+        s.command(f"browse --ca /ca.der -r localhost:10.0.2.2 https://localhost:{tport}/ &", timeout)
+        got = s.read_until(b"browse: title 'Over HTTPS'", 90)
+        check(b"browse: title 'Over HTTPS'" in got, "https:// with the test CA (TLS 1.3)", repr(got[-400:]))
+        s.command(f"browse -r localhost:10.0.2.2 https://localhost:{tport}/ &", timeout)
+        got = s.read_until(b"browse: title 'Secure connection failed'", 90)
+        check(b"Secure connection failed: TLS:" in got,
+              "an untrusted certificate is a TLS error page", repr(got[-400:]))
+        s.command(f"browse http://10.0.2.2:{free_port()}/ &", timeout)
+        got = s.read_until(b"browse: title 'Connection refused'", 60)
+        check(b"browse: title 'Connection refused'" in got, "a closed port is a connection-refused page", repr(got[-400:]))
+        s.command("browse http://no-such-host.invalid/ &", timeout)
+        got = s.read_until(b"browse: title 'Server not found'", 60)
+        check(b"browse: title 'Server not found'" in got, "an unknown host is a DNS error page", repr(got[-400:]))
+    finally:
+        stop()
+        tstop()
+    got = s.command("ps", timeout)
+    check(len(re.findall(r"running\s+\d+\s+browse", got)) == 5, "every browser survived", repr(got))
+    kill_all()
     return failures
 
 

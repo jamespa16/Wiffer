@@ -95,6 +95,7 @@ final class BrowserHTTPTransport: BrowserTransport {
     override func nextDeadline(now: Int) -> Int? {
         var best: Int? = nil
         for (_, j) in jobs where j.conn != nil { best = best.map { min($0, j.deadline) } ?? j.deadline }
+        for (_, c) in conns where c.stream.needsTimer { best = min(best ?? (now + 20), now + 20) }
         return best
     }
 

@@ -7,6 +7,8 @@ body { margin: 0; font-family: sans-serif }
 #next { display: block; width: 300px; height: 40px; background: #40C020; color: #fff }
 #spacer { height: 3000px; background: #f4f4f4 }
 #end { height: 200px; background: #2060E0; color: #fff }
+form { position: absolute; left: 420px; top: 10px; margin: 0 }
+#q { width: 150px; height: 20px }
 </style></head>
 <body>
 <div id="box"></div>
@@ -15,7 +17,7 @@ body { margin: 0; font-family: sans-serif }
 <p><a href="#end">Jump to the end</a> &middot; <a href="deep.html">deep nesting</a> &middot;
 <a href="junk.html">random bytes</a> &middot; <a href="missing.html">a missing page</a> &middot; <a href="/www/">this directory</a></p>
 <form action="page2.html" method="get">
-<input type="text" name="q" value="wiffer"> <input type="checkbox" name="c" checked>
+<input type="text" id="q" name="q" value="wiffer"> <input type="checkbox" name="c" checked>
 <select name="s"><option>one</option><option>two</option></select>
 <input type="submit" value="Go">
 </form>

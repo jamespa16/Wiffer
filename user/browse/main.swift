@@ -66,6 +66,56 @@ loader.clock = { Time.now }
 loader.log = { say($0) }
 loader.addTransport(BrowserFileTransport())
 
+// MARK: Network (http:// and https://)
+
+/// Options: browse [-k] [--ca file] [-r|--resolve name:ip] [url]. -k accepts any certificate;
+/// --ca trusts the CA certificates in a file (concatenated DER) instead of
+/// /etc/roots.der (the harness's test CA).
+var insecureTLS = false
+var caPath = "/etc/roots.der"
+var startURL: String? = nil
+func parseArgs() {
+    let a = Process.args
+    var i = 1
+    while i < a.count {
+        if a[i] == "-k" { insecureTLS = true }
+        else if a[i] == "--ca" && i + 1 < a.count { i += 1; caPath = a[i] }
+        else if (a[i] == "--resolve" || a[i] == "-r") && i + 1 < a.count {
+            i += 1
+            let parts = a[i].split(separator: ":")
+            if parts.count == 2, let ip = IPv4.parse(String(parts[1])) { browseResolveOverrides.append((name: String(parts[0]), ip: ip)) }
+        }
+        else { startURL = a[i] }
+        i += 1
+    }
+}
+parseArgs()
+
+var trustStore = X509TrustStore()
+var trustLoaded = false
+func tlsConfig(_ host: String) -> TLSClientConfig {
+    let now = Int64(Time.unixSeconds)
+    if insecureTLS { return TLSClientConfig(serverName: host, trust: .insecureAcceptAny, now: now) }
+    if !trustLoaded {
+        trustLoaded = true
+        do throws(SysError) {
+            trustStore = X509TrustStore(concatenatedDER: try browseReadFile(caPath, max: 8 * 1024 * 1024))
+        } catch {
+            say("trust store " + caPath + ": " + error.message)
+        }
+    }
+    return TLSClientConfig(serverName: host, trust: .roots(trustStore), now: now)
+}
+
+let http = BrowserHTTPTransport()
+http.unixTime = { Time.unixSeconds }
+http.openStream = { host, port, tls, _ in
+    let raw = BrowseSocketStream(host: host, port: port)
+    if !tls { return raw }
+    return BrowserTLSStream(raw: raw, config: tlsConfig(host), random: { Random.bytes($0) })
+}
+loader.addTransport(http)
+
 var history = BrowserHistory()
 var scrollX = 0
 var scrollY = 0
@@ -629,8 +679,7 @@ app.dynamicWaits = {
 app.onDynamicReady = { _ in } // onIdle pumps every transport after each wait
 
 say("ready \(app.window.width)x\(app.window.height)")
-let args = Process.args
-if args.count > 1 { navigateTo(args[1]) } else { navigateTo(browserHomeURL) }
+navigateTo(startURL ?? browserHomeURL)
 updateButtons()
 let code = app.run()
 for t in loader.transports { t.shutdown() }
