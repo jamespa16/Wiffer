@@ -4,4 +4,5 @@
 func libTests(_ t: Tests) {
     jsParserTests(t)
     jsCoreTests(t)
+    jsRegExpTests(t)
 }
