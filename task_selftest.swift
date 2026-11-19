@@ -245,5 +245,8 @@ func taskTests(_ t: inout SelfTest) {
     watchdogLimit = limit
     watchdogAlertUntil = 0
     t.check("tasks: watchdog trips on a task that doesn't yield", tripped)
-    t.check("tasks: watchdog reported at the next switch", !canReport || (watchdogTrips == trips + 1 && !watchdogTripped))
+    // watchdogTrips is shared by every CPU, and the 30 ms limit is still in
+    // force during the yield, so under host load another CPU can trip too:
+    // require at least our trip, reported (flag cleared) at the switch.
+    t.check("tasks: watchdog reported at the next switch", !canReport || (watchdogTrips > trips && !watchdogTripped))
 }
