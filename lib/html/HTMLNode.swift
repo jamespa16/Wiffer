@@ -111,10 +111,22 @@ public final class HTMLNode {
     }
 
     deinit {
-        // Children that outlive this node must not point back at it.
-        for c in children { c.parent = nil }
-        if let t = templateStorage { t.templateHost = nil }
         if docState != nil { dismantleArena() }
+        if let t = templateStorage { t.templateHost = nil }
+        if children.isEmpty { return }
+        // Free the subtree iteratively: a child nobody else holds has its
+        // children taken first, so the release never recurses (this matters
+        // for nodes outside any arena, e.g. after their document went away).
+        // Children that outlive this node must not point back at it.
+        var stack = children
+        children = []
+        while var n = stack.popLast() {
+            n.parent = nil
+            if isKnownUniquelyReferenced(&n) && !n.children.isEmpty {
+                stack.append(contentsOf: n.children)
+                n.children = []
+            }
+        }
     }
 
     // ------------------------------------------------------------ documents

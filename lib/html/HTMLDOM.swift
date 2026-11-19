@@ -240,6 +240,7 @@ extension HTMLNode {
         guard child.parent === self else { throw .notFound }
         try checkInsertableKind(node)
         if kind == .document { try checkDocumentChildren(node, child, replacing: true) }
+        if node === child { return child }   // nothing moves
         var ref = child.nextSibling
         if let r = ref, r === node { ref = node.nextSibling }
         var previous = child.previousSibling

@@ -7,8 +7,9 @@
 // node owned by that document calls each observer once, synchronously,
 // after the tree is consistent again (children, parent and `index` all
 // updated). The parser itself never notifies: a fresh parse has no
-// observers, and a fragment parse is reported as the one childList change
-// that inserts its result.
+// observers, and innerHTML & co. are reported as the one childList change
+// that inserts the parsed fragment (preceded, as for any fragment
+// insertion, by a removal record whose target is that detached fragment).
 //
 // Cost when nobody listens: one array emptiness check per mutation (the
 // record is not built). Records are the DOM's MutationRecord shape:
