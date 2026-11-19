@@ -3847,6 +3847,67 @@ Groundwork, no engine needed (can start beside 9A):
   contents, which also fixes most of the remaining html5lib failures and
   unskips the 200 fragment cases), and serialization (`innerHTML`
   getter, per the HTML serializing algorithm).
+
+  **Status: done** (`./run.sh --hosttest html`, 127 checks; layout,
+  browser and css host tests and `./run.sh --test` unchanged). Results:
+  - **html5lib: 1695/1701 (99.6%)**, up from 1394/1509, with the
+    fragment cases unskipped (191/192 pass) and template.dat at 112/112
+    (was 2/111). Only the 8 `#script-on` cases are skipped. Floor raised
+    to 1695. The 6 failures are the new customizable-`<select>` parsing
+    (webkit02 #45-49: `<selectedcontent>` cloning, and `<font>` across
+    `<select>`) and its fragment twin (`<textarea>` in a select
+    context); both predate this phase.
+  - **Parser:** the "in template" mode and the stack of template
+    insertion modes, template-aware foster parenting and form pointer,
+    and `<template>` contents as a separate DocumentFragment owned by the
+    document's inert template contents owner document. The tree dump
+    prints them as `content`, as html5lib does. Fragment parsing
+    (`htmlParseFragment(bytes, context:)`) follows the spec: tokenizer
+    state from the context, the context element as the "adjusted
+    current node", reset insertion mode from it, the form pointer from
+    its ancestors, and a quirks flag inherited from its document.
+  - **Mutation** (HTMLDOM.swift): `appendChild`, `insertBefore`,
+    `removeChild`, `replaceChild`, `replaceAll`, `remove` with the DOM's
+    pre-insertion validity (host-including ancestors, document child
+    rules), as typed `HTMLDOMError`s that map 1:1 to DOMException names;
+    `createElement(NS)`, `createTextNode`, `createComment`,
+    `createDocumentFragment`, `importNode`, `adoptNode`, `cloneNode(deep:)`
+    (copies template contents); `setAttribute`, `removeAttribute`,
+    `toggleAttribute`, `getAttribute`; `setData`, `appendData`,
+    `setTextContent`; `innerHTML`/`setInnerHTML`, `outerHTML`/
+    `setOuterHTML`, `insertAdjacentHTML`. `parent`, `children` and
+    `index` stay consistent after every change (checked by a
+    random-mutation fuzzer).
+  - **Mutation hook** (HTMLMutation.swift): `doc.addMutationObserver {
+    (m: HTMLMutation) in ... } -> id` and `removeMutationObserver(id)`.
+    Records have MutationRecord's shape (`kind` childList / attributes /
+    characterData, `target`, `addedNodes`, `removedNodes`,
+    `previousSibling`, `nextSibling`, `attributeName`, `oldValue`) and are
+    delivered synchronously after each change. With no observers the
+    cost is one emptiness check per mutation.
+  - **DOM ownership:** every node is in its document's arena
+    (`HTMLDocumentState.arena`) until the document goes away, so detached
+    nodes keep their identity and a parent pointer never dangles.
+    Adoption moves a node between arenas. Freeing is iterative, both for
+    the arena and in `HTMLNode.deinit`: a 200 000-deep script-built chain
+    frees without recursion. Nodes that outlive their document are left
+    with no parent and no document, and keep working.
+  - **Serializer** (HTMLSerialize.swift): the fragment serializing
+    algorithm with current escaping (text escapes `& < >` and NBSP;
+    attribute values also escape `"`, and `<` and `>` as well, the 2025
+    rule), void elements, raw-text parents, template contents, foreign
+    elements without self-closing. Round-trip tests pass, and Wikipedia
+    serializes to a fixpoint (serialize, reparse, serialize gives the
+    same bytes). Parse plus serialize takes 20 ms on the host.
+  - **Cost:** parsing the Wikipedia fixture went from 14 to 16 ms on
+    the host (arena registration), plus about 48 bytes per node.
+  - **Gaps:** the parser still runs with scripting off (`<noscript>`
+    parses as markup, and 9H needs a flag for that). There are no
+    `ShadowRoot`s, no attribute namespaces beyond the names the parser
+    adjusts, and no `normalize()`. Inserting a fragment also sends a
+    removal record whose target is the detached fragment, as the DOM
+    does, so observers should ignore records whose target isn't
+    connected if they only care about the page.
 - **lib/layout: incremental restyle and relayout.** Today
   `invalidateStyle()` restyles the whole document. That's fine once per
   page, but useless when a script toggles a class. Add per-node dirty

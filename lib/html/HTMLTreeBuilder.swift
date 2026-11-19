@@ -3,10 +3,12 @@
 // list of active formatting elements, scope checks, insertion, and the
 // adoption agency algorithm.
 //
-// Not implemented: fragment parsing, scripting (the parser behaves as if
-// scripting is disabled), `<template>` contents (template is an ordinary
-// element), parse error reporting. Foreign content (svg/math) is handled
-// with generic namespaced elements.
+// Fragment parsing (a context element, "adjusted current node") and
+// `<template>` (the "in template" mode, the stack of template insertion
+// modes, contents as a separate DocumentFragment) follow the spec. Not
+// implemented: scripting (the parser behaves as if scripting is disabled),
+// parse error reporting. Foreign content (svg/math) is handled with generic
+// namespaced elements.
 
 public struct HTMLParseLimits {
     /// Input beyond this many bytes is ignored.
@@ -30,6 +32,7 @@ enum HTMLMode {
     case inTable, inTableText, inCaption, inColumnGroup, inTableBody, inRow, inCell
     case inSelect, inSelectInTable
     case afterBody, inFrameset, afterFrameset, afterAfterBody, afterAfterFrameset
+    case inTemplate
 }
 
 enum HTMLScope { case regular, listItem, button, table, select }
@@ -66,6 +69,10 @@ final class HTMLTreeBuilder {
     var ignoreLF = false
     var tableText: [UInt32] = []
     var tableTextHasNonSpace = false
+    /// Fragment parsing: the context element (nil for a document parse).
+    var context: HTMLNode? = nil
+    /// The stack of template insertion modes.
+    var templateModes: [HTMLMode] = []
 
     init(input: [UInt32], limits: HTMLParseLimits) {
         self.limits = limits
@@ -82,6 +89,19 @@ final class HTMLTreeBuilder {
 
     var current: HTMLNode { open.last ?? doc }
 
+    /// The "adjusted current node": the context element when parsing a
+    /// fragment and only the root html element is open.
+    var adjustedCurrent: HTMLNode? {
+        if let c = context, open.count == 1 { return c }
+        return open.last
+    }
+
+    var templateOnStack: Bool {
+        var i = open.count - 1
+        while i >= 0 { if isHTML(open[i], .template) { return true }; i -= 1 }
+        return false
+    }
+
     @inline(__always) func isHTML(_ n: HTMLNode, _ t: HTMLTag) -> Bool {
         n.tag == t && n.namespace == .html && n.kind == .element
     }
@@ -97,7 +117,9 @@ final class HTMLTreeBuilder {
             stopped = true
             doc.truncated = true
         }
-        return HTMLNode(kind: kind, name: name, tag: tag, namespace: ns, attributes: attrs, data: data)
+        let n = HTMLNode(kind: kind, name: name, tag: tag, namespace: ns, attributes: attrs, data: data)
+        doc.registerNode(n)
+        return n
     }
 
     func clone(_ n: HTMLNode) -> HTMLNode {
@@ -105,7 +127,7 @@ final class HTMLTreeBuilder {
     }
 
     var inForeignContent: Bool {
-        guard let n = open.last else { return false }
+        guard let n = adjustedCurrent else { return false }
         return n.namespace != .html
     }
 
@@ -114,22 +136,36 @@ final class HTMLTreeBuilder {
     /// The "appropriate place for inserting a node": (parent, insert before).
     func appropriatePlace(_ override: HTMLNode? = nil) -> (HTMLNode, HTMLNode?) {
         let target = override ?? current
+        var parent = target
+        var before: HTMLNode? = nil
         if fosterParenting && target.kind == .element && target.namespace == .html {
             switch target.tag {
             case .table, .tbody, .tfoot, .thead, .tr:
+                var lastTemplate = -1, lastTable = -1
                 var i = open.count - 1
-                while i >= 0 {
-                    if isHTML(open[i], .table) {
-                        if let p = open[i].parent { return (p, open[i]) }
-                        return (i > 0 ? open[i - 1] : open[0], nil)
-                    }
+                while i >= 0 && (lastTemplate < 0 || lastTable < 0) {
+                    if lastTemplate < 0 && isHTML(open[i], .template) { lastTemplate = i }
+                    if lastTable < 0 && isHTML(open[i], .table) { lastTable = i }
                     i -= 1
                 }
-                return (open.first ?? doc, nil)
+                if lastTemplate >= 0 && (lastTable < 0 || lastTemplate > lastTable) {
+                    parent = open[lastTemplate]
+                } else if lastTable < 0 {
+                    parent = open.first ?? doc
+                } else if let p = open[lastTable].parent {
+                    parent = p
+                    before = open[lastTable]
+                } else {
+                    parent = lastTable > 0 ? open[lastTable - 1] : open[0]
+                }
             default: break
             }
         }
-        return (target, nil)
+        if parent.kind == .element && parent.namespace == .html && parent.tag == .template,
+           let content = parent.templateContents {
+            return (content, nil)
+        }
+        return (parent, before)
     }
 
     func makeRoom() {
@@ -142,7 +178,7 @@ final class HTMLTreeBuilder {
         makeRoom()
         let node = newNode(.element, name: name, tag: tag, ns: ns, attrs: attrs)
         let (parent, before) = appropriatePlace()
-        parent.insertChild(node, before: before)
+        parent.parserInsert(node, before: before)
         if push { open.append(node) }
         return node
     }
@@ -176,14 +212,14 @@ final class HTMLTreeBuilder {
         }
         let t = newNode(.text)
         htmlAppendUTF8(&t.data, c)
-        parent.insertChild(t, before: before)
+        parent.parserInsert(t, before: before)
     }
 
     func insertComment(_ data: [UInt8], into parent: HTMLNode? = nil) {
         let n = newNode(.comment, data: data)
-        if let p = parent { p.appendChild(n); return }
+        if let p = parent { p.parserAppend(n); return }
         let (pp, before) = appropriatePlace()
-        pp.insertChild(n, before: before)
+        pp.parserInsert(n, before: before)
     }
 
     func pop() { if !open.isEmpty { open.removeLast() } }
@@ -420,7 +456,7 @@ final class HTMLTreeBuilder {
                 makeRoom()
                 let n = clone(e)
                 let (parent, before) = appropriatePlace()
-                parent.insertChild(n, before: before)
+                parent.parserInsert(n, before: before)
                 open.append(n)
                 afe[i] = n
             }
@@ -487,19 +523,19 @@ final class HTMLTreeBuilder {
                 open[nodeIdx] = n
                 node = n
                 if last === furthest { bookmark = ai + 1 }
-                last.detach()
-                node.appendChild(last)
+                last.parserDetach()
+                node.parserAppend(last)
                 last = node
             }
             // Insert `last` at the appropriate place with `common` as target.
-            last.detach()
+            last.parserDetach()
             let (parent, before) = appropriatePlace(common)
-            parent.insertChild(last, before: before)
+            parent.parserInsert(last, before: before)
             let n = clone(fe)
             let moved = furthest.children
             furthest.children = []
-            for c in moved { n.appendChild(c) }
-            furthest.appendChild(n)
+            for c in moved { n.parserAppend(c) }
+            furthest.parserAppend(n)
             if let ai = afeIndex(fe) {
                 afe.remove(at: ai)
                 if ai < bookmark { bookmark -= 1 }
@@ -530,12 +566,13 @@ final class HTMLTreeBuilder {
     func resetInsertionMode() {
         var i = open.count - 1
         while i >= 0 {
-            let n = open[i]
+            var n = open[i]
             let isLast = i == 0
-            if n.namespace == .html {
+            if isLast, let c = context { n = c }
+            if n.namespace == .html && n.kind == .element {
                 switch n.tag {
                 case .select:
-                    var j = i - 1
+                    var j = isLast ? -1 : i - 1
                     while j >= 0 {
                         let a = open[j]
                         if isHTML(a, .template) { break }
@@ -555,6 +592,7 @@ final class HTMLTreeBuilder {
                     if !isLast { mode = .inHead; return }
                 case .body: mode = .inBody; return
                 case .frameset: mode = .inFrameset; return
+                case .template: mode = templateModes.last ?? .inBody; return
                 case .html:
                     mode = headElement == nil ? .beforeHead : .afterHead
                     return
@@ -575,7 +613,7 @@ final class HTMLTreeBuilder {
             ignoreLF = false
             if c == 0x0a { return }
         }
-        if let n = open.last, n.namespace != .html {
+        if let n = adjustedCurrent, n.namespace != .html {
             if !(isMathTextIntegrationPoint(n) || isHTMLIntegrationPoint(n)) {
                 foreignChar(c)
                 return
@@ -592,7 +630,7 @@ final class HTMLTreeBuilder {
     }
 
     func dispatchStart(_ t: HTMLStartToken) {
-        if let n = open.last, n.namespace != .html {
+        if let n = adjustedCurrent, n.namespace != .html {
             var html = false
             if isMathTextIntegrationPoint(n) && t.name != "mglyph" && t.name != "malignmark" { html = true }
             else if n.namespace == .mathml && n.name == "annotation-xml" && t.name == "svg" { html = true }
@@ -610,7 +648,7 @@ final class HTMLTreeBuilder {
     }
 
     func dispatchEnd(_ t: HTMLEndToken) {
-        if let n = open.last, n.namespace != .html {
+        if let n = adjustedCurrent, n.namespace != .html {
             foreignEnd(t)
             return
         }
@@ -630,8 +668,9 @@ final class HTMLTreeBuilder {
         let n = newNode(.doctype, name: name.map { String(decoding: $0, as: UTF8.self) } ?? "")
         n.publicID = publicID.map { String(decoding: $0, as: UTF8.self) }
         n.systemID = systemID.map { String(decoding: $0, as: UTF8.self) }
-        doc.appendChild(n)
+        doc.parserAppend(n)
         quirks = htmlDoctypeQuirks(name: n.name, publicID: n.publicID, systemID: n.systemID, forceQuirks: forceQuirks)
+        doc.docState?.quirks = quirks
         mode = .beforeHtml
     }
 
