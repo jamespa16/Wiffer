@@ -16,7 +16,12 @@
   /bin/fetch (HTTP and HTTPS), nc, ping, host). 8A's getrandom is in too.
 - **Part 8: Web browser.** Done (8A–8I: crypto and TLS 1.3, URLs/HTTP/inflate,
   HTML, CSS, fonts, layout, images, the browser app, tests and target sites).
+  8J (SVG) is planned, added afterwards; it can run beside Part 9.
   See the end of this document.
+- **Part 9: JavaScript.** Planned (9A–9J): a pure-Swift ECMAScript engine
+  in lib/js (parser, bytecode VM, GC, built-ins, test262), DOM bindings,
+  scripts in the browser, custom elements and Shadow DOM. See the end
+  of this document.
 
 Goal: boot into a desktop with overlapping, draggable windows. Each shell
 runs in its own terminal window, and a text editor can open, edit and save
@@ -3350,22 +3355,610 @@ lib/dns, hosttest/guard.c). Results:
 
 ---
 
-## After Part 8
+## Phase 8J: SVG (`lib/svg`)
 
-Not planned yet. Roughly in order of how much they'd help the browser:
+Added after Part 8, from 8I's biggest known gap: icons are missing or
+drawn as boxes on Wikipedia, Hacker News and GitHub. Almost all of that
+SVG is static (`<img src=x.svg>`, CSS `background-image` and
+`mask-image`, inline `<svg>` icons, `<use>` sprites), so this needs no
+JavaScript and can run beside Part 9. A pure-Swift lib, host-tested like
+8A–8G.
 
-- **JavaScript.** The big one, likely a Part of its own: an ES5 subset
-  interpreter (bytecode, a mark-and-sweep GC), then DOM bindings,
-  events, timers and `fetch`/XHR, then more ES2015+. Even a basic
-  engine makes menus and "accept cookies" banners work. Full modern web
-  apps stay out of reach.
+- **Parsing.** Inline `<svg>` already parses into `HTMLNode`s (lib/html's
+  foreign content, with the SVG case fixes). Standalone `.svg` files and
+  `data:image/svg+xml` URLs are XML, so add a small, hostile-input-safe
+  XML parser (`lib/svg` or its own `lib/xml`): elements, attributes,
+  namespaces, character and the five predefined entity references,
+  CDATA, comments, processing instructions skipped, **no DTDs and no
+  external or custom entities** (no billion-laughs). Limits on size,
+  depth and node count, as in lib/html. Both inputs become one SVG
+  element tree.
+- **Geometry:** the path grammar (every command, relative and absolute,
+  the compact number syntax such as `1.5.5`, elliptical arcs converted
+  to cubics), `rect` (with rx/ry), `circle`, `ellipse`, `line`,
+  `polyline`, `polygon`, `viewBox` and `preserveAspectRatio`, nested
+  `svg`, `transform` lists (matrix, translate, scale, rotate, skewX/Y),
+  and lengths in user units, px, em and %.
+- **Painting:** `fill` and `stroke` (colors, `none`, `currentColor`,
+  `url(#id)` with a fallback), `fill-rule` nonzero and evenodd,
+  `stroke-width`, `stroke-linejoin`/`linecap`/`miterlimit`, dashes,
+  `opacity`, `fill-opacity`, `stroke-opacity`, `visibility`/`display`.
+  Presentation attributes and `style=""` cascade through lib/css, so
+  page CSS that styles inline icons (`fill: currentColor`, hover colors)
+  works.
+- **Rasterizer:** lib/font's glyph rasterizer is a signed-area
+  accumulation buffer, which gives antialiased nonzero fills but can't do
+  evenodd. Write one shared antialiased scanline rasterizer (flattened
+  quadratic and cubic curves, both fill rules, a clip rectangle,
+  coverage out to a mask), and move lib/font onto it if it's at least as
+  fast for glyphs. The stroker turns strokes into fill paths (joins,
+  caps, dashes), so the rasterizer only fills.
+- **Structure and paint servers:** `<g>`, `<defs>`, `<use>` and
+  `<symbol>` (local `#id` references, and external `sprite.svg#id` loaded
+  through the browser; `use` cycles and depth are capped),
+  `linearGradient` and `radialGradient` (stops, `gradientUnits`,
+  `gradientTransform`, spread methods, `href` inheritance), and
+  `clipPath`.
+- **Browser integration.** SVG becomes an image format in lib/image and
+  the loader (sniffed by type or by `<svg` at the start). It's rasterized
+  at the size layout asks for, not decoded once at a natural size, so it
+  stays sharp at any zoom, with a cache per (image, size). Intrinsic size
+  comes from width/height, or from the viewBox ratio. Inline `<svg>` in
+  HTML is a replaced box in lib/layout (today a 300x150 placeholder).
+  CSS **`mask-image`** with an SVG or PNG (mask luminance or alpha) goes
+  into lib/layout's paint, because that's how Wikipedia draws its icons
+  (they paint as dark squares today).
+- **Hostile input:** caps on path commands, the number of elements drawn,
+  `use` expansion (a `use` bomb is the SVG billion-laughs), gradient
+  stops and raster size. Every number goes through a sanitizer like
+  `layoutSan`. The XML parser, path parser and renderer join
+  `--hosttest`'s fuzzers.
+- **Tests:** reference renders of a fixture set (shapes, paths with arcs,
+  strokes and joins, dashes, both fill rules, transforms, gradients,
+  sprites, `currentColor`), compared to stored expected bitmaps with a
+  small per-pixel tolerance (`WIFFER_SVG_REGEN=1` rewrites them), checked
+  by eye once against another browser. A selected subset of the resvg
+  test suite (MIT) is a stretch, with a pass-count floor like html5lib's.
+  Harness: an icon page in tests/web with pixel checks for `<img>`,
+  inline, `<use>` sprite and `mask-image` icons.
+- **Later:** `<text>` (lib/font is already there), `<pattern>`, `<mask>`
+  elements, `<marker>`, filters (blur and drop shadow first), `<image>`,
+  `<foreignObject>`, SMIL animation, and the SVG DOM (`SVGElement`,
+  `getBBox`, scripted attributes) in 9G.
+- **Done when:** the fixture renders match, the icon page passes under
+  BIOS and UEFI, and the 8I target table shows the Wikipedia, HN and
+  GitHub icons drawn.
+
+---
+
+# Part 9: JavaScript
+
+Goal: the browser runs the scripts on a page. Menus open, comment threads
+collapse, "accept cookies" banners go away, forms validate, and small
+vanilla-JS and jQuery-era pages work. Single-page apps built on large
+frameworks are a stretch. A script that loops forever or allocates
+without end costs one page, not the browser, and never the desktop.
+
+Phases 9A–9E are one new library, **lib/js**: a pure-Swift ECMAScript
+engine with no DOM and no OS, built and tested on the host like the other
+libs. 9F–9H wire it into lib/html, lib/layout, lib/browser and
+/bin/browse. 9I adds custom elements and Shadow DOM, which much of the
+modern web (GitHub, design systems, YouTube, Salesforce) is built on.
+
+```
+9A lexer + parser ─→ 9B compiler + VM + GC ─┬─→ 9C built-ins ─┬─→ 9E ES2015+ runtime ─┐
+                                            │                 │                       │
+                                            └─→ 9D test262 runner (grows with 9C, 9E) │
+                                                              │                       │
+                       9F embedding: realms, host objects, event loop, /bin/js ───────┤
+                                                                                      ▼
+                         9G DOM bindings (needs lib/html mutation + fragments, ─→ 9H scripts in the
+                            incremental restyle in lib/layout)                    browser ─┐
+                                                                                           ▼
+                                      9I custom elements + Shadow DOM ─→ 9J tests, target sites
+```
+
+9A can start at once. **9G's lib/html and lib/layout groundwork (DOM
+mutation, fragment parsing, incremental restyle) needs no engine at all**,
+so it can run beside 9A–9C. 9D starts as soon as 9B can run a script and
+gets stricter as each later phase lands.
+
+## Design decisions
+
+### Engine
+
+- **Write it, don't port it.** The engines worth porting (QuickJS,
+  Duktape, Boa, engine262) are C, Rust or JavaScript, so the project-wide
+  "no C libraries" rule (Decision 5) rules them out as code. There is
+  no pure-Swift engine that fits Embedded Swift. They're still useful as
+  references: QuickJS for its bytecode and its compact built-ins, and
+  engine262 for reading the spec as code.
+- **Parse modern syntax from the start, even while the runtime is ES5.**
+  One unknown token is a SyntaxError that throws away the whole script,
+  and most sites now ship ES2017+ untranspiled (arrow functions, `let`,
+  classes, template literals, `async`). So 9A parses ES2022 syntax.
+  Runtime features arrive phase by phase, and an unsupported feature
+  fails only where it runs, with a clear error.
+- **Source → AST → bytecode → interpreter.** A stack-based bytecode VM,
+  not an AST walker. It's maybe 2–5x faster, which matters under QEMU
+  TCG where everything is already slow (Wikipedia's style pass takes
+  1.7 s there). It also makes generators and `async` simple, because a
+  suspended frame is just saved VM state. Scope analysis runs at compile
+  time, so locals are slots, not name lookups. **No JIT** (W^X user
+  pages, and nowhere near worth it).
+- **The VM never recurses in Swift for a JS call.** JS-to-JS calls push
+  a VM frame. Native code that calls back into JS (sort comparators,
+  getters, `toString`, `Array.prototype.map`, DOM event listeners)
+  re-enters the VM, and that native nesting is capped (for example 64
+  levels, with a JS call depth cap of about 10 000) and throws
+  `RangeError` when it's hit. This is the same rule lib/layout follows,
+  for the same reason: hostile input must not overflow the 512 KB stack.
+
+### Values, objects and memory
+
+- **The JS heap is ours, not ARC's.** Objects, strings, closures and
+  environments live in a `JSHeap`: arrays of cells indexed by 32-bit
+  handles, with a free list. A `JSValue` is a POD value (an 8-byte
+  NaN-boxed `UInt64`: double, or tag + handle/int32/bool). There are no
+  Swift references in values, so copying a value costs no
+  retain/release. That matters because user programs build with
+  `-disable-swift-specific-llvm-optzns` (the copy-on-write fix), so ARC
+  traffic isn't optimized away. Plain ARC classes would also leak every
+  JS cycle (a closure that captures its own object), and those are
+  everywhere in real code.
+- **GC: precise, non-moving mark-and-sweep**, triggered by bytes
+  allocated since the last cycle. Roots are the VM stack and frames,
+  the realm's globals, handles that native code holds (`JSRooted`, an
+  explicit scope, never a raw handle kept across an allocation), and
+  host-object roots. Generational or incremental GC is a stretch, and
+  only if pauses show up in 9J's numbers.
+- **Objects:** ordered property storage, starting as a small linear
+  array with a hash index over a threshold. Dense arrays get a fast
+  `[JSValue]` element store and fall back to sparse. **Shapes (hidden
+  classes) and inline caches** for property access are a 9J performance
+  item, measured first. The design leaves room for them: every property
+  read goes through one `getProperty` path.
+- **Strings:** JS semantics are UTF-16 (`length`, `charCodeAt`, lone
+  surrogates). Store Latin-1 (one byte per unit) when every unit is
+  below 0x100 and UTF-16 otherwise, convert to and from Swift `String`
+  only at the edges (DOM, console), and intern property keys as atoms.
+  Ropes for `+=` in a loop are a stretch.
+- **Numbers:** `Double`, with int32 fast paths in the VM. Number→string
+  needs a shortest round-trip algorithm (Ryu or Grisu-exact, written
+  here; Embedded Swift's `description` can't be relied on), and
+  string→number needs correctly rounded parsing (Eisel-Lemire with a
+  big-integer fallback). Both are tested against fixed vectors.
+- **Limits** (`JSLimits`, like `HTMLParseLimits`): heap bytes per realm
+  (default 256 MiB), string length, array length, regex steps, call
+  depth, native nesting, source size, AST depth (the parser uses
+  explicit stacks or bounded recursion, like lib/html). Hitting a limit
+  throws a catchable `RangeError`, or an uncatchable termination for the
+  heap cap. **It never traps.**
+- **Interrupts.** The VM checks a budget every N instructions (and at
+  backward jumps and calls). The embedder sets it: the browser gives a
+  task about 5 s of wall time, then shows "This page's script is not
+  responding" with Stop. Termination unwinds the stack without running
+  `finally` blocks, as other browsers do.
+
+### Browser integration
+
+- **One thread, one event loop.** The browser is single-threaded (Part 6)
+  and stays that way. Scripts run as tasks on App.run's loop. Timers feed
+  `nextTimeout`, microtasks drain after every task, and a rendering step
+  (restyle, layout, paint) runs at most once per frame (about 16 ms)
+  when something is dirty, never once per DOM mutation.
+- **DOM ownership.** `HTMLNode.parent` is `unowned(unsafe)` because the
+  document owns everything. Once scripts can detach nodes and keep them,
+  that's no longer true. **Decision: every node created for a document is
+  kept alive until the page is torn down** (a `document.allNodes` arena),
+  so a parent pointer never dangles. Detached-node churn costs memory
+  until navigation, which is fine for document-style pages. Reclaiming
+  unreachable detached subtrees, using the JS GC's reachability, is a 9J
+  stretch.
+- **Wrappers:** each DOM node has at most one JS wrapper object, created
+  lazily and cached in a side table keyed by node identity. The wrapper
+  holds the node strongly through the host-object slot table, and the
+  table entry is a GC root while the node is connected or the wrapper
+  has expando properties or listeners.
+- **Bindings are generated.** One small IDL-like description per
+  interface (`lib/js-dom/idl/*.txt`) feeds a Python generator, like
+  lib/html's entity tables. It emits the Swift glue: argument
+  conversion, `this` checks and TypeErrors, getters and setters. Hand
+  writing hundreds of accessors is where the bugs would be.
+- **Scripts run after parsing, at first.** lib/html builds the whole tree
+  in one call, so 9H runs every classic script after the parse, in
+  document order, as if it were `defer` (async ones as they arrive).
+  That's correct for the many sites that wait for `DOMContentLoaded`.
+  A re-entrant parser that pauses at `</script>`, needed for full
+  `document.write`, is a stretch. Until then, `document.write` during
+  that pass inserts parsed markup after the current script. With
+  scripting on, `<noscript>` content is not rendered.
+- **Security model:** one realm per document, torn down on navigation.
+  `fetch`/XHR follow the same-origin policy with simple CORS
+  (`Access-Control-Allow-Origin` on the response; preflight for
+  non-simple requests). `document.cookie` hides HttpOnly cookies. No
+  cross-origin frames (iframes still aren't rendered). Process
+  isolation already exists: an engine bug kills one browser process,
+  not the system.
+- **JavaScript can be switched off**: `browse --nojs` and a toolbar
+  toggle, which also brings back Part 8's behavior for comparison.
+
+---
+
+## Phase 9A: lexer and parser (`lib/js`)
+
+- **Lexer:** the ES2022 lexical grammar. Identifiers with Unicode
+  ID_Start/ID_Continue (a generated range table), `\u` escapes in names,
+  all numeric literal forms (hex, octal, binary, separators, BigInt
+  suffix recognised), strings with every escape, template literals
+  (cooked and raw), regex literals (the `/` ambiguity resolved by the
+  parser's state), comments, HTML-like comments (`<!--` and `-->` in
+  classic scripts, Annex B), line terminators for ASI.
+- **Parser:** recursive descent to a compact AST (nodes in an array,
+  indexed, not a class per node). It covers all of ES2022: `let`/`const`,
+  arrow functions, classes (fields, private `#names`, static blocks),
+  destructuring, spread/rest, default parameters, template literals,
+  `for-of`/`for-in`, generators, `async`/`await`, optional chaining,
+  `??`, `**`, logical assignment, labelled statements, getters and
+  setters, computed keys, `import`/`export` syntax. Also automatic
+  semicolon insertion, strict mode (`"use strict"` and
+  class/module bodies), early errors that matter (duplicate `let`,
+  `await` and `yield` contexts), and cover grammars for arrow parameters
+  and destructuring assignment. Source positions on every node, for
+  error messages and stack traces.
+- **Hostile input:** depth limits (`a(((((...` 100 000 deep is an error,
+  not a crash), source size limit, and a fuzzer (mutated test262 and
+  real-site scripts) in `--hosttest`.
+- **Tests:** the test262 parser tests (pass/fail/early-error sets,
+  BSD license), and a corpus of real scripts (jQuery 3, Preact, a
+  Wikipedia ResourceLoader bundle, the HN and lobste.rs scripts),
+  vendored into `lib/js/fixtures/` with licenses. Every one must parse.
+  Speed: a 1 MB bundle parses in well under 100 ms on the host.
+
+## Phase 9B: compiler, VM and GC (`lib/js`)
+
+- **Scope analysis:** var hoisting, function declarations, block scopes,
+  closures (captured variables move to heap environments, the rest stay
+  in stack slots), `arguments`, `this`. `eval` and `with` force
+  dynamic lookup for the scopes they can see. Direct `eval` works but
+  makes the function slow.
+- **Bytecode:** a stack machine with a few hundred opcodes at most.
+  Constant pools per function, line tables, exception handler tables.
+  `jsDisassemble` for tests and debugging.
+- **VM:** frames, calls and returns, `new`, closures, exceptions
+  (`throw`/`try`/`catch`/`finally`), the abstract operations (ToPrimitive,
+  ToNumber, ToString, equality, `typeof`, `instanceof`, `in`), property
+  get/set/delete with prototype chains, getters and setters, and
+  property attributes (writable, enumerable, configurable).
+- **Heap and GC** as in the design decisions, with a stress mode
+  (`JSHeap.gcEveryAllocation`) that the host tests turn on for one pass
+  of the whole suite. It's the cheapest way to find a missing root.
+- **Embedding API, first cut:** `JSRuntime`, `JSRealm`,
+  `evaluate(source:name:) -> JSCompletion`, native functions as
+  closures, `JSRooted` handles, uncaught exceptions with a stack trace
+  string.
+- **Done when:** fib/closure/exception/prototype test scripts run on the
+  host, the GC stress pass is clean, and the VM fuzz (random bytecode
+  sequences from mutated sources) never traps.
+
+## Phase 9C: built-ins (`lib/js`)
+
+- **Core, ES5.1 level:** `Object` (keys, defineProperty, create, freeze,
+  getOwnPropertyDescriptor, ...), `Function` (call, apply, bind),
+  `Array` (all ES5 methods with generic `this`, sort as a stable merge
+  sort), `String` (all ES5 methods), `Number` (toFixed, toPrecision,
+  toString(radix)), `Boolean`, `Math`, `JSON` (parse and stringify with
+  depth limits, reviver, replacer, indentation), the `Error` types,
+  `parseInt`/`parseFloat`/`isNaN`/`encodeURIComponent` and friends,
+  global `this`.
+- **`Date`:** time values, the local time zone (UTC at first: Wiffer has
+  no zone database, and the RTC reads UTC), parsing of the ISO format
+  and the RFC 2822 forms sites use, toISOString and the locale-less
+  toString forms.
+- **`RegExp`:** a backtracking engine compiled to its own small bytecode.
+  Classes, quantifiers (greedy and lazy), groups, backreferences,
+  lookahead, the `gimsuy` flags, Unicode mode with case folding from a
+  generated table, then lookbehind, named groups and the `d` flag (they
+  appear in real code). **A step budget per match** (ReDoS is hostile
+  input), which throws an uncatchable termination, like the time budget.
+  `String.prototype.replace/match/split/search` on top of it.
+- **Tests:** 9D's test262 subsets for these built-ins, with pass-count
+  floors.
+
+## Phase 9D: test262 runner (`lib/js/tests`, `tests/test262.py`)
+
+- **Vendoring:** a pinned test262 commit, with only the directories in
+  scope copied into `lib/js/fixtures/test262/` (BSD license file
+  included), or fetched by a script into `build/` if the size hurts.
+  The harness files (`assert.js`, `sta.js`, `propertyHelper.js`,
+  `compareArray.js`, `doneprintHandle.js` for async tests) are loaded
+  per test.
+- **Runner:** reads each test's frontmatter (flags: onlyStrict,
+  noStrict, raw, async, module; `negative` with phase and type;
+  `features` for skipping), runs it in a fresh realm, and records
+  pass/fail/skip per directory. Like the html5lib run: **the run fails
+  if the pass count drops below the recorded floor**, and failures go to
+  `build/hosttest/test262-failures.txt`. The floor is raised by hand as
+  phases land, with the per-directory table kept in this roadmap.
+- **Feature skip list:** `features:` tags we don't implement yet
+  (`Atomics`, `SharedArrayBuffer`, `Temporal`, `tail-call-optimization`,
+  `IsHTMLDDA`, ...) are skipped, not failed, so the numbers mean
+  something.
+- **Speed:** the subset must finish in the `--hosttest` budget. If the
+  full in-scope set gets too slow, `--hosttest` runs a fixed sample and
+  `./run.sh --test262` runs everything.
+
+## Phase 9E: ES2015+ runtime (`lib/js`)
+
+In the order real sites need them:
+
+1. `let`/`const` with TDZ, arrow functions (lexical `this`), template
+   literals, default/rest/spread, destructuring, shorthand and computed
+   properties, `for-of` with the iterator protocol, `Symbol`
+   (including the well-known symbols), classes (`extends`, `super`,
+   fields, private names, static blocks).
+2. `Map`, `Set`, `WeakMap`, `WeakSet` (weak collections are ephemeron
+   tables in the GC), `Array.from/of`, `find`, `includes`, `flat`,
+   `Object.assign/entries/values/fromEntries`, the String additions
+   (`padStart`, `startsWith`, `replaceAll`, `at`, ...), `Number.isInteger`
+   and friends, `globalThis`.
+3. **`Promise` and the microtask queue** (the embedder drains it; on the
+   host the test runner does), generators, `async`/`await` and async
+   iteration (`for await`). These need suspendable frames, which the VM
+   design already provides.
+4. `Proxy` and `Reflect` (some libraries feature-test for them),
+   `ArrayBuffer`, `DataView` and the typed arrays (needed for `fetch`
+   bodies, `TextEncoder`, canvas-free image code), `JSON` superset
+   fixes, `Error.cause`.
+5. **ES modules:** module records, linking, top-level `await`, dynamic
+   `import()`. The host supplies a loader callback, so lib/js does no I/O.
+6. Stretch: `BigInt`, `Intl` (a minimal `en-US` `NumberFormat` and
+   `DateTimeFormat`, because libraries call them unguarded),
+   `WeakRef`/`FinalizationRegistry`, `structuredClone`.
+
+## Phase 9F: embedding and a shell (`lib/js`, `user/js`)
+
+- **Host objects:** native classes with internal slots (a host handle
+  into a table of Swift objects, generic over the host type, no `any`),
+  prototypes built from a table, exotic behavior hooks (indexed getters
+  for `NodeList`, named properties for `document.forms`), and a
+  per-realm "wrapper for this Swift object" cache.
+- **Event loop:** `JSEventLoop`, used by both the browser and `/bin/js`:
+  a task queue, the microtask checkpoint, timers (`setTimeout`,
+  `setInterval` with HTML's clamping and nesting rules, `queueMicrotask`),
+  and `nextDeadline()` for App.run's `nextTimeout`.
+- **`console`:** `log/info/warn/error/debug/table` (formatted like
+  other browsers, `%s %d %o` substitutions), `assert`, `time/timeEnd`.
+  The embedder chooses where output goes.
+- **`/bin/js`:** a REPL in a terminal window (`js` with no arguments) and
+  `js file.js` to run a file. This is the first time lib/js runs inside
+  Wiffer, and the first timings under TCG. It also gives a harness check
+  that doesn't need the browser.
+- **Done when:** the harness runs `js` on a few scripts in `rootfs/` (a
+  computation with a known answer, a timer sequence, an infinite loop
+  that the time budget terminates, a heap bomb that
+  hits the cap) and the desktop stays responsive throughout.
+
+## Phase 9G: DOM bindings (`lib/js-dom`, plus lib/html and lib/layout work)
+
+Groundwork, no engine needed (can start beside 9A):
+
+- **lib/html: mutation and fragments.** Public, checked tree mutation
+  (`appendChild`, `insertBefore`, `removeChild`, `replaceChild`, with the
+  DOM's hierarchy checks, `cloneNode`, attribute set/remove), a mutation
+  hook the layout engine subscribes to, `document.allNodes` (design
+  decisions), **fragment parsing** (the spec's context-element
+  algorithm: `innerHTML`, `insertAdjacentHTML`, `outerHTML`, `<template>`
+  contents, which also fixes most of the remaining html5lib failures and
+  unskips the 200 fragment cases), and serialization (`innerHTML`
+  getter, per the HTML serializing algorithm).
+- **lib/layout: incremental restyle and relayout.** Today
+  `invalidateStyle()` restyles the whole document. That's fine once per
+  page, but useless when a script toggles a class. Add per-node dirty
+  bits (style dirty, children dirty, layout dirty), restyle only dirty
+  subtrees (plus the siblings that `+`, `~` and `:nth-child` selectors can
+  reach, as the hover path already reasons about), and rebuild box
+  subtrees only under changed nodes. Layout stays whole-document at
+  first (it's the cheap part: 70 ms for Wikipedia under TCG), with BFC
+  roots' caches reused when untouched. Target: a class toggle on a
+  Wikipedia-sized page restyles in under 50 ms under TCG.
+- **Forced layout:** `rect(of:)` and friends flush pending style and
+  layout first, so `getBoundingClientRect`, `offsetWidth`,
+  `scrollHeight` and `getComputedStyle` give correct answers. This is
+  also the first place "layout thrashing" scripts will hurt, so count
+  flushes in the debug channel.
+
+Bindings (needs 9F):
+
+- **Core DOM:** `Node`, `Element`, `HTMLElement` (one class with the
+  common reflected attributes, plus subclasses only where the behavior
+  differs: `a`, `input`, `select`, `option`, `textarea`, `form`, `img`,
+  `button`, `label`, `template`), `Document`, `DocumentFragment`,
+  `Text`, `Comment`, `NodeList`, `HTMLCollection` (live, cached),
+  `DOMTokenList` (`classList`), `dataset`, `attributes`.
+  `SVGElement` and the few SVG DOM members sites use (`getBBox`,
+  `viewBox.baseVal`), once 8J exists; scripted SVG attribute changes
+  repaint through the same dirty bits.
+- **Selectors:** `querySelector(All)`, `matches`, `closest`, reusing
+  lib/css's parser and matcher through the existing `CSSElement`
+  conformance. No new selector engine.
+- **Style:** `element.style` (CSSOM declarations over the `style`
+  attribute, reusing lib/css's declaration parser), `getComputedStyle`
+  (read-only, from the computed style), `CSSStyleSheet` basics
+  (`insertRule`, `disabled`) as a stretch.
+- **Events:** `EventTarget`, `Event`, `CustomEvent`, `MouseEvent`,
+  `KeyboardEvent`, `InputEvent`, `FocusEvent`, `SubmitEvent`, with full
+  capture/target/bubble dispatch, `preventDefault` (link clicks and form
+  submits honor it), `stopPropagation`, `once`, `passive`, and
+  `on<event>` content attributes compiled lazily as handlers. The
+  browser's existing input routing becomes "dispatch the DOM event, then
+  do the default action unless it was cancelled".
+- **Window:** `window` as the global, `document`, `location` (read, and
+  assign = navigate), `history` (`pushState`, `replaceState`, `popstate`,
+  wired into `BrowserHistory`), `navigator` (userAgent, language,
+  onLine), `screen`, `innerWidth/Height`, `scrollTo/scrollBy`,
+  `scrollX/Y`, `matchMedia` (lib/css's media evaluator, with change
+  events), `requestAnimationFrame`, `getSelection` (stub),
+  `alert/confirm/prompt` as in-page dialogs that block only that page's
+  scripts.
+- **Done when:** a host test DOM page suite (a vendored subset of WPT
+  `dom/` and `html/` testharness.js tests that run without rendering)
+  passes at a recorded floor, and jQuery 3's own selector and
+  manipulation smoke tests run on the host.
+
+## Phase 9H: scripts in the browser (`lib/browser`, `user/browse`)
+
+- **Loading:** `<script>` (inline, `src`, `defer`, `async`, `type=module`
+  with `nomodule` honored, unknown types ignored), fetched in parallel
+  with stylesheets through the existing loader. Execution order as in the
+  design decisions, then `DOMContentLoaded`, then `load` once
+  subresources finish. Charset per the script's attributes and response.
+  A script error is logged, not fatal.
+- **Rendering:** a dirty DOM schedules one rendering step per frame
+  (restyle dirty, layout, repaint damaged areas). `requestAnimationFrame`
+  callbacks run just before it. Images and stylesheets that scripts add
+  go through the loader as usual.
+- **Networking APIs:** `fetch` (Request, Response, Headers, text/json/
+  arrayBuffer, `AbortController`) and `XMLHttpRequest` (async only;
+  sync XHR throws, because it would block the only thread), both over
+  `BrowserHTTPTransport`, so they share the pool, cookies and cache. The
+  same-origin policy and simple CORS as in the design decisions.
+  `FormData`, `URL`, `URLSearchParams` (lib/url), `TextEncoder/Decoder`
+  (lib/text), `atob/btoa`.
+- **Storage:** `document.cookie` (HTTPCookieJar, without HttpOnly),
+  `localStorage` and `sessionStorage` per origin, kept in memory first,
+  then on /disk alongside the persistent cookie jar ("After Part 9").
+- **UI:** the "page not responding" bar (Stop script / Wait), a JS
+  on/off toggle in the toolbar and `--nojs`, script errors counted in the
+  status line, and a console window (Ctrl-Shift-J) that shows the page's
+  `console` output and evaluates expressions in the page's realm.
+- **Serial debug channel:** `browse: script <url> N ms`, `browse: console
+  <level> <text>`, `browse: js error <url>:<line>: <message>`, `browse:
+  event DOMContentLoaded|load N ms`, `browse: js budget exceeded <url>`,
+  `browse: restyle N nodes N ms`.
+
+## Phase 9I: custom elements and Shadow DOM (`lib/js-dom`, lib/html, lib/css, lib/layout)
+
+Why a phase of its own: GitHub, YouTube, Salesforce, Microsoft's and
+Adobe's sites, and most design systems (Lit, Shoelace, Material Web,
+Spectrum) are built from web components. Without them those pages are
+mostly empty `<some-widget>` boxes, even with a working engine.
+
+- **Custom elements:** `customElements.define/get/whenDefined/upgrade`,
+  autonomous custom elements (`class extends HTMLElement`), the
+  element definition and construction stack, upgrades of elements that
+  were parsed or created before `define`, and the reactions
+  (`connectedCallback`, `disconnectedCallback`, `adoptedCallback`,
+  `attributeChangedCallback` with `observedAttributes`) queued as
+  CEReactions around every DOM API that can trigger them (the binding
+  generator marks those). `:defined` in lib/css, which pages use to hide
+  content until it upgrades. Customized built-ins (`is=`) are skipped,
+  as Safari does. Form-associated elements (`ElementInternals`) are a
+  stretch.
+- **Shadow trees in lib/html:** `attachShadow({mode, delegatesFocus,
+  slotAssignment})`, `ShadowRoot` as a `DocumentFragment` hung off its
+  host (not a child), `<slot>` with named and default slot assignment
+  (and the manual mode), `assignedNodes/Elements`, `slotchange`.
+  **Declarative Shadow DOM** (`<template shadowrootmode=open|closed>`)
+  in the tree builder, because server-rendered components use it and it
+  works without running a script. It needs 9G's template contents.
+- **The flat tree for rendering:** lib/layout's box tree builder walks
+  the *flat* tree (a host's shadow root instead of its children, slotted
+  nodes in place of each slot, a slot's fallback content when nothing is
+  assigned). Hit testing returns flat-tree nodes, and the browser
+  retargets them for events. Incremental restyle (9G) has to follow slot
+  assignment changes as well as DOM mutations.
+- **Scoped styles in lib/css:** each shadow root has its own stylesheets
+  (`<style>` and `<link rel=stylesheet>` inside it, and
+  `adoptedStyleSheets` with constructable `CSSStyleSheet`s, which Lit
+  uses for everything). The cascade gains the shadow-tree context step
+  (outer-tree rules beat inner ones for normal declarations, and the
+  reverse for `!important`). Selectors only match inside their own tree,
+  plus `:host`, `:host(<compound>)`, `::slotted(<compound>)` and
+  `::part()` with `exportparts`. Inheritance and custom properties
+  follow the flat tree, which is how themes reach into components.
+  `:host-context()` is skipped (Firefox and Safari never shipped it).
+  `CSSElement` gains a tree-scope and flat-tree parent so matching stays
+  generic.
+- **Events across shadow boundaries:** `composed` and `composedPath()`,
+  retargeting of `target` and `relatedTarget` at each boundary, closed
+  roots hidden from the path, focus with `delegatesFocus` and
+  `:focus-within` through hosts. `querySelector` and `getElementById`
+  stop at shadow boundaries, as specified.
+- **Tests:** vendored WPT `custom-elements/` and `shadow-dom/`
+  testharness.js subsets with pass-count floors, the same way 9G does
+  it, layout fixtures for slotting and scoped styles (expected box
+  dumps), a harness page built from a small Lit component (MIT,
+  vendored) with a pixel check, and the DOM fuzz from 9J extended with
+  `attachShadow`, `define` and slot changes.
+- **Done when:** the WPT floors hold, the Lit page renders and reacts to
+  a click, and a server-rendered page using declarative Shadow DOM
+  renders the same with JavaScript off.
+
+## Phase 9J: tests, performance and target sites
+
+- **Harness pages** in `tests/web/js/`, served by tests/web_server.py:
+  `document.title` set by a script (the simplest possible check), a
+  class toggle on click with a pixel check, a menu opened by a click, a
+  cookie banner dismissed, a form validated in `submit` (preventDefault)
+  then submitted, `fetch` of `/echo` JSON rendered into the page, a
+  cross-origin fetch that must fail, `setTimeout` ordering, `history.
+  pushState` then Alt-Left, `innerHTML` with a script that must *not*
+  run, and hostile scripts (`while(1){}`, a heap bomb, deep recursion, a
+  catastrophic regex, a 100 MB string, a script that adds a million
+  nodes). After each hostile one, the browser must still be alive and
+  responsive (`ps`, plus a fresh navigation).
+- **Fuzzing:** lexer/parser (mutated corpus), whole-engine (mutated
+  scripts run with a small budget and the GC stress flag on a sample),
+  regex (mutated patterns against fixed subjects), JSON, and a DOM
+  fuzz (random scripts drawn from a grammar of DOM calls on fixture
+  pages, then layout and paint). A trap or a runaway is a failure, as in
+  8I.
+- **Performance:** a small host benchmark set (richards, deltablue,
+  a JSON round trip, a regex-heavy script, a DOM build of 10 000 nodes)
+  with timings recorded here, host and TCG. Then shapes and inline
+  caches, string ropes and a faster `arguments` only where the numbers
+  say so.
+- **Target sites** (manual, with a status table like 8I's, JS on vs
+  off): news.ycombinator.com (comment collapse), en.wikipedia.org
+  (ResourceLoader startup, collapsible sections, search suggestions),
+  lobste.rs, a site with a cookie consent banner, a jQuery-era site,
+  a vanilla-JS TodoMVC served from tests/web, and as stretch goals the
+  Wiffer README on github.com (Turbo; custom elements and Shadow DOM
+  from 9I) and a Preact or
+  React demo.
+
+**Done when:** every harness check passes under BIOS and UEFI, the
+test262 and WPT floors hold in `--hosttest`, no hostile script can hang
+or crash the browser, and the non-stretch target sites work at least as
+well with JavaScript on as with it off.
+
+## Open questions and build notes
+
+- **Engine size and build time.** A conforming-enough engine is the
+  largest thing in the repo so far (a rough estimate: 40–60k lines of
+  Swift for 9A–9E, against about 26k for all of lib/ today), and
+  generic-heavy code in one module compiles slowly. **Decided
+  (2026-11-19): split when it starts to hurt, not up front.** Once lib/js
+  makes the host test loop slow, split it into lib/js (parser, compiler,
+  VM) and lib/js-builtins, and if that isn't enough, build lib/js once
+  as a precompiled object for hosttest. Record the build times that
+  triggered it here.
+
+---
+
+## After Part 9
+
+Not planned yet. (JavaScript, the first item here after Part 8, is now
+Part 9.) Roughly in order of how much they'd help the browser:
+
 - Threads in user space (a decoder or layout thread), and shared memory.
 - POSIX or Linux syscall compatibility, so static musl programs can run
   as a source of ported apps.
 - IPv6, HTTP/2, a persistent cookie jar and cache on /disk, downloads to
   /disk.
 - CSS Grid, scrollable overflow boxes, transforms, web fonts (WOFF2 needs
-  Brotli), SVG, WebP.
+  Brotli), WebP. (SVG is now Phase 8J.)
 - An xHCI driver for `usb-tablet` (absolute mouse, no grab), and real
   hardware networking (e1000, which QEMU also emulates, is the usual
   next target).
@@ -3381,3 +3974,12 @@ Made on 2026-11-18:
    of apps, but not before the browser works.
 3. **JavaScript is a separate pass** after Part 8. Part 8's target sites
    are the ones that work without it.
+4. **JavaScript (Part 9) is written from scratch in pure Swift**, for the
+   same reason as TLS: the engines worth porting are C, Rust or JS. It
+   parses modern syntax from day one, runs on a bytecode VM with its own
+   handle-based GC heap (not ARC), and has no JIT. Confirmed on
+   2026-11-19.
+5. **No C libraries anywhere in the project**, not just TLS and
+   JavaScript. C stays limited to what Swift can't express (Limine
+   structs, small asm helpers, interrupt stubs, `.incbin` data, and
+   host-test-only helpers such as hosttest/guard.c).
