@@ -3768,6 +3768,32 @@ Groundwork, no engine needed (can start beside 9A):
   also the first place "layout thrashing" scripts will hurt, so count
   flushes in the debug channel.
 
+
+**Results, lib/layout incremental (done on host; mutation-hook wiring pending).**
+- `lib/layout/incremental.swift`: `engine.noteAttributeChanged(node, name:)`,
+  `noteChildrenChanged(parent, added:, removed:)`, `noteTextChanged(node)`,
+  `updateIfNeeded()` (also flushed by `update()`), `hasPendingWork`. Attribute
+  changes restyle the element's subtree in place (plus following siblings
+  when any rule uses `+`/`~`); paint-only results skip relayout. Layout-affecting
+  results, child list and text changes rebuild the box subtree of the nearest
+  rebuildable block ancestor and splice it in; everything else (and
+  `<style>`/`<link>` changes, which rescan sources and keep fetched sheets)
+  falls back to a whole-document rebuild. Layout stays whole-document; BFC
+  cache reuse was not done (caches are keyed by a per-layout generation).
+- Forced layout: `rect(of:)`, `computedStyle(of:)`, `metrics(of:)` (offset,
+  client, scroll sizes) flush first; `engine.stats` counts `forcedQueries`,
+  `forcedFlushes`, `paintOnly`, `subtreeRebuilds`, `fullRebuilds`.
+- Fuzz test (`WIFFER_LAYOUT_ONLY=incremental`, `WIFFER_INC_SEED`,
+  `WIFFER_INC_ROUNDS`): random class/style/attribute changes, inserts,
+  removes, moves, text edits on 16 pages; box dump, computed/paint styles,
+  decoration and pixels equal a from-scratch engine (625 checks by default,
+  2500+ with more rounds, 0 failures). Fixed on the way: root style changes,
+  generated ::before/::after appearing, nested anonymous box styles,
+  decoration refresh, stale canvas color when the root disappears.
+- Wikipedia host timings: class toggle paint-only 8 ms, layout-affecting
+  (subtree rebuild + whole-document layout) 18 ms, full restyle+layout 145 ms.
+- Not yet wired: lib/html's mutation hook (call the `note*` functions from it).
+
 Bindings (needs 9F):
 
 - **Core DOM:** `Node`, `Element`, `HTMLElement` (one class with the

@@ -114,6 +114,7 @@ func libTests(_ t: Tests) {
     if want("robustness") { layoutRobustnessTests(t) }
     if want("fuzz") { layoutFuzzTests(t) }
     if want("sites") { layoutSiteTests(t) }
+    if want("incremental") { layoutIncrementalTests(t) }
     if only == "profile" {
         // Restyle the Wikipedia page repeatedly (for a sampling profiler).
         if let (e, _, _, _) = layoutSitePage(t, "lib/html/fixtures/wikipedia-html.html", "lib/layout/fixtures/wikipedia.css", width: 1024) {

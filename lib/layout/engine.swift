@@ -65,21 +65,21 @@ final class LayoutEngine {
     private(set) var resolver: CSSStyleResolver
     private(set) var root: LayoutBox? = nil
     private(set) var styleSources: [LayoutStyleSource] = []
-    private var slots: [[CSSStylesheet]] = []
+    var slots: [[CSSStylesheet]] = []
     private var extraSheets: [CSSStylesheet] = []
     private(set) var hasHoverRules = false
     var hoverCompoundList: [CSSCompound] = []
-    private var pendingHover: [HTMLNode] = []
+    var pendingHover: [HTMLNode] = []
     /// Hover changes handled without rebuilding the box tree (for tests and timing).
     private(set) var incrementalRestyles = 0
-    private var nodeBoxes: [ObjectIdentifier: LayoutBox] = [:]
-    private(set) var controlBoxes: [LayoutBox] = []
-    private(set) var imageURLs: [String] = []
+    var nodeBoxes: [ObjectIdentifier: LayoutBox] = [:]
+    var controlBoxes: [LayoutBox] = []
+    var imageURLs: [String] = []
     private(set) var display = LayoutDisplayList()
     private(set) var documentWidth = 0.0, documentHeight = 0.0
     /// The canvas background (root or body background, else white), 0x00RRGGBB.
     private(set) var canvasColor: UInt32 = 0xffffff
-    private(set) var title = ""
+    var title = ""
     private(set) var hovered: HTMLNode? = nil
     var timings = LayoutTimings()
     var scaledCache: [String: ImageBitmap] = [:]
@@ -95,8 +95,21 @@ final class LayoutEngine {
     var controlChecked: [ObjectIdentifier: Bool] = [:]
     private(set) var viewportWidth: Double
     private(set) var viewportHeight: Double
-    private(set) var needsStyle = true
-    private(set) var needsLayout = true
+    var needsStyle = true
+    var needsLayout = true
+
+    // Incremental updates (see incremental.swift).
+    var pendingAttr: [HTMLNode] = []
+    var pendingChildren: [HTMLNode] = []
+    var pendingText: [HTMLNode] = []
+    var pendingAttrRebuild: [HTMLNode] = []
+    /// Bumped when `styleSources` is rescanned after a DOM change (new or removed <style>/<link>).
+    var styleSourcesVersion = 0
+    var pendingRescan = false
+    var inUpdate = false
+    var restyleDecoChanged = false
+    var hasSiblingRules = false
+    var stats = LayoutUpdateStats()
 
     init(document: HTMLNode, text: TextEngine, viewportWidth: Int, viewportHeight: Int,
          limits: LayoutLimits = LayoutLimits(), resolveURL: ((String) -> String)? = nil) {
@@ -119,7 +132,7 @@ final class LayoutEngine {
     /// No doctype, or a legacy one: the HTML quirks-mode UA rules apply.
     private(set) var quirksMode = false
 
-    private func scanDocument() {
+    func scanDocument() {
         quirksMode = true
         for c in document.children where c.kind == .doctype {
             quirksMode = htmlDoctypeQuirks(name: c.name, publicID: c.publicID, systemID: c.systemID, forceQuirks: false)
@@ -178,7 +191,7 @@ final class LayoutEngine {
         return c
     }
 
-    private func rebuildResolver() {
+    func rebuildResolver() {
         let c = cssContext()
         let r = CSSStyleResolver(ctx: c)
         if quirksMode { r.addStyleSheet(layoutQuirksSheet, origin: .userAgent) }
@@ -190,6 +203,7 @@ final class LayoutEngine {
         resolver = r
         hasHoverRules = LayoutEngine.scanHover(r)
         hoverCompoundList = LayoutEngine.hoverCompounds(r)
+        hasSiblingRules = LayoutEngine.scanSiblingCombinators(r)
         needsStyle = true
     }
 
@@ -258,6 +272,9 @@ final class LayoutEngine {
 
     /// Restyle and relayout as needed. Cheap when nothing changed.
     func update() {
+        inUpdate = true
+        defer { inUpdate = false }
+        if hasPendingDOMChanges { processDOMChanges() }
         if !needsStyle && !pendingHover.isEmpty && root != nil {
             let t0 = now()
             let roots = pendingHover
@@ -273,6 +290,7 @@ final class LayoutEngine {
         pendingHover = []
         if needsStyle {
             let t0 = now()
+            stats.fullRebuilds += 1
             let b = LayoutBuilder(resolver: resolver, state: state, limits: limits)
             root?.items = nil
             root = b.build(document)
@@ -300,7 +318,7 @@ final class LayoutEngine {
         ctx.viewportW = viewportWidth
         ctx.viewportH = viewportHeight
         ctx.imageSize = imageSize
-        guard let r = root else { documentWidth = viewportWidth; documentHeight = viewportHeight; return }
+        guard let r = root else { documentWidth = viewportWidth; documentHeight = viewportHeight; canvasColor = 0xffffff; return }
         ctx.assignContainingBlocks(r)
         let floats = LayoutFloats(cap: limits.maxFloatsPerContext)
         ctx.layoutBlock(r, cbW: viewportWidth, cbH: viewportHeight, floats: floats, cbOX: 0, oy: 0)
@@ -422,6 +440,7 @@ final class LayoutEngine {
 
     /// Border-box rectangle of an element in page coordinates (union of its fragments for inline boxes).
     func rect(of node: HTMLNode) -> LayoutRect? {
+        flushForQuery()
         guard let b = nodeBoxes[ObjectIdentifier(node)] else { return nil }
         return layoutBoxRect(b)
     }
