@@ -11,7 +11,7 @@
 // build/test262 the run is skipped (not failed).
 
 /// Raise by hand when the parser gets better (ROADMAP Phase 9A results).
-let jsTest262ParseFloor = 0
+let jsTest262ParseFloor = 23_700
 
 /// Post-ES2022 syntax, skipped.
 let jsTest262SkipFeatures: [String] = [
@@ -81,11 +81,17 @@ func jsTest262Meta(_ src: [UInt8]) -> JSTest262Meta {
     if a < 0 { return m }
     let b = find("---*/", from: a)
     if b < 0 { return m }
-    let text = String(decoding: src[a..<b], as: UTF8.self)
+    var lines: [String] = []
+    var ls = a
+    for i in a...b where i == b || src[i] == 0x0A {
+        var e = i
+        if e > ls && src[e - 1] == 0x0D { e -= 1 }
+        lines.append(String(decoding: src[ls..<e], as: UTF8.self))
+        ls = i + 1
+    }
     var inNegative = false
     var inFeatures = false
-    for raw in text.split(separator: "\n", omittingEmptySubsequences: false) {
-        let line = String(raw)
+    for line in lines {
         let trimmed = line.drop(while: { $0 == " " })
         let indented = line.first == " "
         if !indented { inNegative = false; inFeatures = false }

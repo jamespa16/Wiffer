@@ -25,6 +25,11 @@ enum JSTok: UInt8 {
     case caretAssign, andAndAssign, orOrAssign, nullishAssign
 }
 
+/// What the lexer and parser throw internally: a one-byte value, so a
+/// `try` costs no stack (the message and offset are kept in JSLexer and
+/// turned into a JSSyntaxError by jsParse).
+struct JSParseFail: Error {}
+
 struct JSToken {
     var kind: JSTok = .eof
     /// A line terminator came before this token (for ASI).
@@ -130,9 +135,23 @@ final class JSLexer {
 
     @inline(__always) func at(_ i: Int) -> UInt8 { i < n && i >= 0 ? buf[i] : 0 }
 
-    func fail(_ msg: String, _ offset: Int) -> JSSyntaxError {
-        let loc = JSLineMap(ast.source).location(offset)
-        return JSSyntaxError(message: msg, offset: offset, line: loc.line, column: loc.column)
+    /// The first error (the parser stops at it).
+    var errorMessage = ""
+    var errorOffset = -1
+
+    /// Record a syntax error; the caller throws the returned JSParseFail.
+    @inline(never)
+    func fail(_ msg: String, _ offset: Int) -> JSParseFail {
+        if errorOffset < 0 { errorMessage = msg; errorOffset = offset }
+        return JSParseFail()
+    }
+
+    /// The recorded error as a JSSyntaxError.
+    func syntaxError() -> JSSyntaxError {
+        let off = max(0, errorOffset)
+        let loc = JSLineMap(ast.source).location(off)
+        return JSSyntaxError(message: errorMessage.isEmpty ? "syntax error" : errorMessage,
+                             offset: off, line: loc.line, column: loc.column)
     }
 
     /// The code point at i and its byte length (invalid UTF-8: U+FFFD, 1).
@@ -179,7 +198,7 @@ final class JSLexer {
 
     /// Skip whitespace and comments; returns whether a line terminator was
     /// crossed.
-    private func skipTrivia() throws(JSSyntaxError) -> Bool {
+    private func skipTrivia() throws(JSParseFail) -> Bool {
         var nl = pos == 0
         let startPos = pos
         while pos < n {
@@ -249,7 +268,7 @@ final class JSLexer {
 
     // ------------------------------------------------------------ tokens
 
-    func next() throws(JSSyntaxError) -> JSToken {
+    func next() throws(JSParseFail) -> JSToken {
         var t = JSToken()
         t.nl = try skipTrivia()
         t.start = pos
@@ -357,7 +376,7 @@ final class JSLexer {
 
     /// IdentifierName starting at pos (t.start is set by the caller; for
     /// private names it points at '#').
-    private func scanName(_ t: inout JSToken) throws(JSSyntaxError) {
+    private func scanName(_ t: inout JSToken) throws(JSParseFail) {
         let begin = pos
         while pos < n && jsIsASCIIIdentPart(buf[pos]) { pos += 1 }
         let c = at(pos)
@@ -431,7 +450,7 @@ final class JSLexer {
 
     // ------------------------------------------------------------ numbers
 
-    private func scanNumber(_ t: inout JSToken) throws(JSSyntaxError) {
+    private func scanNumber(_ t: inout JSToken) throws(JSParseFail) {
         let begin = pos
         var value: Double = 0
         var flags: UInt16 = 0
@@ -514,7 +533,7 @@ final class JSLexer {
     /// fraction or exponent (no BigInt then).
     @discardableResult
     private func scanDecimal(_ value: inout Double, _ flags: inout UInt16,
-                             allowSeparators: Bool) throws(JSSyntaxError) -> Bool {
+                             allowSeparators: Bool) throws(JSParseFail) -> Bool {
         let litStart = pos
         var mant: UInt64 = 0
         var sig = 0           // significant digits taken into mant
@@ -524,7 +543,7 @@ final class JSLexer {
         var sawDotOrExp = false
         let leadingZero = at(pos) == 0x30
 
-        func digits(_ frac: Bool) throws(JSSyntaxError) -> Int {
+        func digits(_ frac: Bool) throws(JSParseFail) -> Int {
             var count = 0
             var lastSep = false
             while true {
@@ -611,7 +630,7 @@ final class JSLexer {
 
     // ------------------------------------------------------------ strings
 
-    private func scanString(_ t: inout JSToken, _ quote: UInt8) throws(JSSyntaxError) {
+    private func scanString(_ t: inout JSToken, _ quote: UInt8) throws(JSParseFail) {
         let begin = pos
         // Fast path: ASCII without escapes.
         var i = pos
@@ -706,7 +725,7 @@ final class JSLexer {
 
     /// Template characters from pos (just after '`' or '}') up to '`' or
     /// '${'. Cooked value in value (-1 if an escape is invalid), raw in value2.
-    private func scanTemplate(_ t: inout JSToken, head: Bool) throws(JSSyntaxError) {
+    private func scanTemplate(_ t: inout JSToken, head: Bool) throws(JSParseFail) {
         let begin = pos
         scratch.removeAll(keepingCapacity: true)
         var bad = false
@@ -755,7 +774,7 @@ final class JSLexer {
     }
 
     /// Rescan from the `}` at `offset` as a template middle or tail.
-    func rescanTemplate(_ offset: Int) throws(JSSyntaxError) -> JSToken {
+    func rescanTemplate(_ offset: Int) throws(JSParseFail) -> JSToken {
         pos = offset + 1
         var t = JSToken()
         t.start = offset
@@ -767,7 +786,7 @@ final class JSLexer {
     // ------------------------------------------------------------ regexps
 
     /// Rescan from the `/` at `offset` as a regular expression literal.
-    func rescanRegExp(_ offset: Int) throws(JSSyntaxError) -> JSToken {
+    func rescanRegExp(_ offset: Int) throws(JSParseFail) -> JSToken {
         pos = offset + 1
         var inClass = false
         let bodyStart = pos

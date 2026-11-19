@@ -26,12 +26,22 @@ struct JSParseOptions {
 }
 
 /// Parse a script or module. The returned tree is a valid program.
+/// The address of a local: the current stack depth, for the stack guard.
+@inline(never)
+func jsStackAddress() -> UInt {
+    var probe: UInt8 = 0
+    return withUnsafeMutablePointer(to: &probe) { UInt(bitPattern: $0) }
+}
+
 func jsParse(_ source: [UInt8], _ options: JSParseOptions = JSParseOptions()) throws(JSSyntaxError) -> JSAST {
     if source.count > options.limits.maxSourceBytes {
         throw JSSyntaxError(message: "source too large", offset: 0, line: 1, column: 1)
     }
     let p = JSParser(source, options)
-    try p.parseProgram()
+    let here = jsStackAddress()
+    let budget = UInt(max(16 << 10, options.limits.maxParseStackBytes))
+    p.stackFloor = here > budget ? here - budget : 0
+    do { try p.parseProgram() } catch { throw p.lex.syntaxError() }
     return p.ast
 }
 
@@ -42,6 +52,8 @@ struct JSFnCtx {
     var async = false
     /// await is reserved as an identifier.
     var awaitReserved = false
+    /// Inside an async function's arrows: await stays reserved.
+    var awaitFromAsync = false
     var generator = false
     var arrow = false
     /// return is allowed.
@@ -99,8 +111,13 @@ final class JSParser {
     var scopes: [JSScope] = []
     var labels: [JSLabel] = []
     var pendingLabels = 0
+    /// The next parseStatement is a StatementListItem (a labelled function
+    /// declaration is allowed there in sloppy mode).
+    var labelFnOK = false
     var classes: [JSClassScope] = []
     var depth = 0
+    /// enter() fails below this stack address (see JSLimits.maxParseStackBytes).
+    var stackFloor: UInt = 0
     var scratch: [Int32] = []
     /// Bound names collected by binding patterns: (name, offset).
     var bound: [(Int32, Int)] = []
@@ -128,30 +145,46 @@ final class JSParser {
 
     // ------------------------------------------------------------ errors
 
-    func error(_ msg: String, _ offset: Int) -> JSSyntaxError { lex.fail(msg, offset) }
+    @inline(never)
+    func error(_ msg: String, _ offset: Int) -> JSParseFail { lex.fail(msg, offset) }
 
-    func unexpected() -> JSSyntaxError {
+    @inline(never)
+    func unexpected() -> JSParseFail {
         if tok.kind == .eof { return error("unexpected end of input", tok.start) }
         return error("unexpected token", tok.start)
     }
 
-    @inline(__always) func enter() throws(JSSyntaxError) {
+    @inline(__always) func enter() throws(JSParseFail) {
         depth += 1
         if depth > opts.limits.maxASTDepth { throw error("nesting too deep", tok.start) }
+        // Frame sizes differ by production and target, so also bound the
+        // stack actually used (it grows down from where parsing started).
+        if jsStackAddress() < stackFloor { throw error("nesting too deep", tok.start) }
     }
 
     @inline(__always) func leave() { depth -= 1 }
 
     // ------------------------------------------------------------ tokens
 
-    @inline(__always) func advance() throws(JSSyntaxError) {
+    @inline(__always) func advance() throws(JSParseFail) {
         prevEnd = tok.end
         if hasPeek { tok = peekTok; hasPeek = false } else { tok = try lex.next() }
     }
 
-    func peek() throws(JSSyntaxError) -> JSToken {
+    func peek() throws(JSParseFail) -> JSToken {
         if !hasPeek { peekTok = try lex.next(); hasPeek = true }
         return peekTok
+    }
+
+    /// The token after the peeked one (lexing errors read as eof).
+    func peek2() -> JSToken {
+        guard hasPeek else { return JSToken() }
+        let saved = lex.pos
+        let savedErr = (lex.errorMessage, lex.errorOffset)
+        let t = (try? lex.next()) ?? JSToken()
+        lex.pos = saved
+        (lex.errorMessage, lex.errorOffset) = savedErr
+        return t
     }
 
     /// The current token is the (unescaped) word `w`.
@@ -159,36 +192,36 @@ final class JSParser {
         tok.kind == .name && tok.value == w && !tok.escaped
     }
 
-    @inline(__always) func eat(_ k: JSTok) throws(JSSyntaxError) -> Bool {
+    @inline(__always) func eat(_ k: JSTok) throws(JSParseFail) -> Bool {
         if tok.kind == k { try advance(); return true }
         return false
     }
 
-    func expect(_ k: JSTok) throws(JSSyntaxError) {
+    func expect(_ k: JSTok) throws(JSParseFail) {
         if tok.kind != k { throw unexpected() }
         try advance()
     }
 
-    func expectWord(_ w: Int32) throws(JSSyntaxError) {
+    func expectWord(_ w: Int32) throws(JSParseFail) {
         if !isWord(w) { throw unexpected() }
         try advance()
     }
 
     /// Automatic semicolon insertion.
-    func semicolon() throws(JSSyntaxError) {
+    func semicolon() throws(JSParseFail) {
         if tok.kind == .semicolon { try advance(); return }
         if tok.kind == .rbrace || tok.kind == .eof || tok.nl { return }
         throw unexpected()
     }
 
-    func rescanRegExp() throws(JSSyntaxError) {
+    func rescanRegExp() throws(JSParseFail) {
         let nl = tok.nl
         hasPeek = false
         tok = try lex.rescanRegExp(tok.start)
         tok.nl = nl
     }
 
-    func rescanTemplate() throws(JSSyntaxError) {
+    func rescanTemplate() throws(JSParseFail) {
         hasPeek = false
         tok = try lex.rescanTemplate(tok.start)
     }
@@ -197,7 +230,7 @@ final class JSParser {
 
     @inline(__always)
     func node(_ kind: JSNodeKind, _ start: Int, op: UInt8 = 0, flags: UInt16 = 0,
-              _ a: Int32 = -1, _ b: Int32 = -1, _ c: Int32 = -1, _ d: Int32 = -1) throws(JSSyntaxError) -> Int32 {
+              _ a: Int32 = -1, _ b: Int32 = -1, _ c: Int32 = -1, _ d: Int32 = -1) throws(JSParseFail) -> Int32 {
         if ast.nodes.count >= opts.limits.maxASTNodes { throw error("program too large", start) }
         ast.nodes.append(JSNode(kind: kind, op: op, flags: flags, start: UInt32(truncatingIfNeeded: start),
                                 end: UInt32(truncatingIfNeeded: prevEnd), a: a, b: b, c: c, d: d))
@@ -222,9 +255,9 @@ final class JSParser {
     // ------------------------------------------------------------ scopes
 
     func pushScope(_ kind: UInt8) { scopes.append(JSScope(kind)) }
-    func popScope() { scopes.removeLast() }
+    func popScope() { if !scopes.isEmpty { scopes.removeLast() } }
 
-    func declareLexical(_ name: Int32, _ pos: Int, sloppyFunction: Bool = false) throws(JSSyntaxError) {
+    func declareLexical(_ name: Int32, _ pos: Int, sloppyFunction: Bool = false) throws(JSParseFail) {
         let i = scopes.count - 1
         if i < 0 { return }
         if scopes[i].lexical.contains(name) {
@@ -238,13 +271,10 @@ final class JSParser {
         if sloppyFunction { scopes[i].sloppyFuncs.insert(name) }
     }
 
-    func declareVar(_ name: Int32, _ pos: Int, forOf: Bool = false) throws(JSSyntaxError) {
+    func declareVar(_ name: Int32, _ pos: Int, forOf: Bool = false) throws(JSParseFail) {
         var i = scopes.count - 1
         while i >= 0 {
             if scopes[i].lexical.contains(name) {
-                throw error("redeclaration of '\(ast.text(name))'", pos)
-            }
-            if forOf && scopes[i].kind == 2 && scopes[i].params.contains(name) {
                 throw error("redeclaration of '\(ast.text(name))'", pos)
             }
             scopes[i].vars.insert(name)
@@ -254,14 +284,14 @@ final class JSParser {
     }
 
     /// A function declaration at the top of a function or script body.
-    func declareTopFunction(_ name: Int32, _ pos: Int) throws(JSSyntaxError) {
+    func declareTopFunction(_ name: Int32, _ pos: Int) throws(JSParseFail) {
         let i = scopes.count - 1
         if i < 0 { return }
         if scopes[i].lexical.contains(name) { throw error("redeclaration of '\(ast.text(name))'", pos) }
         scopes[i].vars.insert(name)
     }
 
-    func declareBound(_ mark: Int, _ kind: JSVarKind, forOf: Bool = false) throws(JSSyntaxError) {
+    func declareBound(_ mark: Int, _ kind: JSVarKind, forOf: Bool = false) throws(JSParseFail) {
         var i = mark
         while i < bound.count {
             let (name, pos) = bound[i]
@@ -297,7 +327,7 @@ final class JSParser {
     // ------------------------------------------------------------ identifiers
 
     /// Check a name used as a binding identifier or identifier reference.
-    func checkIdentifier(_ t: JSToken, binding: Bool) throws(JSSyntaxError) {
+    func checkIdentifier(_ t: JSToken, binding: Bool) throws(JSParseFail) {
         let id = t.value
         if id < JSWord.reservedCount {
             throw error("unexpected reserved word", t.start)
@@ -324,7 +354,7 @@ final class JSParser {
     }
 
     /// The current token as a binding identifier; consumes it.
-    func parseBindingIdentifier() throws(JSSyntaxError) -> Int32 {
+    func parseBindingIdentifier() throws(JSParseFail) -> Int32 {
         guard tok.kind == .name else { throw unexpected() }
         try checkIdentifier(tok, binding: true)
         let start = tok.start, id = tok.value
@@ -335,7 +365,7 @@ final class JSParser {
 
     // ------------------------------------------------------------ program
 
-    func parseProgram() throws(JSSyntaxError) {
+    func parseProgram() throws(JSParseFail) {
         fn.strict = opts.strict || opts.module
         if opts.module {
             fn.async = true
@@ -369,7 +399,7 @@ final class JSParser {
 
     /// The directive prologue at the start of a body; statements go to
     /// scratch. Returns whether it contained "use strict" (fn.strict is set).
-    func parseDirectives() throws(JSSyntaxError) -> Bool {
+    func parseDirectives() throws(JSParseFail) -> Bool {
         var useStrict = false
         var octalPos = -1
         while tok.kind == .string {
@@ -388,12 +418,6 @@ final class JSParser {
                 if !fn.strict {
                     fn.strict = true
                     if octalPos >= 0 { throw error("octal escape sequences are not allowed in strict mode", octalPos) }
-                    // The token after the directive was read before strict
-                    // mode started; recheck it.
-                    if tok.kind == .name && JSWord.isStrictReserved(tok.value) && tok.value != JSWord.yield_
-                        && tok.value != JSWord.let_ && tok.value != JSWord.static_ {
-                        // parsed later with strict set: nothing to do
-                    }
                 }
             }
         }
@@ -410,7 +434,7 @@ final class JSParser {
 
     // ------------------------------------------------------------ statements
 
-    func parseStatementListItem() throws(JSSyntaxError) -> Int32 {
+    func parseStatementListItem() throws(JSParseFail) -> Int32 {
         if tok.kind == .name && !tok.escaped {
             switch tok.value {
             case JSWord.function_:
@@ -442,11 +466,12 @@ final class JSParser {
             default: break
             }
         }
+        labelFnOK = true
         return try parseStatement()
     }
 
     /// `let` starts a declaration if followed by [, { or a name.
-    func isLetDeclaration() throws(JSSyntaxError) -> Bool {
+    func isLetDeclaration() throws(JSParseFail) -> Bool {
         let p = try peek()
         if p.kind == .lbracket || p.kind == .lbrace { return true }
         if p.kind == .name {
@@ -457,7 +482,7 @@ final class JSParser {
         return false
     }
 
-    func parseLexicalDeclaration(_ kind: JSVarKind) throws(JSSyntaxError) -> Int32 {
+    func parseLexicalDeclaration(_ kind: JSVarKind) throws(JSParseFail) -> Int32 {
         let start = tok.start
         try advance()
         let n = try parseDeclarations(kind, start, inFor: false)
@@ -467,7 +492,7 @@ final class JSParser {
     }
 
     /// Declarators after var/let/const (already consumed).
-    func parseDeclarations(_ kind: JSVarKind, _ start: Int, inFor: Bool) throws(JSSyntaxError) -> Int32 {
+    func parseDeclarations(_ kind: JSVarKind, _ start: Int, inFor: Bool) throws(JSParseFail) -> Int32 {
         let mark = scratch.count
         while true {
             let dstart = tok.start
@@ -491,11 +516,13 @@ final class JSParser {
         return try node(.varDecl, start, op: kind.rawValue, ls, lc)
     }
 
-    func parseStatement() throws(JSSyntaxError) -> Int32 {
+    func parseStatement() throws(JSParseFail) -> Int32 {
         try enter()
         defer { leave() }
         let myLabels = pendingLabels
         pendingLabels = 0
+        let fnOK = labelFnOK
+        labelFnOK = false
         let start = tok.start
         switch tok.kind {
         case .lbrace:
@@ -584,21 +611,25 @@ final class JSParser {
             }
         default: break
         }
-        // Expression statement or labelled statement.
-        let isName = tok.kind == .name
-        let labelTok = tok
-        let expr = try parseExpression(noIn: false)
-        if isName && tok.kind == .colon && k(expr) == .identifier && !isParen(expr)
-            && Int(ast.nodes[Int(expr)].end) == labelTok.end {
-            return try parseLabeled(start, labelTok, myLabels)
+        // Labelled statement or expression statement.
+        var isLabel = false
+        if tok.kind == .name { isLabel = try peek().kind == .colon }
+        if isLabel {
+            let labelTok = tok
+            if labelTok.value < JSWord.reservedCount || (fn.strict && JSWord.isStrictReserved(labelTok.value)) {
+                throw error("invalid label", labelTok.start)
+            }
+            try advance()
+            return try parseLabeled(start, labelTok, myLabels, fnOK: fnOK)
         }
+        let expr = try parseExpression(noIn: false)
         try semicolon()
         return try node(.exprStmt, start, expr)
     }
 
     /// The body of if/with/labels: a statement, or (Annex B, sloppy) a
     /// plain function declaration as if in its own block.
-    func parseSubStatement(allowFunction: Bool = false) throws(JSSyntaxError) -> Int32 {
+    func parseSubStatement(allowFunction: Bool = false) throws(JSParseFail) -> Int32 {
         if allowFunction && !fn.strict && isWord(JSWord.function_) {
             let p = try peek()
             if p.kind == .star { throw error("generator declarations are not allowed here", tok.start) }
@@ -610,7 +641,7 @@ final class JSParser {
         return try parseStatement()
     }
 
-    func parseLoopBody(_ myLabels: Int) throws(JSSyntaxError) -> Int32 {
+    func parseLoopBody(_ myLabels: Int) throws(JSParseFail) -> Int32 {
         var i = labels.count - myLabels
         while i < labels.count { labels[i].isLoop = true; i += 1 }
         fn.loopDepth += 1
@@ -619,7 +650,7 @@ final class JSParser {
         return try parseStatement()
     }
 
-    func parseBlock() throws(JSSyntaxError) -> Int32 {
+    func parseBlock() throws(JSParseFail) -> Int32 {
         let start = tok.start
         try expect(.lbrace)
         pushScope(1)
@@ -634,7 +665,7 @@ final class JSParser {
         return try node(.block, start, ls, lc)
     }
 
-    func parseIf() throws(JSSyntaxError) -> Int32 {
+    func parseIf() throws(JSParseFail) -> Int32 {
         let start = tok.start
         try advance()
         try expect(.lparen)
@@ -649,12 +680,12 @@ final class JSParser {
         return try node(.ifStmt, start, test, cons, alt)
     }
 
-    func parseJump(_ isContinue: Bool) throws(JSSyntaxError) -> Int32 {
+    func parseJump(_ isContinue: Bool) throws(JSParseFail) -> Int32 {
         let start = tok.start
         try advance()
         var label: Int32 = -1
         if tok.kind == .name && !tok.nl && !(tok.value < JSWord.reservedCount && !tok.escaped) {
-            try checkIdentifier(tok, binding: false)
+            if fn.strict && JSWord.isStrictReserved(tok.value) { throw error("invalid label", tok.start) }
             label = tok.value
             var found = false
             var i = labels.count - 1
@@ -675,8 +706,7 @@ final class JSParser {
         return try node(isContinue ? .continueStmt : .breakStmt, start, label)
     }
 
-    func parseLabeled(_ start: Int, _ t: JSToken, _ myLabels: Int) throws(JSSyntaxError) -> Int32 {
-        // The identifier was already checked as a reference.
+    func parseLabeled(_ start: Int, _ t: JSToken, _ myLabels: Int, fnOK: Bool) throws(JSParseFail) -> Int32 {
         if t.value == JSWord.yield_ && (fn.generator || fn.strict) { throw error("invalid label", t.start) }
         if t.value == JSWord.await_ && (fn.async || fn.awaitReserved || opts.module) { throw error("invalid label", t.start) }
         var i = labels.count - 1
@@ -684,24 +714,24 @@ final class JSParser {
             if labels[i].name == t.value { throw error("duplicate label '\(ast.text(t.value))'", t.start) }
             i -= 1
         }
-        // The expression node for the label is left unused in the tree.
         try advance() // ':'
         labels.append(JSLabel(name: t.value, isLoop: false))
         pendingLabels = myLabels + 1
-        defer { labels.removeLast() }
+        defer { if !labels.isEmpty { labels.removeLast() } }
         let body: Int32
         if isWord(JSWord.function_) {
             pendingLabels = 0
-            if fn.strict { throw error("function declarations are not allowed here", tok.start) }
+            if fn.strict || !fnOK { throw error("function declarations are not allowed here", tok.start) }
             if try peek().kind == .star { throw error("generator declarations are not allowed here", tok.start) }
             body = try parseFunctionDeclaration(tok.start, async: false, inBlock: scopes.last?.kind == 1 || scopes.last?.kind == 2)
         } else {
+            labelFnOK = fnOK
             body = try parseStatement()
         }
         return try node(.labeled, start, t.value, body)
     }
 
-    func parseFor(_ myLabels: Int) throws(JSSyntaxError) -> Int32 {
+    func parseFor(_ myLabels: Int) throws(JSParseFail) -> Int32 {
         let start = tok.start
         try advance()
         var isAwait = false
@@ -759,7 +789,7 @@ final class JSParser {
                         && ast.nodes[Int(e)].a == JSWord.async_ {
                         throw error("for-of may not start with 'async of'", istart)
                     }
-                    try toAssignTarget(e, allowPattern: true)
+                    try toAssignTarget(e, allowPattern: true, allowCall: true)
                     coverErrPos = savedErr
                     return try parseForInOf(start, e, isOf: isOf, isAwait: isAwait, myLabels)
                 }
@@ -779,7 +809,7 @@ final class JSParser {
         return try node(.forStmt, start, initv, test, update, body)
     }
 
-    func parseForInOf(_ start: Int, _ left: Int32, isOf: Bool, isAwait: Bool, _ myLabels: Int) throws(JSSyntaxError) -> Int32 {
+    func parseForInOf(_ start: Int, _ left: Int32, isOf: Bool, isAwait: Bool, _ myLabels: Int) throws(JSParseFail) -> Int32 {
         if isAwait && !isOf { throw unexpected() }
         try advance() // of / in
         let right = isOf ? try parseAssignment(noIn: false) : try parseExpression(noIn: false)
@@ -788,7 +818,7 @@ final class JSParser {
         return try node(isOf ? .forOf : .forIn, start, flags: isAwait ? JSNodeFlags.await : 0, left, right, body)
     }
 
-    func parseSwitch() throws(JSSyntaxError) -> Int32 {
+    func parseSwitch() throws(JSParseFail) -> Int32 {
         let start = tok.start
         try advance()
         try expect(.lparen)
@@ -828,7 +858,7 @@ final class JSParser {
         return try node(.switchStmt, start, disc, ls, lc)
     }
 
-    func parseTry() throws(JSSyntaxError) -> Int32 {
+    func parseTry() throws(JSParseFail) -> Int32 {
         let start = tok.start
         try advance()
         let block = try parseBlock()
@@ -871,7 +901,7 @@ final class JSParser {
 
     /// `function` [*] name (...) {...} as a declaration; `async` (if any)
     /// was consumed and `start` is its offset.
-    func parseFunctionDeclaration(_ start: Int, async: Bool, inBlock: Bool, defaultExport: Bool = false) throws(JSSyntaxError) -> Int32 {
+    func parseFunctionDeclaration(_ start: Int, async: Bool, inBlock: Bool, defaultExport: Bool = false) throws(JSParseFail) -> Int32 {
         try advance() // function
         let generator = try eat(.star)
         var id: Int32 = -1
@@ -896,7 +926,7 @@ final class JSParser {
                                      flags: JSNodeFlags.declaration)
     }
 
-    func parseFunctionExpression(_ start: Int, async: Bool) throws(JSSyntaxError) -> Int32 {
+    func parseFunctionExpression(_ start: Int, async: Bool) throws(JSParseFail) -> Int32 {
         try advance() // function
         let generator = try eat(.star)
         var id: Int32 = -1
@@ -921,7 +951,7 @@ final class JSParser {
 
     /// Parameters and body of any non-arrow function; tok is at '('.
     func parseFunctionRest(_ start: Int, id: Int32, kind: JSFunctionKind, async: Bool, generator: Bool,
-                           flags: UInt16, classCtx: Bool = false) throws(JSSyntaxError) -> Int32 {
+                           flags: UInt16, classCtx: Bool = false) throws(JSParseFail) -> Int32 {
         try enter()
         defer { leave() }
         var f = JSFnCtx()
@@ -1012,16 +1042,14 @@ final class JSParser {
     }
 
     /// `{ directives statements }` in the current function context.
-    func parseFunctionBody(simpleParams: Bool) throws(JSSyntaxError) -> Int32 {
+    func parseFunctionBody(simpleParams: Bool) throws(JSParseFail) -> Int32 {
         let start = tok.start
         try expect(.lbrace)
         let mark = scratch.count
-        let wasStrict = fn.strict
         let useStrict = try parseDirectives()
         if useStrict && !simpleParams {
             throw error("\"use strict\" is not allowed in a function with non-simple parameters", start)
         }
-        _ = wasStrict
         while tok.kind != .rbrace {
             if tok.kind == .eof { throw unexpected() }
             scratch.append(try parseStatementListItem())
@@ -1032,7 +1060,7 @@ final class JSParser {
         return try node(.functionBody, start, op: useStrict ? 1 : 0, ls, lc)
     }
 
-    func checkParams(_ params: [(Int32, Int)], strict: Bool, noDuplicates: Bool) throws(JSSyntaxError) {
+    func checkParams(_ params: [(Int32, Int)], strict: Bool, noDuplicates: Bool) throws(JSParseFail) {
         if strict {
             for (name, pos) in params {
                 if name == JSWord.eval || name == JSWord.arguments {
@@ -1053,7 +1081,7 @@ final class JSParser {
 
     /// An arrow function from already-parsed parameters (scratch[pmark...],
     /// converted to binding targets); tok is at `=>`.
-    func parseArrowBody(_ start: Int, _ pmark: Int, async: Bool, noIn: Bool) throws(JSSyntaxError) -> Int32 {
+    func parseArrowBody(_ start: Int, _ pmark: Int, async: Bool, noIn: Bool) throws(JSParseFail) -> Int32 {
         if tok.nl { throw unexpected() }
         try advance() // =>
         try enter()
@@ -1061,7 +1089,9 @@ final class JSParser {
         var f = fn
         f.arrow = true
         f.async = async
-        f.awaitReserved = async || fn.awaitReserved || fn.async || opts.module
+        f.awaitFromAsync = fn.async || fn.awaitFromAsync
+        f.awaitReserved = async || f.awaitFromAsync || opts.module
+        f.staticBlock = false
         f.generator = false
         f.inParams = false
         f.usesThis = false
@@ -1144,7 +1174,9 @@ final class JSParser {
 
     // ------------------------------------------------------------ classes
 
-    func parseClass(isDecl: Bool, defaultExport: Bool = false) throws(JSSyntaxError) -> Int32 {
+    func parseClass(isDecl: Bool, defaultExport: Bool = false) throws(JSParseFail) -> Int32 {
+        try enter()
+        defer { leave() }
         let start = tok.start
         try advance() // class
         let outerStrict = fn.strict
@@ -1165,6 +1197,7 @@ final class JSParser {
         if isWord(JSWord.extends_) {
             try advance()
             superClass = try parseLeftHandSide()
+            if isArrow(superClass) { throw error("arrow function as class heritage", Int(ast.nodes[Int(superClass)].start)) }
         }
         try expect(.lbrace)
         classes.append(JSClassScope())
@@ -1196,7 +1229,7 @@ final class JSParser {
                         id, superClass, ls, lc)
     }
 
-    func declarePrivate(_ name: Int32, _ bits: UInt8, _ pos: Int) throws(JSSyntaxError) {
+    func declarePrivate(_ name: Int32, _ bits: UInt8, _ pos: Int) throws(JSParseFail) {
         let i = classes.count - 1
         if name == JSWord.constructor { throw error("'#constructor' is not allowed", pos) }
         if let old = classes[i].declared[name] {
@@ -1211,12 +1244,12 @@ final class JSParser {
         classes[i].declared[name] = bits
     }
 
-    func usePrivate(_ name: Int32, _ pos: Int) throws(JSSyntaxError) {
+    func usePrivate(_ name: Int32, _ pos: Int) throws(JSParseFail) {
         if classes.isEmpty { throw error("private name '#\(ast.text(name))' outside a class", pos) }
         classes[classes.count - 1].refs.append((name, pos))
     }
 
-    func parseClassMember(derived: Bool) throws(JSSyntaxError) -> Int32 {
+    func parseClassMember(derived: Bool) throws(JSParseFail) -> Int32 {
         let start = tok.start
         var isStatic = false
         if isWord(JSWord.static_) {
@@ -1239,7 +1272,8 @@ final class JSParser {
         if tok.kind == .star { try advance(); generator = true }
         if !async && !generator && (isWord(JSWord.get) || isWord(JSWord.set)) {
             let p = try peek()
-            if p.kind != .lparen && p.kind != .assign && p.kind != .semicolon && p.kind != .rbrace {
+            if p.kind != .lparen && p.kind != .assign && p.kind != .semicolon && p.kind != .rbrace
+                && p.kind != .star {
                 pkind = isWord(JSWord.get) ? .getter : .setter
                 try advance()
             }
@@ -1305,8 +1339,8 @@ final class JSParser {
             pushFn(f)
             let savedLabels = labels
             labels = []
+            defer { labels = savedLabels }
             value = try parseAssignment(noIn: false)
-            labels = savedLabels
             let child = fn
             fn = fnStack.removeLast()
             if child.hasEval { fn.hasEval = true }
@@ -1315,7 +1349,7 @@ final class JSParser {
         return try node(.property, start, op: JSPropertyKind.field.rawValue, flags: flags, key, value)
     }
 
-    func parseStaticBlock(_ start: Int) throws(JSSyntaxError) -> Int32 {
+    func parseStaticBlock(_ start: Int) throws(JSParseFail) -> Int32 {
         try expect(.lbrace)
         var f = JSFnCtx()
         f.strict = true
@@ -1328,13 +1362,13 @@ final class JSParser {
         pushScope(0)
         let savedLabels = labels
         labels = []
+        defer { labels = savedLabels }
         let mark = scratch.count
         while tok.kind != .rbrace {
             if tok.kind == .eof { throw unexpected() }
             scratch.append(try parseStatementListItem())
         }
         try advance()
-        labels = savedLabels
         popScope()
         let child = fn
         fn = fnStack.removeLast()
@@ -1347,7 +1381,7 @@ final class JSParser {
 
     /// A module export/import name: an IdentifierName or a string literal
     /// (which must be well-formed Unicode). Returns the string id.
-    func parseModuleExportName(_ isString: inout Bool) throws(JSSyntaxError) -> Int32 {
+    func parseModuleExportName(_ isString: inout Bool) throws(JSParseFail) -> Int32 {
         if tok.kind == .string {
             let id = tok.value
             var i = 0
@@ -1372,14 +1406,14 @@ final class JSParser {
         return id
     }
 
-    func parseModuleSpecifier() throws(JSSyntaxError) -> Int32 {
+    func parseModuleSpecifier() throws(JSParseFail) -> Int32 {
         guard tok.kind == .string else { throw unexpected() }
         let id = tok.value
         try advance()
         return id
     }
 
-    func parseImport() throws(JSSyntaxError) -> Int32 {
+    func parseImport() throws(JSParseFail) -> Int32 {
         let start = tok.start
         try advance() // import
         let mark = scratch.count
@@ -1438,11 +1472,11 @@ final class JSParser {
         return try node(.importDecl, start, from, ls, lc)
     }
 
-    func addExportedName(_ name: Int32, _ pos: Int) throws(JSSyntaxError) {
+    func addExportedName(_ name: Int32, _ pos: Int) throws(JSParseFail) {
         if !exportedNames.insert(name).inserted { throw error("duplicate export '\(ast.text(name))'", pos) }
     }
 
-    func parseExport() throws(JSSyntaxError) -> Int32 {
+    func parseExport() throws(JSParseFail) -> Int32 {
         let start = tok.start
         try advance() // export
         if tok.kind == .star {

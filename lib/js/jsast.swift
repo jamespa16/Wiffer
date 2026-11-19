@@ -61,10 +61,17 @@
 //   * .script/.module flags `strict` and `hasDirectEval` likewise.
 //
 // Depth. Recursive productions nest at most `JSLimits.maxASTDepth`
-// levels, and after parsing the whole tree's height is checked against
-// `JSLimits.maxASTHeight` (default 2000): deeper input is a SyntaxError
-// ("nesting too deep"), never a stack overflow. A compiler that recurses
-// once per tree level therefore recurses at most maxHeight deep.
+// levels and use at most `JSLimits.maxParseStackBytes` of stack (256 KiB:
+// in practice about 350 nested parentheses, 300 nested functions or 260
+// nested arrows), and after parsing the whole tree's height is checked
+// against `JSLimits.maxASTHeight` (default 2000; left-associative chains
+// such as `a + b + c` grow the height without parser recursion). Deeper
+// input is a SyntaxError ("nesting too deep"), never a stack overflow. A
+// compiler that recurses once per tree level recurses at most maxASTHeight
+// deep, which with frames like the parser's does NOT fit a 512 KiB stack:
+// 9B should walk binary/member/call chains iteratively along the left
+// spine, or guard its own stack the way JSParser.enter() does
+// (jsStackAddress()).
 //
 // ---------------------------------------------------------- node layouts
 //

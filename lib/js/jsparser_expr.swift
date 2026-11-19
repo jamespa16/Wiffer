@@ -16,7 +16,7 @@ extension JSParser {
             && nd.flags & JSNodeFlags.parenthesized == 0
     }
 
-    func parseExpression(noIn: Bool) throws(JSSyntaxError) -> Int32 {
+    func parseExpression(noIn: Bool) throws(JSParseFail) -> Int32 {
         let start = tok.start
         let e = try parseAssignment(noIn: noIn)
         if tok.kind != .comma { return e }
@@ -28,7 +28,7 @@ extension JSParser {
     }
 
     /// An Expression whose items may still become patterns (for heads).
-    func parseExpressionCover(noIn: Bool) throws(JSSyntaxError) -> Int32 {
+    func parseExpressionCover(noIn: Bool) throws(JSParseFail) -> Int32 {
         let start = tok.start
         let e = try parseAssignment(noIn: noIn, coverOK: true)
         if tok.kind != .comma { return e }
@@ -39,7 +39,7 @@ extension JSParser {
         return try node(.sequence, start, ls, lc)
     }
 
-    func parseAssignment(noIn: Bool, coverOK: Bool = false) throws(JSSyntaxError) -> Int32 {
+    func parseAssignment(noIn: Bool, coverOK: Bool = false) throws(JSParseFail) -> Int32 {
         try enter()
         defer { leave() }
         if isWord(JSWord.yield_) && fn.generator { return try parseYield(noIn: noIn) }
@@ -59,7 +59,7 @@ extension JSParser {
                 try toAssignTarget(left, allowPattern: true)
                 coverErrPos = -1
             } else {
-                try checkSimpleTarget(left)
+                try checkSimpleTarget(left, allowCall: op < JSAssignOp.logicalAnd.rawValue)
             }
             if coverErrPos >= 0 { throw error(coverErrMsg, coverErrPos) }
             try advance()
@@ -94,7 +94,7 @@ extension JSParser {
         }
     }
 
-    func parseYield(noIn: Bool) throws(JSSyntaxError) -> Int32 {
+    func parseYield(noIn: Bool) throws(JSParseFail) -> Int32 {
         let start = tok.start
         if fn.inParams { throw error("yield is not allowed in parameters", start) }
         try advance()
@@ -113,7 +113,7 @@ extension JSParser {
         return try node(.yieldExpr, start, flags: flags, arg)
     }
 
-    func parseConditional(noIn: Bool) throws(JSSyntaxError) -> Int32 {
+    func parseConditional(noIn: Bool) throws(JSParseFail) -> Int32 {
         let start = tok.start
         let test = try parseBinary(0, noIn: noIn)
         if tok.kind != .question || isArrow(test) { return test }
@@ -165,7 +165,7 @@ extension JSParser {
             && (nd.op == ops.0.rawValue || nd.op == ops.1.rawValue)
     }
 
-    func parseBinary(_ minPrec: Int, noIn: Bool) throws(JSSyntaxError) -> Int32 {
+    func parseBinary(_ minPrec: Int, noIn: Bool) throws(JSParseFail) -> Int32 {
         let start = tok.start
         var left: Int32
         if tok.kind == .privateName {
@@ -213,7 +213,7 @@ extension JSParser {
         return left
     }
 
-    func parseUnary() throws(JSSyntaxError) -> Int32 {
+    func parseUnary() throws(JSParseFail) -> Int32 {
         let start = tok.start
         var op: JSUnaryOp? = nil
         switch tok.kind {
@@ -241,7 +241,7 @@ extension JSParser {
             defer { leave() }
             try advance()
             let arg = try parseUnary()
-            try checkSimpleTarget(arg)
+            try checkSimpleTarget(arg, allowCall: true)
             return try node(.update, start, op: isInc ? 0 : 1, flags: JSNodeFlags.prefix, arg)
         default: break
         }
@@ -263,7 +263,7 @@ extension JSParser {
         }
         let e = try parseLeftHandSide()
         if (tok.kind == .inc || tok.kind == .dec) && !tok.nl && !isArrow(e) {
-            try checkSimpleTarget(e)
+            try checkSimpleTarget(e, allowCall: true)
             let isInc = tok.kind == .inc
             try advance()
             return try node(.update, start, op: isInc ? 0 : 1, e)
@@ -272,7 +272,7 @@ extension JSParser {
     }
 
     /// LeftHandSideExpression: new, call and member expressions.
-    func parseLeftHandSide() throws(JSSyntaxError) -> Int32 {
+    func parseLeftHandSide() throws(JSParseFail) -> Int32 {
         let start = tok.start
         let base: Int32
         if isWord(JSWord.new_) {
@@ -287,7 +287,7 @@ extension JSParser {
         return try parseSuffixes(base, start, allowCall: true)
     }
 
-    func parseNew() throws(JSSyntaxError) -> Int32 {
+    func parseNew() throws(JSParseFail) -> Int32 {
         let start = tok.start
         try enter()
         defer { leave() }
@@ -321,7 +321,7 @@ extension JSParser {
         return try node(.newExpr, start, callee, ls, lc)
     }
 
-    func parseSuper() throws(JSSyntaxError) -> Int32 {
+    func parseSuper() throws(JSParseFail) -> Int32 {
         let start = tok.start
         try advance()
         fn.usesThis = true
@@ -338,7 +338,7 @@ extension JSParser {
         throw error("unexpected 'super'", start)
     }
 
-    func parseImportExpr(allowCall: Bool) throws(JSSyntaxError) -> Int32 {
+    func parseImportExpr(allowCall: Bool) throws(JSParseFail) -> Int32 {
         let start = tok.start
         try advance() // import
         if tok.kind == .dot {
@@ -357,7 +357,7 @@ extension JSParser {
         throw unexpected()
     }
 
-    func parseArguments() throws(JSSyntaxError) -> (Int32, Int32) {
+    func parseArguments() throws(JSParseFail) -> (Int32, Int32) {
         try expect(.lparen)
         let mark = scratch.count
         while tok.kind != .rparen {
@@ -375,7 +375,7 @@ extension JSParser {
         return finishList(mark)
     }
 
-    func parseSuffixes(_ base: Int32, _ start: Int, allowCall: Bool) throws(JSSyntaxError) -> Int32 {
+    func parseSuffixes(_ base: Int32, _ start: Int, allowCall: Bool) throws(JSParseFail) -> Int32 {
         var e = base
         var chain = false
         let b = ast.nodes[Int(base)]
@@ -390,6 +390,7 @@ extension JSParser {
             case .dot:
                 try advance()
                 if tok.kind == .privateName {
+                    if k(e) == .superExpr { throw error("'super.#name' is not allowed", tok.start) }
                     let name = tok.value
                     try usePrivate(name, tok.start)
                     try advance()
@@ -456,7 +457,7 @@ extension JSParser {
     }
 
     /// `async(...)`: a call, or the parameters of an async arrow.
-    func parseAsyncCallOrArrow(_ start: Int, _ callee: Int32) throws(JSSyntaxError) -> Int32 {
+    func parseAsyncCallOrArrow(_ start: Int, _ callee: Int32) throws(JSParseFail) -> Int32 {
         let savedErr = coverErrPos, savedMsg = coverErrMsg
         coverErrPos = -1
         try advance() // (
@@ -495,7 +496,7 @@ extension JSParser {
 
     // ------------------------------------------------------------ primary
 
-    func parsePrimary() throws(JSSyntaxError) -> Int32 {
+    func parsePrimary() throws(JSParseFail) -> Int32 {
         let start = tok.start
         switch tok.kind {
         case .name:
@@ -518,7 +519,7 @@ extension JSParser {
                         try advance()
                         return try parseFunctionExpression(start, async: true)
                     }
-                    if p.kind == .name && !p.nl {
+                    if p.kind == .name && !p.nl && peek2().kind == .arrow {
                         // async x => ...
                         try advance()
                         let pt = tok
@@ -584,7 +585,7 @@ extension JSParser {
         }
     }
 
-    func checkRegExpFlags(_ id: Int32, _ pos: Int) throws(JSSyntaxError) {
+    func checkRegExpFlags(_ id: Int32, _ pos: Int) throws(JSParseFail) {
         var seen: UInt32 = 0
         for u in ast.str(id) {
             let bit: UInt32
@@ -605,7 +606,7 @@ extension JSParser {
         if seen & 96 == 96 { throw error("regular expression flags 'u' and 'v' can't be combined", pos) }
     }
 
-    func parseTemplate(tagged: Bool) throws(JSSyntaxError) -> Int32 {
+    func parseTemplate(tagged: Bool) throws(JSParseFail) -> Int32 {
         let start = tok.start
         let mark = scratch.count
         while true {
@@ -623,7 +624,7 @@ extension JSParser {
     }
 
     /// `( ... )`: a parenthesised expression or arrow parameters.
-    func parseParen() throws(JSSyntaxError) -> Int32 {
+    func parseParen() throws(JSParseFail) -> Int32 {
         let start = tok.start
         try advance() // (
         let mark = scratch.count
@@ -674,7 +675,7 @@ extension JSParser {
         return try node(.sequence, start + 1, flags: JSNodeFlags.parenthesized, ls, lc)
     }
 
-    func parseArrayLiteral() throws(JSSyntaxError) -> Int32 {
+    func parseArrayLiteral() throws(JSParseFail) -> Int32 {
         let start = tok.start
         try advance() // [
         let mark = scratch.count
@@ -702,7 +703,7 @@ extension JSParser {
         return try node(.array, start, ls, lc)
     }
 
-    func parseObjectLiteral() throws(JSSyntaxError) -> Int32 {
+    func parseObjectLiteral() throws(JSParseFail) -> Int32 {
         let start = tok.start
         try advance() // {
         let mark = scratch.count
@@ -712,7 +713,9 @@ extension JSParser {
                 let s = tok.start
                 try advance()
                 let a = try parseAssignment(noIn: false, coverOK: true)
-                scratch.append(try node(.spread, s, a))
+                let sp = try node(.spread, s, a)
+                if tok.kind == .comma { ast.nodes[Int(sp)].flags |= JSNodeFlags.spreadNotLast }
+                scratch.append(sp)
             } else {
                 scratch.append(try parseObjectMember(&sawProto))
             }
@@ -731,7 +734,7 @@ extension JSParser {
         }
     }
 
-    func parseObjectMember(_ sawProto: inout Bool) throws(JSSyntaxError) -> Int32 {
+    func parseObjectMember(_ sawProto: inout Bool) throws(JSParseFail) -> Int32 {
         let start = tok.start
         var async = false, generator = false
         var pkind = JSPropertyKind.initializer
@@ -783,7 +786,7 @@ extension JSParser {
         return try node(.property, start, flags: flags | JSNodeFlags.shorthand, key, id)
     }
 
-    func parsePropertyKey(allowPrivate: Bool, _ flags: inout UInt16) throws(JSSyntaxError) -> Int32 {
+    func parsePropertyKey(allowPrivate: Bool, _ flags: inout UInt16) throws(JSParseFail) -> Int32 {
         let start = tok.start
         let t = tok
         switch tok.kind {
@@ -823,7 +826,7 @@ extension JSParser {
     // ------------------------------------------------------------ patterns
 
     /// BindingIdentifier or BindingPattern (declarations, parameters, catch).
-    func parseBindingTarget() throws(JSSyntaxError) -> Int32 {
+    func parseBindingTarget() throws(JSParseFail) -> Int32 {
         try enter()
         defer { leave() }
         switch tok.kind {
@@ -834,7 +837,7 @@ extension JSParser {
         }
     }
 
-    func parseBindingElement() throws(JSSyntaxError) -> Int32 {
+    func parseBindingElement() throws(JSParseFail) -> Int32 {
         let start = tok.start
         let t = try parseBindingTarget()
         if tok.kind == .assign {
@@ -845,7 +848,7 @@ extension JSParser {
         return t
     }
 
-    func parseArrayBindingPattern() throws(JSSyntaxError) -> Int32 {
+    func parseArrayBindingPattern() throws(JSParseFail) -> Int32 {
         let start = tok.start
         try advance() // [
         let mark = scratch.count
@@ -872,7 +875,7 @@ extension JSParser {
         return try node(.arrayPattern, start, ls, lc)
     }
 
-    func parseObjectBindingPattern() throws(JSSyntaxError) -> Int32 {
+    func parseObjectBindingPattern() throws(JSParseFail) -> Int32 {
         let start = tok.start
         try advance() // {
         let mark = scratch.count
@@ -912,7 +915,7 @@ extension JSParser {
     }
 
     /// Target of `=`, `+=`, `++`: an identifier or a member expression.
-    func checkSimpleTarget(_ n: Int32) throws(JSSyntaxError) {
+    func checkSimpleTarget(_ n: Int32, allowCall: Bool = false) throws(JSParseFail) {
         let nd = ast.nodes[Int(n)]
         switch nd.kind {
         case .identifier:
@@ -921,6 +924,9 @@ extension JSParser {
             }
         case .member, .index, .privateMember:
             break
+        case .call where allowCall && !fn.strict:
+            // Annex B: `f() = 1` in sloppy code is a runtime ReferenceError.
+            break
         default:
             throw error("invalid assignment target", Int(nd.start))
         }
@@ -928,14 +934,14 @@ extension JSParser {
 
     /// Convert an expression to an assignment target in place
     /// (destructuring assignment and for-in/of heads).
-    func toAssignTarget(_ n: Int32, allowPattern: Bool) throws(JSSyntaxError) {
+    func toAssignTarget(_ n: Int32, allowPattern: Bool, allowCall: Bool = false) throws(JSParseFail) {
         try enter()
         defer { leave() }
         let nd = ast.nodes[Int(n)]
         let paren = nd.flags & JSNodeFlags.parenthesized != 0
         switch nd.kind {
-        case .identifier, .member, .index, .privateMember:
-            try checkSimpleTarget(n)
+        case .identifier, .member, .index, .privateMember, .call:
+            try checkSimpleTarget(n, allowCall: allowCall)
         case .array where !paren && allowPattern:
             ast.nodes[Int(n)].kind = .arrayPattern
             let elems = Array(ast.list(nd.a, nd.b))
@@ -960,7 +966,7 @@ extension JSParser {
             for (i, p) in props.enumerated() {
                 let pn = ast.nodes[Int(p)]
                 if pn.kind == .spread {
-                    if i != props.count - 1 { throw error("rest element must be last", Int(pn.start)) }
+                    if i != props.count - 1 || pn.flags & JSNodeFlags.spreadNotLast != 0 { throw error("rest element must be last", Int(pn.start)) }
                     let ak = k(pn.a)
                     if ak != .identifier && ak != .member && ak != .index && ak != .privateMember {
                         throw error("invalid rest element", Int(pn.start))
@@ -987,7 +993,7 @@ extension JSParser {
 
     /// An element of an array/object assignment pattern: a target or a
     /// target with a default (`a = 1` becomes an assignPattern).
-    func toAssignElement(_ e: Int32) throws(JSSyntaxError) {
+    func toAssignElement(_ e: Int32) throws(JSParseFail) {
         let en = ast.nodes[Int(e)]
         if en.kind == .assign && en.flags & JSNodeFlags.parenthesized == 0 {
             if en.op != JSAssignOp.assign.rawValue { throw error("invalid destructuring target", Int(en.start)) }
@@ -1001,7 +1007,7 @@ extension JSParser {
 
     /// Convert a cover element to a binding target for arrow parameters.
     /// `last`: it may be a rest element.
-    func toBindingTarget(_ n: Int32, last: Bool = false, top: Bool = true) throws(JSSyntaxError) {
+    func toBindingTarget(_ n: Int32, last: Bool = false, top: Bool = true) throws(JSParseFail) {
         try enter()
         defer { leave() }
         let nd = ast.nodes[Int(n)]
@@ -1035,7 +1041,7 @@ extension JSParser {
             for (i, p) in props.enumerated() {
                 let pn = ast.nodes[Int(p)]
                 if pn.kind == .spread || pn.kind == .rest {
-                    if i != props.count - 1 { throw error("rest element must be last", Int(pn.start)) }
+                    if i != props.count - 1 || pn.flags & JSNodeFlags.spreadNotLast != 0 { throw error("rest element must be last", Int(pn.start)) }
                     if k(pn.a) != .identifier || isParen(pn.a) { throw error("invalid rest element", Int(pn.start)) }
                     ast.nodes[Int(p)].kind = .rest
                     continue
