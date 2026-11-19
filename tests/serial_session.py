@@ -1014,7 +1014,7 @@ def fake_dns_server():
             me = b"\xc0\x0c"
             if name == "test.wiffer.example":
                 out = reply(data, [a_rr(me, "192.0.2.77")])
-            elif name == "www.wiffer.example":
+            elif name in ("www.wiffer.example", "www2.wiffer.example"):  # (two: the cache keeps no aliases)
                 target = labels("test.wiffer.example")
                 cname = me + b"\0\5\0\1" + (60).to_bytes(4, "big") + len(target).to_bytes(2, "big") + target
                 out = reply(data, [cname, a_rr(labels("test.wiffer.example"), "192.0.2.77")])
@@ -1346,8 +1346,9 @@ def net_checks(s: Session, timeout: float) -> int:
         for host in ("host", "/bin/host"):
             got = s.command(f"{host} test.wiffer.example {srv}", 20.0)
             check("test.wiffer.example has address 192.0.2.77" in got, f"net: {host} resolves through the fake DNS server", repr(got))
-            got = s.command(f"{host} www.wiffer.example {srv}", 20.0)
-            check("www.wiffer.example is an alias for test.wiffer.example." in got
+            www = "www.wiffer.example" if host == "host" else "www2.wiffer.example"
+            got = s.command(f"{host} {www} {srv}", 20.0)
+            check(f"{www} is an alias for test.wiffer.example." in got
                   and "test.wiffer.example has address 192.0.2.77" in got, f"net: {host} follows a CNAME", repr(got))
             got = s.command(f"{host} nx.wiffer.example {srv}", 20.0)
             check("not found: NXDOMAIN" in got, f"net: {host} reports NXDOMAIN", repr(got))
