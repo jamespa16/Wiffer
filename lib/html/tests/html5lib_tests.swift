@@ -1,6 +1,8 @@
 // html5lib tree-construction fixtures (lib/html/fixtures/*.dat, MIT licensed,
 // see fixtures/LICENSE): parse #data, compare the tree dump with #document.
-// Fragment cases and #script-on cases are skipped. Failures are written to
+// Fragment cases (#document-fragment) parse with the given context element
+// through htmlParseFragment. #script-on cases are skipped (the parser runs
+// with scripting off). Failures are written to
 // build/hosttest/html5lib-failures.txt; the run fails if the pass count
 // drops below the recorded floor.
 
@@ -19,6 +21,7 @@ struct Html5libCase {
     var data: [UInt8] = []
     var expected: [UInt8] = []
     var fragment = false
+    var context: [UInt8] = []
     var scriptOn = false
 }
 
@@ -60,6 +63,7 @@ func html5libParseFile(_ bytes: [UInt8]) -> [Html5libCase] {
         switch section {
         case "data": cur!.data.append(contentsOf: line); cur!.data.append(0x0a)
         case "#document": cur!.expected.append(contentsOf: line); cur!.expected.append(0x0a)
+        case "#document-fragment": if cur!.context.isEmpty { cur!.context = line }
         default: break
         }
     }
@@ -73,6 +77,8 @@ func html5libTests(_ t: Tests) {
     t.section("html5lib")
     var totalPass = 0, totalFail = 0, totalSkip = 0
     var tplPass = 0, tplFail = 0
+    var fragPass = 0, fragFail = 0
+    let ctxDoc = htmlNewDocument()   // owns the fragment contexts
     var report: [UInt8] = []
     for name in html5libFiles {
         guard let bytes = t.readFileIfPresent("lib/html/fixtures/\(name).dat") else { continue }
@@ -80,13 +86,19 @@ func html5libTests(_ t: Tests) {
         var n = 0
         for c in html5libParseFile(bytes) {
             n += 1
-            if c.fragment || c.scriptOn { skip += 1; continue }
-            let doc = htmlParse(c.data)
-            var got = Array(htmlTreeDump(doc).utf8)
+            if c.scriptOn { skip += 1; continue }
+            var got: [UInt8]
+            if c.fragment {
+                guard let ctx = html5libContext(c.context, ctxDoc) else { skip += 1; continue }
+                got = Array(htmlTreeDump(htmlParseFragment(c.data, context: ctx)).utf8)
+            } else {
+                got = Array(htmlTreeDump(htmlParse(c.data)).utf8)
+            }
             var want = c.expected
             while got.last == 0x0a { got.removeLast() }
             while want.last == 0x0a { want.removeLast() }
-            if got == want { pass += 1 } else {
+            if got == want { pass += 1; if c.fragment { fragPass += 1 } } else {
+                if c.fragment { fragFail += 1 }
                 fail += 1
                 report.append(contentsOf: Array("=== \(name) #\(n)\n".utf8))
                 report.append(contentsOf: c.data)
@@ -103,11 +115,20 @@ func html5libTests(_ t: Tests) {
     }
     _ = hostWriteFile("build/hosttest/html5lib-failures.txt", report)
     let rate = totalPass * 1000 / max(1, totalPass + totalFail)
-    print("html5lib tree construction: \(totalPass)/\(totalPass + totalFail) passed (\(rate / 10).\(rate % 10)%), \(totalSkip) skipped (fragment/scripting)")
-    let p2 = totalPass - tplPass, f2 = totalFail - tplFail
-    let rate2 = p2 * 1000 / max(1, p2 + f2)
-    print("  excluding template.dat (template contents are not modelled): \(p2)/\(p2 + f2) (\(rate2 / 10).\(rate2 % 10)%)")
+    print("html5lib tree construction: \(totalPass)/\(totalPass + totalFail) passed (\(rate / 10).\(rate % 10)%), \(totalSkip) skipped (scripting on)")
+    print("  fragment cases: \(fragPass)/\(fragPass + fragFail); template.dat: \(tplPass)/\(tplPass + tplFail)")
     t.check(totalPass >= html5libPassFloor, "html5lib pass count \(totalPass) >= floor \(html5libPassFloor)")
 }
 
-let html5libPassFloor = 1394
+let html5libPassFloor = 1695
+
+/// A fragment case's context: "td", "svg path", "math mi".
+func html5libContext(_ line: [UInt8], _ doc: HTMLNode) -> HTMLNode? {
+    let parts = htmlSplitWhitespace(String(decoding: line, as: UTF8.self))
+    if parts.count == 2 {
+        let ns: HTMLNamespace = parts[0] == "svg" ? .svg : .mathml
+        return try? doc.createElementNS(ns, parts[1])
+    }
+    guard parts.count == 1 else { return nil }
+    return try? doc.createElement(parts[0])
+}

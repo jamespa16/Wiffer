@@ -88,6 +88,7 @@ func libTests(_ t: Tests) {
     _ = htmlParse(htmlRepeat("<x a=1 a=2 b", 100_000))
 
     html5libTests(t)
+    htmlDOMTests(t)
 
     t.section("fuzz")
     var seeds: [[UInt8]] = [
