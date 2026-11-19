@@ -324,6 +324,7 @@ final class WindowManager {
         switch event {
         case .key(let k): key(k)
         case .mouse(let x, let y, let b): mouse(Point(x, y), b)
+        case .wheel(let x, let y, let d): wheel(Point(x, y), d)
         default: break
         }
     }
@@ -391,6 +392,17 @@ final class WindowManager {
             deliver(hit.window, p, b)
             if b != 0 { grab = .content(hit.window) }
         }
+    }
+
+    /// Phase 8H: the wheel goes to the window under the pointer (its
+    /// content), or to the one holding the pointer grab.
+    func wheel(_ p: Point, _ delta: Int) {
+        var target: Window? = nil
+        if case .content(let w) = grab { target = w }
+        else if let hit = hitTest(p), hit.part == .content { target = hit.window }
+        guard let w = target else { return }
+        let l = w.local(p)
+        w.handle(.wheel(x: l.x, y: l.y, delta: delta))
     }
 
     /// The left button went down at `p`.

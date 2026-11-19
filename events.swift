@@ -46,6 +46,9 @@ enum Event: Equatable {
     /// Pointer position in framebuffer pixels (already clamped), and the
     /// buttons (bit 0 left, 1 right, 2 middle).
     case mouse(x: Int, y: Int, buttons: UInt8)
+    /// Phase 8H: the mouse wheel turned at (x, y): `delta` notches, positive
+    /// = away from the user (scroll up).
+    case wheel(x: Int, y: Int, delta: Int)
     /// The timer advanced (at most one per poll; the payload is `ticks`).
     case tick(UInt64)
     case close
@@ -125,6 +128,7 @@ func pollEvents() {
             mouse.apply(packet)
             moved = true
             events.postMouse(x: mouse.x, y: mouse.y, buttons: mouse.buttons)
+            if packet.dz != 0 { events.post(.wheel(x: mouse.x, y: mouse.y, delta: -packet.dz)) }
         }
     }
     if moved { cursorMove(x: mouse.x, y: mouse.y) }

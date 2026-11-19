@@ -22,6 +22,8 @@ final class TextField: Widget {
     }
     var maxLength = 4096
     var readOnly = false
+    /// Draw every character as a bullet (password fields; Phase 8H).
+    var secure = false { didSet { needsDraw = true } }
     var onSubmit: ((String) -> Void)?
     var onChange: ((String) -> Void)?
     var onCancel: (() -> Void)?
@@ -234,7 +236,7 @@ final class TextField: Widget {
             var x = ox
             for (i, v) in scalars.enumerated() {
                 if x + guiCellWidth > inner.x && x < inner.maxX {
-                    s.drawGlyph(codepoint: v, font: font, at: Point(x, ty), fg: sel.contains(i) ? theme.selectionText : fg, bg: nil)
+                    s.drawGlyph(codepoint: secure ? 0x2A : v, font: font, at: Point(x, ty), fg: sel.contains(i) ? theme.selectionText : fg, bg: nil)
                 }
                 x += guiCellWidth
             }

@@ -326,6 +326,14 @@ func parsePackets(_ bytes: [UInt8]) -> [MousePacket] {
 func inputTests(_ t: inout SelfTest) {
     t.check("8042 keyboard and mouse found", ps2.controller && ps2.keyboard && ps2.mouse)
     t.check("8042 IRQs + translation on", ps2.config & 0x43 == 0x43)
+    // Phase 8H: IntelliMouse 4-byte packets (QEMU's PS/2 mouse has a wheel).
+    t.check("8H: mouse in IntelliMouse mode (wheel)", ps2.wheel && mouseParser.packetSize == 4)
+    var wp = MousePacketParser()
+    wp.packetSize = 4
+    var wheelPackets: [MousePacket] = []
+    for b in [0x08, 0x01, 0x00, 0xFF, 0x09, 0x00, 0x02, 0x01] as [UInt8] { if let pk = wp.feed(b) { wheelPackets.append(pk) } }
+    t.check("8H: 4-byte packets carry the wheel",
+            wheelPackets == [MousePacket(dx: 1, dy: 0, buttons: 0, dz: -1), MousePacket(dx: 0, dy: 2, buttons: 1, dz: 1)])
     t.check("scancode tables cover 0x00-0x39",
             scancodeBase.utf8CodeUnitCount == 0x3A && scancodeShift.utf8CodeUnitCount == 0x3A)
 

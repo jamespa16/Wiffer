@@ -6,16 +6,21 @@ struct MousePacket: Equatable {
     var dx: Int
     var dy: Int
     var buttons: UInt8 // bit 0 left, 1 right, 2 middle
+    /// IntelliMouse wheel (Phase 8H): PS/2 convention, negative = wheel up.
+    var dz = 0
 }
 
-/// Assembles the standard 3-byte packets:
+/// Assembles the standard 3-byte packets (4 bytes in IntelliMouse mode,
+/// `packetSize` = 4: byte 3 is the signed wheel movement):
 ///   byte 0: Yovf Xovf Ysign Xsign 1 Middle Right Left
 ///   byte 1: dx (low 8 bits), byte 2: dy (low 8 bits)
 /// Bit 3 of byte 0 is always set, so a byte without it can't start a packet:
 /// skipping such bytes re-synchronises after a lost byte.
 struct MousePacketParser {
-    var bytes = InlineArray<3, UInt8>(repeating: 0)
+    var bytes = InlineArray<4, UInt8>(repeating: 0)
     var count = 0
+    /// 3, or 4 once ps2Init has switched the mouse to IntelliMouse mode.
+    var packetSize = 3
     /// Bytes skipped while re-syncing, and packets discarded for overflow.
     var resyncs = 0
     var overflows = 0
@@ -24,14 +29,16 @@ struct MousePacketParser {
         if count == 0 && byte & 0x08 == 0 { resyncs += 1; return nil }
         bytes[count] = byte
         count += 1
-        guard count == 3 else { return nil }
+        guard count >= packetSize else { return nil }
         count = 0
         let flags = bytes[0]
         if flags & 0xC0 != 0 { overflows += 1; return nil }
         var dx = Int(bytes[1]), dy = Int(bytes[2])
         if flags & 0x10 != 0 { dx -= 256 }
         if flags & 0x20 != 0 { dy -= 256 }
-        return MousePacket(dx: dx, dy: dy, buttons: flags & 0x07)
+        var dz = 0
+        if packetSize == 4 { dz = max(-8, min(7, Int(Int8(bitPattern: bytes[3])))) }
+        return MousePacket(dx: dx, dy: dy, buttons: flags & 0x07, dz: dz)
     }
 }
 
@@ -74,6 +81,7 @@ func pollMouse() {
             mouse.apply(packet)
             mouseMoved = true
             events.postMouse(x: mouse.x, y: mouse.y, buttons: mouse.buttons)
+            if packet.dz != 0 { events.post(.wheel(x: mouse.x, y: mouse.y, delta: -packet.dz)) }
         }
     }
     if mouseMoved {

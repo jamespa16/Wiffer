@@ -96,6 +96,57 @@ public func wifferCeil(_ x: Double) -> Double {
     return r == 0 && x.sign == .minus ? -0.0 : r
 }
 
+// Phase 8H: the rest of the libm calls the browser's libraries reach
+// (.rounded(), .truncatingRemainder, Float maths). Written without calling
+// the Swift rounding methods, which would lower to these same symbols.
+
+private func wifferTrunc(_ x: Double) -> Double {
+    guard x.magnitude < 4_503_599_627_370_496.0 else { return x }
+    let t = Double(Int64(x))
+    return t == 0 && x.sign == .minus ? -0.0 : t
+}
+
+@_cdecl("trunc")
+public func wifferTruncC(_ x: Double) -> Double { wifferTrunc(x) }
+
+@_cdecl("floor")
+public func wifferFloor(_ x: Double) -> Double {
+    guard x.magnitude < 4_503_599_627_370_496.0 else { return x }
+    let t = Double(Int64(x))
+    return t > x ? t - 1 : (t == 0 && x.sign == .minus ? -0.0 : t)
+}
+
+/// Half away from zero.
+@_cdecl("round")
+public func wifferRound(_ x: Double) -> Double {
+    guard x.magnitude < 4_503_599_627_370_496.0 else { return x }
+    let t = wifferTrunc(x)
+    let f = x - t
+    if f >= 0.5 { return t + 1 }
+    if f <= -0.5 { return t - 1 }
+    return t
+}
+
+@_cdecl("fmod")
+public func wifferFmod(_ x: Double, _ y: Double) -> Double {
+    if y == 0 || x.isNaN || y.isNaN || x.isInfinite { return .nan }
+    if y.isInfinite { return x }
+    let q = x / y
+    if q.magnitude >= 4_503_599_627_370_496.0 { return 0 }
+    return x - wifferTrunc(q) * y
+}
+
+@_cdecl("ceilf")
+public func wifferCeilf(_ x: Float) -> Float { Float(wifferCeil(Double(x))) }
+@_cdecl("floorf")
+public func wifferFloorf(_ x: Float) -> Float { Float(wifferFloor(Double(x))) }
+@_cdecl("roundf")
+public func wifferRoundf(_ x: Float) -> Float { Float(wifferRound(Double(x))) }
+@_cdecl("truncf")
+public func wifferTruncf(_ x: Float) -> Float { Float(wifferTrunc(Double(x))) }
+@_cdecl("fmodf")
+public func wifferFmodf(_ x: Float, _ y: Float) -> Float { Float(wifferFmod(Double(x), Double(y))) }
+
 // MARK: Process entry and exit (start.S)
 
 var wifferArgc = 0

@@ -287,7 +287,7 @@ class Session:
             self.mondir = tempfile.mkdtemp(prefix="wiffer")
             self.monitor_path = os.path.join(self.mondir, "mon.sock")
             mon = f"unix:{self.monitor_path},server,nowait"
-        args = ["qemu-system-x86_64", "-M", "q35", "-m", "256M", "-cpu", "max", "-smp", SMP, "-cdrom", iso,
+        args = ["qemu-system-x86_64", "-M", "q35", "-m", "1G", "-cpu", "max", "-smp", SMP, "-cdrom", iso,
                 "-boot", "d", "-no-reboot", "-display", "none",
                 "-serial", "stdio", "-monitor", mon, *FIRMWARE, *extra_args]
         if net and not NONET:

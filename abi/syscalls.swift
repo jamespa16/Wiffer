@@ -293,7 +293,8 @@ enum WinEventKind {
     static let key: UInt16 = 1
     /// a, b: pointer position in the content area (may be outside it while
     /// a button is held); mods: buttons held (WinButton bits); c: wheel
-    /// delta (lines; 0 until the mouse driver has a wheel).
+    /// delta (notches, positive = away from the user / scroll up; 0 for
+    /// motion and buttons; Phase 8H's IntelliMouse mode).
     static let mouse: UInt16 = 2
     /// a, b: the new content size. Call win_resize to adopt it.
     static let resize: UInt16 = 3

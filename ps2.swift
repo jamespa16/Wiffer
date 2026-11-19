@@ -27,6 +27,8 @@ struct PS2Devices {
     var controller = false
     var keyboard = false
     var mouse = false
+    /// The mouse is in IntelliMouse mode (4-byte packets with a wheel).
+    var wheel = false
     var config: UInt8 = 0
 }
 
@@ -138,6 +140,11 @@ func ps2DeviceCommand(_ byte: UInt8, mouse: Bool) -> Bool {
     return false
 }
 
+/// Mouse command F3 (set sample rate) with its argument.
+func ps2SetSampleRate(_ rate: UInt8) -> Bool {
+    ps2DeviceCommand(0xF3, mouse: true) && ps2DeviceCommand(rate, mouse: true)
+}
+
 /// Bring up the 8042 with scancode translation on, then the keyboard and
 /// mouse. Devices are configured with IRQs off (replies are polled), then
 /// IRQ1/IRQ12 are enabled in the controller and unmasked at the PIC. Must
@@ -166,7 +173,16 @@ func ps2Init() {
 
     // Port 2: mouse. Enable it, set defaults (F6), enable reporting (F4).
     _ = ps2Command(0xA8)
-    ps2.mouse = ps2DeviceCommand(0xF6, mouse: true) && ps2DeviceCommand(0xF4, mouse: true)
+    ps2.mouse = ps2DeviceCommand(0xF6, mouse: true)
+    // Phase 8H: IntelliMouse (a wheel). Set the sample rate to 200, 100, 80;
+    // a wheel mouse then reports device ID 3 and sends 4-byte packets.
+    if ps2.mouse && ps2SetSampleRate(200) && ps2SetSampleRate(100) && ps2SetSampleRate(80),
+       ps2DeviceCommand(0xF2, mouse: true), let id = ps2ReadData(), id == 3 {
+        ps2.wheel = true
+        mouseParser.packetSize = 4
+    }
+    _ = ps2.mouse && ps2SetSampleRate(100)
+    ps2.mouse = ps2.mouse && ps2DeviceCommand(0xF4, mouse: true)
 
     // Drop any leftover replies so they don't decode as input, then turn the
     // device interrupts on.
@@ -185,5 +201,5 @@ func ps2Init() {
     }
     mouse.reset(toCentreOf: RawFramebuffer.primary)
     puts(ps2.keyboard ? "ps2: keyboard" : "ps2: no keyboard")
-    puts(ps2.mouse ? ", mouse\n" : ", no mouse\n")
+    puts(ps2.mouse ? (ps2.wheel ? ", mouse with wheel\n" : ", mouse\n") : ", no mouse\n")
 }
