@@ -7,7 +7,7 @@
 // classes and modules. jsparser_expr.swift: expressions and patterns.
 //
 // Hostile input: recursion is counted (`enter`) and capped by
-// JSParseLimits.maxDepth, the finished tree's height by maxHeight, and
+// JSLimits.maxASTDepth, the finished tree's height by maxASTHeight, and
 // every loop consumes a token or fails, so the parser never traps and
 // never overflows the stack.
 
@@ -16,9 +16,9 @@ struct JSParseOptions {
     var module = false
     /// Start in strict mode (scripts).
     var strict = false
-    var limits = JSParseLimits()
+    var limits = JSLimits()
 
-    init(module: Bool = false, strict: Bool = false, limits: JSParseLimits = JSParseLimits()) {
+    init(module: Bool = false, strict: Bool = false, limits: JSLimits = JSLimits()) {
         self.module = module
         self.strict = strict
         self.limits = limits
@@ -137,7 +137,7 @@ final class JSParser {
 
     @inline(__always) func enter() throws(JSSyntaxError) {
         depth += 1
-        if depth > opts.limits.maxDepth { throw error("nesting too deep", tok.start) }
+        if depth > opts.limits.maxASTDepth { throw error("nesting too deep", tok.start) }
     }
 
     @inline(__always) func leave() { depth -= 1 }
@@ -198,7 +198,7 @@ final class JSParser {
     @inline(__always)
     func node(_ kind: JSNodeKind, _ start: Int, op: UInt8 = 0, flags: UInt16 = 0,
               _ a: Int32 = -1, _ b: Int32 = -1, _ c: Int32 = -1, _ d: Int32 = -1) throws(JSSyntaxError) -> Int32 {
-        if ast.nodes.count >= opts.limits.maxNodes { throw error("program too large", start) }
+        if ast.nodes.count >= opts.limits.maxASTNodes { throw error("program too large", start) }
         ast.nodes.append(JSNode(kind: kind, op: op, flags: flags, start: UInt32(truncatingIfNeeded: start),
                                 end: UInt32(truncatingIfNeeded: prevEnd), a: a, b: b, c: c, d: d))
         return Int32(truncatingIfNeeded: ast.nodes.count - 1)
@@ -364,7 +364,7 @@ final class JSParser {
         let (ls, lc) = finishList(mark)
         prevEnd = tok.end
         ast.root = try node(opts.module ? .module : .script, 0, flags: flags, ls, lc)
-        if ast.height() > opts.limits.maxHeight { throw error("nesting too deep", 0) }
+        if ast.height() > opts.limits.maxASTHeight { throw error("nesting too deep", 0) }
     }
 
     /// The directive prologue at the start of a body; statements go to

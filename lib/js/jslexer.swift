@@ -457,7 +457,7 @@ final class JSLexer {
             }
             if lastSep { throw fail("invalid numeric separator", pos - 1) }
             if digits == 0 { throw fail("missing digits after radix prefix", begin) }
-            if value >= 9007199254740992 { flags |= JSNodeFlags.inexact }
+            if value >= 9007199254740992 { value = jsDigitsToDouble(digitValues(begin + 2, pos), Int(radix)) }
             if at(pos) == 0x6E { pos += 1; isBigInt = true }
         } else if c0 == 0x30 && c1 >= 0x30 && c1 <= 0x39 {
             // Legacy octal (017) or a NonOctalDecimalIntegerLiteral (08, 09).
@@ -470,7 +470,7 @@ final class JSLexer {
                     value = value * 8 + Double(at(pos) - 0x30); pos += 1
                 }
                 flags |= JSNodeFlags.legacyOctal
-                if value >= 9007199254740992 { flags |= JSNodeFlags.inexact }
+                if value >= 9007199254740992 { value = jsDigitsToDouble(digitValues(begin + 1, pos), 8) }
             } else {
                 flags |= JSNodeFlags.nonOctalDecimal
                 try scanDecimal(&value, &flags, allowSeparators: false)
@@ -503,11 +503,19 @@ final class JSLexer {
         }
     }
 
+    /// Digit values of buf[from..<to], separators skipped.
+    private func digitValues(_ from: Int, _ to: Int) -> [UInt8] {
+        var out: [UInt8] = []
+        for i in from..<to where buf[i] != 0x5F { out.append(UInt8(truncatingIfNeeded: jsHexValue(buf[i]))) }
+        return out
+    }
+
     /// DecimalLiteral from pos (also `.5`). Returns whether it had a
     /// fraction or exponent (no BigInt then).
     @discardableResult
     private func scanDecimal(_ value: inout Double, _ flags: inout UInt16,
                              allowSeparators: Bool) throws(JSSyntaxError) -> Bool {
+        let litStart = pos
         var mant: UInt64 = 0
         var sig = 0           // significant digits taken into mant
         var dropped = 0       // integer digits beyond 19 (scale up)
@@ -593,14 +601,10 @@ final class JSLexer {
                     && Double(mant) * jsPow10[exp10 - 22] < 9007199254740992 {
             value = Double(mant) * jsPow10[exp10 - 22] * 1e22
         } else {
-            flags |= JSNodeFlags.inexact
-            var v = Double(mant)
-            var e = exp10
-            if e > 400 { v = .infinity; e = 0 }
-            if e < -400 { v = 0; e = 0 }
-            while e >= 22 { v *= 1e22; e -= 22 }
-            while e <= -22 { v /= 1e22; e += 22 }
-            value = e >= 0 ? v * jsPow10[e] : v / jsPow10[-e]
+            // Correctly rounded slow path (jsnumber.swift).
+            var text: [UInt8] = []
+            for i in litStart..<pos where buf[i] != 0x5F { text.append(buf[i]) }
+            value = jsStringToNumber(text)
         }
         return sawDotOrExp
     }

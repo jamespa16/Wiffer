@@ -38,13 +38,10 @@
 // ids (JSWord.let_, JSWord.constructor, ...), so the compiler can compare
 // against them without looking anything up.
 //
-// Numbers. A .number node's `a` indexes `ast.numbers`. The value is exact
-// unless the node has `JSNodeFlags.inexact` (a decimal with more than 15
-// significant digits or a large exponent, or a hex/octal/binary literal
-// above 2^53): then `numbers[a]` is only an approximation and the compiler
-// should re-convert `ast.numericText(n)` (the literal's text with `_`
-// separators removed) with the correctly rounded string-to-number routine.
-// BigInt literals keep their text (prefix included, separators and the
+// Numbers. A .number node's `a` indexes `ast.numbers`: the literal's
+// correctly rounded value (simple literals on a fast path, the rest through
+// jsStringToNumber / jsDigitsToDouble in jsnumber.swift). `ast.numericText`
+// gives the literal's text with `_` separators removed. BigInt literals keep their text (prefix included, separators and the
 // trailing `n` removed) as a string id.
 //
 // Positions. `start`/`end` are UTF-8 byte offsets into `ast.source`.
@@ -63,9 +60,9 @@
 //     the compiler can tell which functions need dynamic environments;
 //   * .script/.module flags `strict` and `hasDirectEval` likewise.
 //
-// Depth. Recursive productions nest at most `JSParseLimits.maxDepth`
+// Depth. Recursive productions nest at most `JSLimits.maxASTDepth`
 // levels, and after parsing the whole tree's height is checked against
-// `JSParseLimits.maxHeight` (default 2000): deeper input is a SyntaxError
+// `JSLimits.maxASTHeight` (default 2000): deeper input is a SyntaxError
 // ("nesting too deep"), never a stack overflow. A compiler that recurses
 // once per tree level therefore recurses at most maxHeight deep.
 //
@@ -120,7 +117,7 @@
 //  identifierName  -                S name          (a non-computed property key)
 //  privateName     -                S name (no #)   (a class key, or the lhs of `#x in o`)
 //  this, superExpr, nullLit, trueLit, falseLit, newTarget, importMeta, hole
-//  number          -                # value                   (flags inexact...)
+//  number          -                # value                   (flags legacyOctal...)
 //  bigint          -                S text
 //  string          -                S value
 //  regexp          -                S pattern  S flags
@@ -250,7 +247,6 @@ enum JSNodeFlags {
     static let spreadNotLast: UInt16 = 0x0001
 
     // .number
-    static let inexact: UInt16 = 0x0001
     static let legacyOctal: UInt16 = 0x0002      // 017 (a strict-mode error, checked)
     static let nonOctalDecimal: UInt16 = 0x0004  // 08, 09
     // .string
@@ -498,20 +494,6 @@ func jsUTF16ToString(_ s: ArraySlice<UInt16>) -> String {
     return String(decoding: bytes, as: UTF8.self)
 }
 
-func jsAppendUTF8(_ out: inout [UInt8], _ cp: UInt32) {
-    if cp < 0x80 {
-        out.append(UInt8(cp))
-    } else if cp < 0x800 {
-        out.append(UInt8(0xC0 | (cp >> 6))); out.append(UInt8(0x80 | (cp & 0x3F)))
-    } else if cp < 0x10000 {
-        out.append(UInt8(0xE0 | (cp >> 12))); out.append(UInt8(0x80 | ((cp >> 6) & 0x3F)))
-        out.append(UInt8(0x80 | (cp & 0x3F)))
-    } else {
-        out.append(UInt8(0xF0 | (cp >> 18))); out.append(UInt8(0x80 | ((cp >> 12) & 0x3F)))
-        out.append(UInt8(0x80 | ((cp >> 6) & 0x3F))); out.append(UInt8(0x80 | (cp & 0x3F)))
-    }
-}
-
 /// A syntax error: a message and the byte offset it refers to.
 struct JSSyntaxError: Error {
     var message: String
@@ -519,26 +501,6 @@ struct JSSyntaxError: Error {
     /// 1-based line and column (code points) of `offset`.
     var line: Int
     var column: Int
-}
-
-/// Parser limits. Exceeding any of them is a SyntaxError.
-struct JSParseLimits {
-    /// Longer sources are rejected.
-    var maxSourceBytes: Int
-    /// Nesting of recursive productions (statements, expressions, patterns).
-    var maxDepth: Int
-    /// Height of the finished tree (see "Depth" at the top).
-    var maxHeight: Int
-    /// Total nodes.
-    var maxNodes: Int
-
-    init(maxSourceBytes: Int = 64 << 20, maxDepth: Int = 400, maxHeight: Int = 2000,
-         maxNodes: Int = 20_000_000) {
-        self.maxSourceBytes = maxSourceBytes
-        self.maxDepth = maxDepth
-        self.maxHeight = maxHeight
-        self.maxNodes = maxNodes
-    }
 }
 
 /// Byte offset to line and column.
@@ -611,7 +573,7 @@ final class JSAST {
     func text(_ id: Int32) -> String { pool.text(id) }
 
     /// The literal's source text with `_` separators removed (for .number
-    /// nodes flagged inexact, and for BigInt).
+    /// nodes and BigInt).
     func numericText(_ n: Int32) -> [UInt8] {
         let node = nodes[Int(n)]
         var out: [UInt8] = []

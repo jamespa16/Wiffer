@@ -1,5 +1,5 @@
-// lib/js host tests: the parser's (jsparser_tests.swift, Phase 9A) and the
-// value/heap layer's (jscore_tests.swift).
+// Host tests for lib/js. Each part of the engine has its own test file;
+// this is the single entry point hosttest.sh calls.
 
 func libTests(_ t: Tests) {
     jsParserTests(t)
