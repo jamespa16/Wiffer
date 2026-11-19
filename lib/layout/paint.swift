@@ -13,7 +13,7 @@
 // Painting walks the list once and skips items outside the visible rect.
 // Hit testing walks it backwards.
 
-enum LayoutItemKind: UInt8 { case hit, fill, border, text, image, bgImage, control }
+enum LayoutItemKind: UInt8 { case hit, fill, border, text, image, bgImage, control, svg, maskFill }
 
 struct LayoutDisplayItem {
     var kind: LayoutItemKind
@@ -38,7 +38,7 @@ struct LayoutDisplayList {
             let it = items[i]
             i -= 1
             switch it.kind {
-            case .hit, .text, .image, .control: break
+            case .hit, .text, .image, .control, .svg: break
             default: continue
             }
             let px = it.fixed ? x - scrollX : x, py = it.fixed ? y - scrollY : y
@@ -202,10 +202,16 @@ extension LayoutEngine {
         let visible = b.style.visibility == .visible && b.opacityAcc > 0.004
         if visible {
             let s = b.style
-            if b.paintsBackground && s.backgroundColor.a > 0 {
+            if s.mask.image != nil {
+                // mask-image: the background color through the mask (the
+                // icon technique); other content is not masked.
+                if b.paintsBackground && s.backgroundColor.a > 0 {
+                    push(&list, .maskFill, r, b, color: layoutARGB(s.backgroundColor, b.opacityAcc))
+                }
+            } else if b.paintsBackground && s.backgroundColor.a > 0 {
                 push(&list, .fill, r, b, color: layoutARGB(s.backgroundColor, b.opacityAcc))
             }
-            if s.backgroundImage != nil && b.paintsBackground {
+            if s.backgroundImage != nil && b.paintsBackground && s.mask.image == nil {
                 let pb = LayoutRect(x: r.x + b.border.l, y: r.y + b.border.t, w: r.w - b.border.horizontal, h: r.h - b.border.vertical)
                 push(&list, .bgImage, pb, b, color: layoutARGB(CSSColor.white, b.opacityAcc), a: Int32(s.backgroundRepeat.rawValue))
             }
@@ -216,6 +222,8 @@ extension LayoutEngine {
             let cb = b.contentBox
             if b.replaced == .image {
                 push(&list, .image, cb, b, color: layoutARGB(CSSColor.white, b.opacityAcc))
+            } else if b.replaced == .svg {
+                push(&list, .svg, cb, b, color: layoutARGB(CSSColor.white, b.opacityAcc))
             } else if b.replaced.isControl {
                 push(&list, .control, cb, b, color: layoutARGB(b.style.color, b.opacityAcc))
             } else {
@@ -335,24 +343,46 @@ extension LayoutEngine {
                 guard let scaled = scaledImage(src, bm, w, h) else { continue }
                 imageBlend(into: sub, stride: stride, width: sw, height: sh, src: scaled, x: layoutInt(r.x) - cx0, y: layoutInt(r.y) - cy0)
             case .bgImage:
-                guard let url = it.box.style.backgroundImage, let get = images, let bm = get(url), bm.width > 0, bm.height > 0 else { continue }
+                guard let url = it.box.style.backgroundImage, let get = images, let bm0 = get(url), bm0.width > 0, bm0.height > 0 else { continue }
+                let st = it.box.style
                 let rep = CSSBackgroundRepeat(rawValue: UInt8(truncatingIfNeeded: it.a)) ?? .repeat
+                let (tw, th, px, py) = layoutBgGeometry(st.backgroundSize, st.backgroundPosition, r.w, r.h, bm0.width, bm0.height)
+                if tw <= 0 || th <= 0 { continue }
+                guard let bm = (tw == bm0.width && th == bm0.height && bm0.pixels.count >= tw * th) ? bm0 : scaledImage(url, bm0, tw, th) else { continue }
                 let ox0 = layoutInt(r.x) - cx0, oy0 = layoutInt(r.y) - cy0
                 // Clip tiles to the item's own rect as well.
                 let ix0 = max(0, ox0), iy0 = max(0, oy0)
                 let ix1 = min(sw, ox0 + layoutInt(r.w)), iy1 = min(sh, oy0 + layoutInt(r.h))
                 if ix0 >= ix1 || iy0 >= iy1 { continue }
                 let tsub = sub + iy0 * stride + ix0
-                let tw = ix1 - ix0, th = iy1 - iy0
-                let bx = ox0 - ix0, by = oy0 - iy0
-                let nx = (rep == .repeat || rep == .repeatX) ? (tw - bx + bm.width - 1) / bm.width : 1
-                let ny = (rep == .repeat || rep == .repeatY) ? (th - by + bm.height - 1) / bm.height : 1
+                let tw2 = ix1 - ix0, th2 = iy1 - iy0
+                let repX = rep == .repeat || rep == .repeatX, repY = rep == .repeat || rep == .repeatY
+                // First tile origin, relative to tsub.
+                var bx = ox0 - ix0 + px, by = oy0 - iy0 + py
+                if repX { bx = bx % tw; if bx > 0 { bx -= tw } }
+                if repY { by = by % th; if by > 0 { by -= th } }
+                let nx = repX ? (tw2 - bx + tw - 1) / tw : 1
+                let ny = repY ? (th2 - by + th - 1) / th : 1
                 if nx * ny > 20_000 { continue }
                 for ty in 0..<max(1, ny) {
                     for tx in 0..<max(1, nx) {
-                        imageBlend(into: tsub, stride: stride, width: tw, height: th, src: bm, x: bx + tx * bm.width, y: by + ty * bm.height)
+                        imageBlend(into: tsub, stride: stride, width: tw2, height: th2, src: bm, x: bx + tx * tw, y: by + ty * th)
                     }
                 }
+            case .svg:
+                let w = layoutInt(r.w), h = layoutInt(r.h)
+                if w <= 0 || h <= 0 { continue }
+                guard var bm = svgRender(it.box, w, h, images: images) else { continue }
+                let al = it.color >> 24
+                if al < 255 {
+                    for k in 0..<bm.pixels.count {
+                        let p = bm.pixels[k]
+                        bm.pixels[k] = ((p >> 24) * al / 255) << 24 | (p & 0xff_ffff)
+                    }
+                }
+                imageBlend(into: sub, stride: stride, width: sw, height: sh, src: bm, x: layoutInt(r.x) - cx0, y: layoutInt(r.y) - cy0)
+            case .maskFill:
+                paintMaskFill(it, r, sub, stride, sw, sh, cx0, cy0, images)
             case .control:
                 let b = it.box
                 if let cp = controlPainter, let n = b.node {
@@ -415,11 +445,56 @@ extension LayoutEngine {
         if bm.width == w && bm.height == h { return bm }
         let key = "\(w)x\(h) " + url
         if let s = scaledCache[key] { return s }
-        guard let s = imageScaleBilinear(bm, width: w, height: h, maxBytes: 64 << 20) else { return nil }
+        guard let s = imageResample(bm, width: w, height: h, maxBytes: 64 << 20) else { return nil }
         if scaledBytes + s.byteCount > 64 << 20 { scaledCache = [:]; scaledBytes = 0 }
         scaledCache[key] = s
         scaledBytes += s.byteCount
         return s
+    }
+
+    /// A box's background color through its mask-image (alpha, or
+    /// luminance for mask-mode: luminance), sized and placed like a
+    /// background over the border box. An image that isn't loaded masks
+    /// everything (as in other browsers).
+    private func paintMaskFill(_ it: LayoutDisplayItem, _ r: LayoutRect, _ sub: UnsafeMutablePointer<UInt32>, _ stride: Int,
+                               _ sw: Int, _ sh: Int, _ cx0: Int, _ cy0: Int, _ images: ((String) -> ImageBitmap?)?) {
+        let m = it.box.style.mask
+        guard let url = m.image, let get = images, let bm0 = get(url), bm0.width > 0, bm0.height > 0 else { return }
+        let (tw, th, px, py) = layoutBgGeometry(m.size, m.position, r.w, r.h, bm0.width, bm0.height)
+        if tw <= 0 || th <= 0 { return }
+        guard let bm = (tw == bm0.width && th == bm0.height && bm0.pixels.count >= tw * th) ? bm0 : scaledImage(url, bm0, tw, th),
+              bm.pixels.count >= tw * th else { return }
+        let x0 = layoutInt(r.x) - cx0, y0 = layoutInt(r.y) - cy0
+        let ax = max(0, x0), ay = max(0, y0), bx = min(sw, x0 + layoutInt(r.w)), by = min(sh, y0 + layoutInt(r.h))
+        if ax >= bx || ay >= by { return }
+        let repX = m.repeatMode == .repeat || m.repeatMode == .repeatX
+        let repY = m.repeatMode == .repeat || m.repeatMode == .repeatY
+        let lum = m.mode == .luminance
+        let ca = Int(it.color >> 24)
+        let cr = Int(it.color >> 16 & 255), cg = Int(it.color >> 8 & 255), cb = Int(it.color & 255)
+        for y in ay..<by {
+            var ty = y - y0 - py
+            if repY { ty = ((ty % th) + th) % th } else if ty < 0 || ty >= th { continue }
+            let row = sub + y * stride
+            for x in ax..<bx {
+                var tx = x - x0 - px
+                if repX { tx = ((tx % tw) + tw) % tw } else if tx < 0 || tx >= tw { continue }
+                let p = bm.pixels[ty * tw + tx]
+                var mv = Int(p >> 24)
+                if lum {
+                    let l = (Int(p >> 16 & 255) * 54 + Int(p >> 8 & 255) * 183 + Int(p & 255) * 19) >> 8
+                    mv = mv * l / 255
+                }
+                let a = mv * ca / 255
+                if a == 0 { continue }
+                let d = row[x]
+                let ia = 255 - a
+                let rr = (cr * a + Int(d >> 16 & 255) * ia + 127) / 255
+                let gg = (cg * a + Int(d >> 8 & 255) * ia + 127) / 255
+                let bb = (cb * a + Int(d & 255) * ia + 127) / 255
+                row[x] = UInt32(rr << 16 | gg << 8 | bb)
+            }
+        }
     }
 
     private func drawLabel(_ run: TextRun, _ x: Double, _ r: LayoutRect, _ b: LayoutBox, _ sub: UnsafeMutablePointer<UInt32>,
@@ -506,6 +581,30 @@ extension LayoutEngine {
             break
         }
     }
+}
+
+/// Tile size and offset of a background or mask image in a w x h area:
+/// background-size (auto, contain, cover, lengths) and background-position
+/// (percentages of the free space plus offsets). (tileW, tileH, x, y).
+func layoutBgGeometry(_ size: CSSBgSize, _ pos: CSSBgPosition, _ w: Double, _ h: Double,
+                      _ iw: Int, _ ih: Int) -> (Int, Int, Int, Int) {
+    let nw = Double(max(1, iw)), nh = Double(max(1, ih))
+    var tw = nw, th = nh
+    switch size.kind {
+    case .auto: break
+    case .contain, .cover:
+        let k = size.kind == .contain ? min(w / nw, h / nh) : max(w / nw, h / nh)
+        if k.isFinite && k > 0 { tw = nw * k; th = nh * k }
+    case .explicit:
+        let sw = size.width.resolve(w), sh = size.height.resolve(h)
+        if let a = sw, let b = sh { tw = a; th = b }
+        else if let a = sw { tw = a; th = a * nh / nw }
+        else if let b = sh { th = b; tw = b * nw / nh }
+    }
+    let itw = max(1, min(8192, layoutInt(tw))), ith = max(1, min(8192, layoutInt(th)))
+    let x = pos.x.px + pos.x.pct / 100 * (w - Double(itw))
+    let y = pos.y.px + pos.y.pct / 100 * (h - Double(ith))
+    return (itw, ith, layoutInt(layoutSan(x)), layoutInt(layoutSan(y)))
 }
 
 /// Fill [x0, x1) x [y0, y1) (clipped to w x h) with an ARGB color.

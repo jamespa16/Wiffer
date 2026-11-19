@@ -3429,6 +3429,84 @@ JavaScript and can run beside Part 9. A pure-Swift lib, host-tested like
   BIOS and UEFI, and the 8I target table shows the Wikipedia, HN and
   GitHub icons drawn.
 
+**Done** (lib/xml, lib/raster, lib/svg, SVG properties in lib/css, lib/image,
+lib/layout svg.swift/paint.swift, tests/web/icons.html), except "Later" and
+the resvg-suite stretch. Results:
+
+- **lib/xml** (23 checks, fuzz 20 000): elements, attributes, namespaces
+  (undeclared `xlink:` tolerated), character refs and the five entities (plus
+  `&nbsp;`), CDATA; PIs, comments and DOCTYPEs (internal subset included) are
+  skipped and never interpreted, so a billion-laughs file is inert text.
+  Lenient recovery (mismatched end tags close to the match) with a
+  `wellFormed` flag. Limits: 8 MiB input, depth 256, 200 000 nodes, 512
+  attributes, 16 MiB of text.
+- **lib/raster** (38 checks): paths flattened to 0.1 px (quads and cubics),
+  exact-area accumulation like lib/font's, nonzero and evenodd (the
+  accumulated winding folded, as FreeType does), a clip rect, rows in bands
+  of at most 256K cells, coordinates sanitized and point count capped; a
+  stroker (left offset, cap, right offset, cap; pivot inner joins; miter with
+  limit, round, bevel; butt/round/square caps; zero-length dots) and dashes
+  (capped at 100 000 pieces, otherwise drawn solid); libc-free sin/cos/atan2.
+  **Benchmark vs lib/font** (host, -Osize, DejaVu Sans a–z, same coverage
+  within 2/255): built-in 919K/789K/589K/289K glyphs/s at 11/16/24/48 px,
+  lib/raster 667K/602K/478K/263K. lib/raster is 10–30 % slower on glyphs
+  (path building and the generic row output), so **lib/font keeps its own
+  rasterizer**.
+- **lib/css**: fill/stroke paints (`currentColor` stays a keyword, so it
+  inherits as itself; `url(#id) fallback`), fill/stroke opacity, fill-rule,
+  clip-rule, stroke width/linecap/linejoin/miterlimit/dasharray/dashoffset,
+  stop-color/opacity, clip-path; `mask-image/-mode/-repeat/-size/-position`
+  and `mask` (with `-webkit-` aliases); `background-size` and
+  `background-position` (also from the `background` shorthand). UA sheet:
+  `svg:not(:root), symbol { overflow: hidden }`.
+- **lib/svg** (87 checks): one `SVGDocument` from XML or from lib/layout's
+  builder; styles through lib/css (presentation attributes are hint
+  declarations below author rules, `<style>` sheets, `style=""`), or an
+  embedder's style provider. Path grammar (all commands, compact numbers,
+  arcs to cubics, the error rule), shapes, lengths (user, px, em, ex, %,
+  absolute units), transforms, viewBox/preserveAspectRatio, nested viewports
+  with overflow clipping, g/a/switch, use/symbol (local and external), linear
+  and radial gradients (focal point, units, gradientTransform, spread, href
+  chains), element opacity (an offscreen layer only when needed), clipPath
+  (both units, clip-rule, use children). Caps: 50 000 elements drawn per
+  render (a 10^10-instance use bomb renders in well under a second), use
+  depth 16 plus a cycle stack, 200 000 path segments, 256 stops, 12 layers,
+  8192 px per side, render depth 96. **Fixtures:** 15 SVGs (shapes, paths,
+  arcs, strokes, dashes, fillrule, transforms, viewbox, gradients, sprites,
+  currentcolor, opacity, clip, style, a Feather icon) with stored PAM
+  references (`WIFFER_SVG_REGEN=1` rewrites them; a pixel may differ by 24
+  levels, 0.5 % of pixels may differ more), checked by eye side by side with
+  headless Chrome. Fuzz: 1500 whole-document renders, 20 000 path/transform
+  parses.
+- **lib/image**: `.svg` in `imageSniff` (prolog, comments and an SVG doctype
+  allowed, then `<svg` as the first element) and `imageDecode`; the bitmap
+  keeps the document (`ImageBitmap.svg`), with pixels rendered at the
+  intrinsic size (width/height; else the viewBox ratio fitted to 300x150;
+  else 300x150). `imageResample` re-renders an SVG at the requested size and
+  scales anything else bilinearly; layout's per-(URL, size) scaled cache
+  now goes through it, so `<img>` and backgrounds stay sharp.
+- **lib/layout**: inline `<svg>` is a replaced box (`.svg`): the subtree
+  becomes an SVGDocument whose style provider runs the page's resolver, so
+  page CSS (`.icon { color }`, `fill` rules) reaches the icon; sized from
+  width/height, else the viewBox ratio across the containing block, else
+  300x150; rendered at the content box size and cached on the box (key: size,
+  colors, loaded sprites). External `use href=file.svg#id` files go into
+  `imageURLs` and resolve at paint. `mask-image` (alpha or luminance; size,
+  position, repeat) masks the box's background color, which is how
+  Wikipedia's Codex icons are drawn; an unloaded mask paints nothing.
+  Background images honour background-size and background-position.
+- **Harness:** `tests/web/icons.html` (an SVG `<img>`, inline svg with
+  currentColor from page CSS, an external `use` sprite, a mask-image icon):
+  9 checks, all pass. `./run.sh --test` and `./run.sh --test --uefi` both exit
+  0 with 443 PASS and no FAIL; `--hosttest` is all ok (svg's run is about 4 s).
+- **Known gaps:** the target table was not re-run against the live sites
+  (no internet in this session), so the Wikipedia/HN/GitHub item of
+  "done when" is unverified. `mask-image` masks only the background color,
+  not text or children. SVG without a viewBox is not scaled to a different
+  size (as the spec says). Hover restyles that keep the box re-render only
+  when `color` changes. Not done: text, image, pattern, mask, marker,
+  filters, non-scaling-stroke, the resvg test suite stretch.
+
 ---
 
 # Part 9: JavaScript

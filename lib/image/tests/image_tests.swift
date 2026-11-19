@@ -86,5 +86,34 @@ func libTests(_ t: Tests) {
     t.check(decode(ihdr(65535, 65535), 1 << 30).1 == .tooLarge, "65535^2 over a 1 GiB cap")
     t.check(decode(ihdr(100, 100), 1 << 30).1 == .truncated, "valid header, no data")
     runFormatTests(t)
+    runSVGImageTests(t)
     runFuzz(t)
+}
+
+private func runSVGImageTests(_ t: Tests) {
+    t.section("svg")
+    let icon = Array("<?xml version='1.0'?><svg xmlns='http://www.w3.org/2000/svg' width='16' height='8' viewBox='0 0 2 1'><rect width='1' height='1' fill='red'/></svg>".utf8)
+    t.check(imageSniff(icon) == .svg, "sniff svg")
+    do throws(ImageError) {
+        let bm = try imageDecode(icon, maxBytes: 1 << 20)
+        t.check(bm.width == 16 && bm.height == 8 && bm.svg != nil, "intrinsic size")
+        t.check(bm.pixels.count == 128 && bm.pixels[0] == 0xffff_0000 && bm.pixels[15] >> 24 == 0, "rendered at intrinsic size")
+        if let big = imageResample(bm, width: 160, height: 80, maxBytes: 1 << 20) {
+            // Sharp at 10x: the edge between red and transparent is one pixel.
+            t.check(big.pixels[40 * 160 + 79] == 0xffff_0000 && big.pixels[40 * 160 + 80] >> 24 == 0, "re-rendered, not scaled")
+        } else { t.check(false, "resample svg") }
+        t.check(imageResample(bm, width: 100_000, height: 100_000, maxBytes: 1 << 20) == nil, "resample cap")
+    } catch { t.check(false, "decode svg") }
+    func size(_ s: String) -> (Int, Int)? {
+        guard let d = SVGDocument.parse(Array(s.utf8)) else { return nil }
+        return imageSVGSize(d)
+    }
+    t.check(size("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'/>").map { $0 == (150, 150) } ?? false, "ratio only: fits 300x150")
+    t.check(size("<svg xmlns='http://www.w3.org/2000/svg' width='30' viewBox='0 0 3 1'/>").map { $0 == (30, 10) } ?? false, "width and ratio")
+    t.check(size("<svg xmlns='http://www.w3.org/2000/svg'/>").map { $0 == (300, 150) } ?? false, "nothing: 300x150")
+    do throws(ImageError) {
+        let huge = try imageDecode(Array("<svg xmlns='http://www.w3.org/2000/svg' width='90000' height='90000'/>".utf8), maxBytes: 1 << 20)
+        t.check(huge.pixels.isEmpty && huge.width == 90000, "huge intrinsic size: no pixels, still usable")
+    } catch { t.check(false, "decode huge svg") }
+    t.check(decode(Array("<svg xmlns='http://example.com'/>".utf8)).1 == .malformed, "not svg")
 }

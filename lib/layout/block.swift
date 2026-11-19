@@ -468,9 +468,23 @@ final class LayoutContext {
             if b.labelRun == nil { b.labelRun = shape(textScalars(b.label), b) }
             iw = wmax + 20; ih = fs * 1.2
         case .frame: iw = 300; ih = 150
+        case .svg:
+            // width/height attributes, else the viewBox ratio across the
+            // containing block (as other browsers do), else 300x150.
+            let (w0, h0, r0) = layoutSVGIntrinsic(b)
+            if let w = w0, let h = h0 { iw = w; ih = h }
+            else if let r = r0, r > 0 {
+                if let w = w0 { iw = w; ih = w / r }
+                else if let h = h0 { ih = h; iw = h * r }
+                else {
+                    let cw = layoutPos(cbW)
+                    iw = cw > 0 ? cw : 300; ih = iw! / r
+                }
+            } else { iw = w0 ?? 300; ih = h0 ?? 150 }
         default: iw = 80; ih = 16
         }
-        let ratio: Double? = (iw != nil && ih != nil && iw! > 0 && ih! > 0) ? iw! / ih! : nil
+        var ratio: Double? = (iw != nil && ih != nil && iw! > 0 && ih! > 0) ? iw! / ih! : nil
+        if b.replaced == .svg, let r = layoutSVGIntrinsic(b).2, r > 0, r.isFinite { ratio = r }
         var w = specifiedContentWidth(b, cbW)
         var h = specifiedContentHeight(b, cbH)
         let wAuto = w == nil, hAuto = h == nil

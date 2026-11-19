@@ -2512,6 +2512,19 @@ def web_checks_run(s, timeout, check, find, browsers, kill_all, srv, tsrv, base,
         check(px is not None and px != b"\xff\xff\xff", f"the {name} is drawn", px.hex() if px else "no window")
     kill_all()
 
+    # ---- SVG icons (Phase 8J): <img>, inline <svg> styled by page CSS,
+    # an external <use> sprite and a mask-image icon.
+    got, found = load(f"{base}/icons.html")
+    check(found and resources(got) == (3, 3) and "can't decode" not in got, "icons.html: the three SVG files fetched and decoded", got[-300:])
+    time.sleep(0.8)
+    for x, y, want, what in ((20, 20, "802040", "<img> SVG: the circle"), (3, 3, "E0A020", "<img> SVG: the square"),
+                             (95, 35, "2060E0", "inline svg: fill=currentColor from page CSS"), (72, 12, "FFFFFF", "inline svg: a path"),
+                             (155, 35, "30A050", "use of an external sprite"), (125, 5, "A02020", "sprite: currentColor from the page"),
+                             (200, 20, "C02080", "mask-image icon: inside the mask"), (182, 2, "FFFFFF", "mask-image icon: masked out")):
+        px = pixel_in_page("Icons", x, y, want)
+        check(px == bytes.fromhex(want), f"icons.html: {what} (#{want})", px.hex() if px else "no window")
+    kill_all()
+
     # ---- Navigation in one browser: the index, a link click, back and forward.
     got, found = load(f"{base}/")
     check(found and "title 'Web fixtures'" in got, "the index loads", got[-300:])

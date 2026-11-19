@@ -94,6 +94,7 @@ textarea { white-space: pre-wrap }
 fieldset { margin-left: 2px; margin-right: 2px; padding: 0.35em 0.75em 0.625em; border: 2px groove gray }
 legend { padding-left: 2px; padding-right: 2px }
 img { border-width: 0 }
+svg:not(:root), symbol, image, marker, pattern, foreignObject { overflow: hidden }
 iframe { border: 2px inset gray }
 """#
 
