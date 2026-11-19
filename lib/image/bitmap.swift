@@ -1,5 +1,8 @@
 // Images: PNG, GIF and JPEG decoding to a common bitmap, plus bilinear
-// scaling and alpha blending into an XRGB buffer.
+// scaling and alpha blending into an XRGB buffer. SVG is an image format too
+// (ROADMAP Phase 8J): its bitmap is rasterized at the intrinsic size and
+// keeps the document (`svg`), so imageResample draws it again, sharp, at
+// whatever size layout asks for instead of scaling pixels.
 //
 // Pixel format (ImageBitmap): one UInt32 per pixel, 0xAARRGGBB, STRAIGHT
 // (non-premultiplied) alpha, rows top to bottom, no padding (stride ==
@@ -17,6 +20,9 @@ struct ImageBitmap {
     var pixels: [UInt32]
     /// True if every pixel has alpha 0xFF (blending can be a plain copy).
     var opaque: Bool
+    /// The document of an SVG image (pixels are its intrinsic-size render,
+    /// and may be empty if that size is over the cap).
+    var svg: SVGDocument? = nil
 
     init(width: Int, height: Int, pixels: [UInt32], opaque: Bool) {
         self.width = width; self.height = height; self.pixels = pixels; self.opaque = opaque
@@ -50,7 +56,7 @@ enum ImageError: Error, Equatable {
 }
 
 enum ImageFormat {
-    case png, gif, jpeg, unknown
+    case png, gif, jpeg, svg, unknown
 }
 
 /// Identify a format from its magic bytes.
@@ -60,6 +66,7 @@ func imageSniff(_ d: [UInt8]) -> ImageFormat {
     if d.count >= 6 && d[0] == 0x47 && d[1] == 0x49 && d[2] == 0x46 && d[3] == 0x38
         && (d[4] == 0x37 || d[4] == 0x39) && d[5] == 0x61 { return .gif }
     if d.count >= 3 && d[0] == 0xff && d[1] == 0xd8 && d[2] == 0xff { return .jpeg }
+    if svgSniff(d) { return .svg }
     return .unknown
 }
 
@@ -70,8 +77,54 @@ func imageDecode(_ data: [UInt8], maxBytes: Int) throws(ImageError) -> ImageBitm
     case .png: return try PNGDecoder.decode(data, maxBytes: maxBytes)
     case .gif: return try GIFDecoder.decode(data, maxBytes: maxBytes)
     case .jpeg: return try JPEGDecoder.decode(data, maxBytes: maxBytes)
+    case .svg: return try imageDecodeSVG(data, maxBytes: maxBytes)
     case .unknown: throw ImageError.unknownFormat
     }
+}
+
+/// The intrinsic size of an SVG image in px: width/height when given, else
+/// from the viewBox ratio, else the 300x150 default object size (a ratio
+/// alone is fitted inside it).
+func imageSVGSize(_ doc: SVGDocument) -> (Int, Int) {
+    let (w0, h0, ratio) = doc.intrinsicSize()
+    var w = w0, h = h0
+    if w == nil && h == nil {
+        if let r = ratio, r > 0 {
+            if 300 / r <= 150 { w = 300; h = 300 / r } else { h = 150; w = 150 * r }
+        } else { w = 300; h = 150 }
+    } else if w == nil { w = ratio.map { h! * $0 } ?? 300 }
+    else if h == nil { h = ratio.map { w! / $0 } ?? 150 }
+    func px(_ v: Double?) -> Int {
+        guard let v = v, v.isFinite else { return 1 }
+        return Int(max(1, min(100_000, v.rounded())))
+    }
+    return (px(w), px(h))
+}
+
+/// Parse an SVG file into an image whose pixels are rendered at the
+/// intrinsic size (left empty if that is over `maxBytes` or the renderer's
+/// limit; imageResample still renders it at smaller sizes).
+func imageDecodeSVG(_ data: [UInt8], maxBytes: Int) throws(ImageError) -> ImageBitmap {
+    guard let doc = SVGDocument.parse(data) else { throw ImageError.malformed }
+    let (w, h) = imageSVGSize(doc)
+    var bm = ImageBitmap(width: w, height: h, pixels: [], opaque: false)
+    if imageSizeOK(w, h, maxBytes), let r = svgRender(doc, width: w, height: h) {
+        bm.pixels = r.pixels
+    }
+    bm.svg = doc
+    return bm
+}
+
+/// `src` at dw x dh: an SVG is rendered again at that size, anything else
+/// is resampled bilinearly. nil if the result would exceed maxBytes.
+func imageResample(_ src: ImageBitmap, width dw: Int, height dh: Int, maxBytes: Int) -> ImageBitmap? {
+    if let doc = src.svg {
+        guard imageSizeOK(dw, dh, maxBytes), let r = svgRender(doc, width: dw, height: dh) else { return nil }
+        var out = ImageBitmap(width: dw, height: dh, pixels: r.pixels, opaque: false)
+        out.svg = doc
+        return out
+    }
+    return imageScaleBilinear(src, width: dw, height: dh, maxBytes: maxBytes)
 }
 
 /// width * height * 4 <= maxBytes, without overflow. Dimensions must be > 0.

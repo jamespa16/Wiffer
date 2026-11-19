@@ -252,21 +252,46 @@ func svgPresentationHints(_ n: SVGNode) -> [CSSDeclaration] {
     return h
 }
 
-/// Does the data look like an SVG file? (Optional BOM and whitespace, then
-/// an XML declaration, comment or doctype, and `<svg` within the first 4 KB.)
+/// Does the data look like an SVG file? Optional BOM and whitespace, then
+/// any XML declaration, processing instructions, comments and a doctype,
+/// then `<svg` as the first element (all within the first 4 KB).
 func svgSniff(_ d: [UInt8]) -> Bool {
     var i = 0
     if d.count >= 3 && d[0] == 0xef && d[1] == 0xbb && d[2] == 0xbf { i = 3 }
-    while i < d.count && (d[i] == 0x20 || d[i] == 0x09 || d[i] == 0x0a || d[i] == 0x0d) { i += 1 }
-    guard i < d.count, d[i] == 0x3c else { return false }
-    let end = min(d.count, i + 4096)
-    var k = i
-    while k + 4 <= end {
-        if d[k] == 0x3c && d[k + 1] == 0x73 && d[k + 2] == 0x76 && d[k + 3] == 0x67 {
-            let n = k + 4 < d.count ? d[k + 4] : 0x20
-            if n == 0x20 || n == 0x3e || n == 0x09 || n == 0x0a || n == 0x0d || n == 0x2f { return true }
+    let end = min(d.count, 4096)
+    func at(_ k: Int) -> UInt8 { k < d.count ? d[k] : 0 }
+    func skipTo(_ a: UInt8, _ b: UInt8?) {
+        while i < end {
+            if d[i] == a && (b == nil || at(i + 1) == b!) { i += b == nil ? 1 : 2; return }
+            i += 1
         }
-        k += 1
+    }
+    while i < end {
+        let c = d[i]
+        if c == 0x20 || c == 0x09 || c == 0x0a || c == 0x0d { i += 1; continue }
+        guard c == 0x3c else { return false }
+        if at(i + 1) == 0x3f { i += 2; skipTo(0x3f, 0x3e); continue }          // <? ... ?>
+        if at(i + 1) == 0x21 && at(i + 2) == 0x2d && at(i + 3) == 0x2d {       // <!-- ... -->
+            i += 4
+            while i < end && !(d[i] == 0x2d && at(i + 1) == 0x2d && at(i + 2) == 0x3e) { i += 1 }
+            i += 3
+            continue
+        }
+        if at(i + 1) == 0x21 {                                                // <!DOCTYPE svg ...>
+            var k = i + 2
+            var name: [UInt8] = []
+            while k < end && name.count < 16 && d[k] != 0x3e { name.append(d[k] | 0x20); k += 1 }
+            if !String(decoding: name, as: UTF8.self).hasPrefix("doctype svg") { return false }
+            var bracket = 0
+            while i < end { if d[i] == 0x5b { bracket += 1 } else if d[i] == 0x5d { bracket -= 1 } else if d[i] == 0x3e && bracket <= 0 { break }; i += 1 }
+            i += 1
+            continue
+        }
+        // The first element: `svg` or `prefix:svg`.
+        var k = i + 1
+        while k < end && k - i < 40 && d[k] != 0x20 && d[k] != 0x3e && d[k] != 0x2f && d[k] != 0x0a && d[k] != 0x09 && d[k] != 0x0d { k += 1 }
+        let name = d[(i + 1)..<min(k, d.count)]
+        return name.count >= 3 && name.suffix(3).elementsEqual([0x73, 0x76, 0x67]) && (name.count == 3 || name[name.endIndex - 4] == 0x3a)
     }
     return false
 }

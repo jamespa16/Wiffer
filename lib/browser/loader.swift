@@ -374,6 +374,7 @@ final class BrowserLoader {
         case .png: return "image/png"
         case .gif: return "image/gif"
         case .jpeg: return "image/jpeg"
+        case .svg: return "image/svg+xml"
         default: break
         }
         var i = 0

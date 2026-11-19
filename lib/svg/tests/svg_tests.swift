@@ -103,7 +103,9 @@ private func svgTestSyntax(_ t: Tests) {
     t.check(doc("<html/>") == nil, "non-svg root")
     t.check(doc("<svg xmlns='http://example.com/x'/>") == nil, "wrong namespace")
     t.check(svgSniff(Array("\u{FEFF}  <?xml version='1.0'?>\n<!-- x --><svg>".utf8)), "sniff")
-    t.check(!svgSniff(Array("<html><svg>".utf8)) || true, "sniff html (no false trap)")
+    t.check(!svgSniff(Array("<!DOCTYPE html><html><svg>".utf8)), "html with inline svg is not svg")
+    t.check(svgSniff(Array("<!DOCTYPE svg PUBLIC '-//W3C//DTD SVG 1.1//EN' 'x' [ <!ENTITY a 'b'> ]><svg/>".utf8)), "svg doctype")
+    t.check(svgSniff(Array("<svg:svg xmlns:svg='http://www.w3.org/2000/svg'/>".utf8)), "prefixed root")
     t.check(!svgSniff(Array("GIF89a".utf8)), "sniff gif")
 }
 
