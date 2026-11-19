@@ -132,7 +132,7 @@ extension LayoutEngine {
                 }
                 for c in n.children.reversed() where c.kind == .element { stack.append((c, b)) }
             }
-            if restyleDecoChanged { restyleDecoChanged = false; if !refreshDecorations(rb) { return false } }
+            if restyleDecoChanged { restyleDecoChanged = false; if !widen || !refreshDecorations(rb) { return false } }
         }
         return true
     }
@@ -158,7 +158,9 @@ extension LayoutEngine {
         if s.backgroundImage != b.style.backgroundImage, s.backgroundImage != nil { return false }
         // A ::before/::after that appears or disappears changes the box tree.
         var hasBefore = false, hasAfter = false
-        for c in b.children { if c.pseudo == .before { hasBefore = true }; if c.pseudo == .after { hasAfter = true } }
+        var nestedPseudo = false
+        layoutFindPseudos(b, &hasBefore, &hasAfter, &nestedPseudo, 0)
+        if nestedPseudo { return false }
         if b.kind != .replaced && b.kind != .lineBreak {
             for which in [CSSPseudoElement.before, CSSPseudoElement.after] {
                 let ps = resolver.computePseudoStyle(LayoutElement(n, state), which, elementStyle: s)
@@ -217,5 +219,14 @@ extension LayoutEngine {
             for ch in x.children { stack.append((ch, nd, nc)) }
         }
         return true
+    }
+}
+
+/// ::before/::after boxes among `b`'s children, looking through anonymous wrappers.
+func layoutFindPseudos(_ b: LayoutBox, _ before: inout Bool, _ after: inout Bool, _ nested: inout Bool, _ depth: Int) {
+    for c in b.children {
+        if c.pseudo == .before { before = true; if depth > 0 { nested = true } }
+        if c.pseudo == .after { after = true; if depth > 0 { nested = true } }
+        if c.anonymous && c.pseudo == .none && c.kind != .text && depth < 6 { layoutFindPseudos(c, &before, &after, &nested, depth + 1) }
     }
 }

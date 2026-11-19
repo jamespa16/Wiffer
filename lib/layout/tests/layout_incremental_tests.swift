@@ -191,6 +191,7 @@ private func incFuzzPage(_ t: Tests, _ name: String, _ html: [UInt8], _ sheet: C
     var log: [String] = []
     for r in 0..<rounds {
         let k = 1 + rng.below(3)
+        let st0 = inc.stats
         for _ in 0..<k { log.append(incMutate(inc, doc, &rng)) }
         // Sometimes force the update through a layout query.
         if rng.below(4) == 0, let b = doc.body { _ = inc.rect(of: b) } else { inc.updateIfNeeded() }
@@ -206,6 +207,7 @@ private func incFuzzPage(_ t: Tests, _ name: String, _ html: [UInt8], _ sheet: C
             if hostEnvDebug {
                 print("SRC inc \(inc.styleSources.count) fresh \(fresh.styleSources.count) " + inc.styleSources.map { String($0.text.prefix(20)) }.joined(separator: "|") + " // " + fresh.styleSources.map { String($0.text.prefix(20)) }.joined(separator: "|"))
             }
+            if hostEnvDebug { print("STATS paint \(inc.stats.paintOnly - st0.paintOnly) sub \(inc.stats.subtreeRebuilds - st0.subtreeRebuilds) full \(inc.stats.fullRebuilds - st0.fullRebuilds)") }
             if hostEnvDebug { print("LOG \(name): " + log.joined(separator: " | ")) }
             t.check(false, "\(name) round \(r)", d + " after " + log.suffix(k + 1).joined(separator: "; "))
             if failures >= 3 { break }

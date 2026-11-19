@@ -193,7 +193,8 @@ extension LayoutEngine {
         pendingAttr = []; pendingAttrRebuild = []; pendingChildren = []; pendingText = []; pendingRescan = false
         stats.domBatches += 1
         if rescan { rescanSources() }
-        if needsStyle || root == nil { return }
+        if root == nil { needsStyle = true }
+        if needsStyle { return }
 
         // Structural changes: rebuild box subtrees.
         var starts: [HTMLNode] = kids
