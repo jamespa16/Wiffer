@@ -690,9 +690,18 @@ def main():
     ap.add_argument("--timeout", type=float, default=10.0)
     ap.add_argument("--screendump", metavar="PPM", help="with -c: dump the display at the end")
     ap.add_argument("--nodesktop", action="store_true", help="with -c: boot the full-screen shell")
+    ap.add_argument("--web-only", action="store_true", help="run only the Phase 8I web checks (one QEMU)")
     ap.add_argument("--nodisk", action="store_true", default=bool(os.environ.get("WIFFER_NODISK")),
                     help="no scratch virtio disk on the main session")
     opts = ap.parse_args()
+    if opts.web_only:  # development: just the 8I browser session
+        w = Session(monitor=True)
+        try:
+            n = web_checks(w, opts.timeout)
+            print(f"{n} web check failure(s)")
+            return 1 if n else 0
+        finally:
+            w.close()
     print(f"harness: -smp {SMP}" + (", no disk" if opts.nodisk else f", {DISK_MIB} MiB scratch disk"))
     disk, disk_dir = (None, None) if opts.nodisk else scratch_disk()
 
@@ -714,6 +723,7 @@ def main():
     pre = None if opts.command else Session(monitor=True)  # Phase 6D, in the boot desktop
     gui = None if opts.command else Session(monitor=True)  # Phase 6F, in the boot desktop
     web = None if opts.command else Session(monitor=True)  # Phase 8H, the browser, in the boot desktop
+    web8i = None if opts.command else Session(monitor=True)  # Phase 8I, the browser against tests/web_server.py
     # Phase Y: persistence (boot 1 of 2, in the desktop, on its own FAT32
     # image) and mkfs on a blank image. Not with --nodisk.
     persist = blank = None
@@ -916,6 +926,8 @@ def main():
             failures += gui_checks(gui, opts.timeout)
         if web:
             failures += browse_checks(web, opts.timeout)
+        if web8i:
+            failures += web_checks(web8i, opts.timeout)
         if blank:
             failures += mkfs_checks(blank, blank_img[0], opts.timeout)
         if persist:
@@ -971,6 +983,8 @@ def main():
             gui.close()
         if web:
             web.close()
+        if web8i:
+            web8i.close()
 
 
 def fake_dns_server():
@@ -2364,6 +2378,318 @@ def browse_checks(s: Session, timeout: float) -> int:
     check(len(re.findall(r"running\s+\d+\s+browse", got)) == 5, "every browser survived", repr(got))
     kill_all()
     return failures
+
+
+def web_checks(s: Session, timeout: float) -> int:
+    """Phase 8I on the desktop: /bin/browse against tests/web_server.py (HTTP
+    and, with the test CA, HTTPS) serving tests/web/. Layout, image, form,
+    cookie, redirect, chunked and compressed fixtures, then hostile servers
+    (stalls, truncation, reset, garbage, huge headers, an endless stream, a
+    decompression bomb, a PNG with lying dimensions): after each the browser
+    must still be alive. Waits are on the browser's "browse: " serial lines
+    with generous timeouts, never on sleeps alone. Page pixels: the window's
+    content starts 2 px right and 22 px down of its frame, and the page 30 px
+    below that (the toolbar)."""
+    import web_server
+    failures = 0
+    dump = os.path.join(ROOT, "build", "web.ppm")
+
+    def check(ok, label, detail=""):
+        nonlocal failures
+        failures += not ok
+        print(f"{'PASS' if ok else 'FAIL'}: 8I web: {label}" + ("" if ok or not detail else f"\n  {detail}"))
+        return ok
+
+    def find(title):
+        wins, _ = s.windows()
+        for i, w in wins.items():
+            if w[5] == title:
+                return i, w
+        return None, None
+
+    def browsers():
+        return re.findall(r"^\s*(\d+)\s+\d+\s+running\s+\d+\s+browse", s.command("ps", timeout), re.M)
+
+    def kill_all():
+        for pid in browsers():
+            s.command(f"kill {pid}", timeout)
+        for _ in range(20):
+            if not browsers():
+                break
+            time.sleep(0.25)
+
+    boot = s.read_prompt(boot_timeout(timeout))
+    if not check(PROMPT_RE.search(boot) and b"desktop: on" in s.log, "boots into the desktop", repr(boot[-200:])):
+        return failures
+
+    srv = web_server.WebServer()
+    tsrv = web_server.WebServer(tls=True)
+    base = f"http://10.0.2.2:{srv.port}"
+    sbase = f"https://localhost:{tsrv.port}"
+    TLSARGS = "--ca /ca.der -r localhost:10.0.2.2"  # (the terminal is 76 columns wide: keep lines short)
+    try:
+        web_checks_run(s, timeout, check, find, browsers, kill_all, srv, tsrv, base, sbase, TLSARGS, dump)
+    finally:
+        srv.stop()
+        tsrv.stop()
+    return failures
+
+
+def web_checks_run(s, timeout, check, find, browsers, kill_all, srv, tsrv, base, sbase, TLSARGS, dump) -> int:
+    """The body of web_checks (split so the servers are always stopped). Returns
+    0: failures are counted by `check`."""
+    def launch(url, flags=""):
+        s.command(f"browse {flags} {url} &".replace("  ", " "), timeout)
+
+    def load(url, flags="", t=120.0):
+        """Open `url` in a new browser: (text up to the end of its "done"
+        line, or what arrived by the deadline; whether it finished)."""
+        launch(url, flags)
+        got = s.read_until(f"browse: done {url}".encode(), t)
+        found = f"browse: done {url}".encode() in got
+        if found:
+            got += s.read_until(b"\n", 10)
+        return got.decode(errors="replace"), found
+
+    def resources(text):
+        m = re.search(r"(\d+)/(\d+) resources", text)
+        return (int(m.group(1)), int(m.group(2))) if m else None
+
+    def origin(title):
+        _, w = find(title)
+        return (w[0] + 2, w[1] + 22 + 30) if w else None
+
+    def pixel_in_page(title, x, y, want=None, t=6.0):
+        o = origin(title)
+        if o is None:
+            return None
+        if want is None:
+            return s.pixel_at(o[0] + x, o[1] + y, dump)
+        return s.wait_pixel(o[0] + x, o[1] + y, bytes.fromhex(want), dump, timeout=t)
+
+    def read_title(title, t=60.0):
+        got = s.read_until(f"browse: title '{title}'".encode(), t)
+        return f"browse: title '{title}'".encode() in got, got.decode(errors="replace")
+
+    # The test CA, with /bin/fetch, as in browse_checks.
+    s.command(f"fetch -o /ca.der {base}/testca.der", 30.0)
+
+    # ---- Layout fixtures: each loads cleanly (title, no error, every
+    # subresource); a few have pixels at known places.
+    pages = [("layout/block.html", "Layout: block"), ("layout/inline.html", "Layout: inline"),
+             ("layout/float.html", "Layout: float"), ("layout/position.html", "Layout: position"),
+             ("layout/table.html", "Layout: table"), ("layout/flex.html", "Layout: flex"),
+             ("layout/lists.html", "Layout: lists"), ("layout/fonts.html", "Layout: fonts"),
+             ("layout/colors.html", "Layout: colors"), ("big.html", "Tall page")]
+    pixels = {"layout/colors.html": [(10, 25, "FF0000"), (10, 75, "00FF00"), (10, 125, "0000FF"), (10, 175, "FF8000")],
+              "layout/float.html": [(50, 50, "E04040")],
+              "layout/position.html": [(340, 130, "8040C0"), (30, 20, "C0A020")]}
+    t0 = time.time()
+    for path, title in pages:
+        got, found = load(f"{base}/{path}")
+        ok = found and f"title '{title}'" in got and "browse: error" not in got and "subresource failed" not in got
+        if not check(ok, f"{path} loads with title '{title}'", got[-300:]):
+            kill_all()
+            continue
+        time.sleep(0.5)
+        for x, y, want in pixels.get(path, []):
+            px = pixel_in_page(title, x, y, want)
+            check(px == bytes.fromhex(want), f"{path}: pixel ({x},{y}) is #{want}", px.hex() if px else "no window")
+        kill_all()
+    print(f"harness: {len(pages)} layout pages in {time.time() - t0:.0f} s")
+
+    # ---- Images: PNG with alpha, JPEG baseline and progressive, GIF.
+    got, found = load(f"{base}/images.html")
+    check(found and resources(got) == (4, 4) and "can't decode" not in got, "images.html: all four images fetched and decoded", got[-300:])
+    time.sleep(0.8)
+    px = pixel_in_page("Images", 20, 30, "20A040")
+    check(px == bytes.fromhex("20A040"), "an opaque PNG pixel is exact", px.hex() if px else "no window")
+    px = pixel_in_page("Images", 60, 30)
+    check(px is not None and px[0] >= 250 and 110 <= px[1] <= 145 and abs(px[1] - px[2]) <= 3,
+          "a half-transparent PNG pixel blends with the page", px.hex() if px else "no window")
+    for name, x in (("baseline JPEG", 150), ("progressive JPEG", 254)):
+        px = pixel_in_page("Images", x, 37)
+        check(px is not None and px != b"\xff\xff\xff", f"the {name} is drawn", px.hex() if px else "no window")
+    kill_all()
+
+    # ---- Navigation in one browser: the index, a link click, back and forward.
+    got, found = load(f"{base}/")
+    check(found and "title 'Web fixtures'" in got, "the index loads", got[-300:])
+    time.sleep(0.5)
+    px = pixel_in_page("Web fixtures", 40, 30, "D02080")
+    check(px == bytes.fromhex("D02080"), "the index's coloured box", px.hex() if px else "no window")
+    o = origin("Web fixtures")
+    if o:
+        s.click(o[0] + 100, o[1] + 80)
+        ok, got = read_title("Layout: block")
+        check(ok and "click link" in got, "clicking the first link opens the block page", got[-200:])
+        s.sendkeys(["alt-left"])
+        ok, got = read_title("Web fixtures")
+        check(ok, "Alt-Left returns to the index", got[-200:])
+        s.sendkeys(["alt-right"])
+        ok, got = read_title("Layout: block")
+        check(ok, "Alt-Right goes forward again", got[-200:])
+    kill_all()
+
+    # ---- Redirects.
+    for code in (301, 302, 303, 307):
+        got, found = load(f"{base}/redir/{code}")
+        check("title 'Redirect target'" in got, f"a {code} redirect is followed", got[-300:])
+        kill_all()
+    launch(f"{base}/redir/chain")
+    ok, got = read_title("Redirect target", 90)
+    check(ok and srv.count("/redir/c4") == 1, "a 301, 302, 303 and 307 chain ends at the target", got[-300:])
+    kill_all()
+    launch(f"{base}/redir/loop")
+    ok, got = read_title("Redirect loop", 90)
+    check(ok, "a redirect loop is an error page", got[-300:])
+    check(len(browsers()) == 1, "the browser survives the loop")
+    kill_all()
+
+    # ---- Chunked and compressed responses.
+    for path, title in (("chunked", "Chunked page"), ("gzip", "Gzip page"), ("deflate", "Deflate page")):
+        got, found = load(f"{base}/{path}")
+        check(found and f"title '{title}'" in got and "browse: error" not in got, f"/{path} is decoded", got[-300:])
+        kill_all()
+
+    # ---- Cookies: Set-Cookie on a redirecting response, then a page echoing what came back.
+    launch(f"{base}/cookie/set")
+    got = s.read_until(b"browse: title 'Cookie ", 60).decode(errors="replace") + s.read_until(b"\n", 5).decode(errors="replace")
+    last = srv.last("/cookie/echo")
+    ck = last["headers"].get("cookie", "") if last else ""
+    check("sid=wiffer42" in got and "theme=dark" in got and "sid=wiffer42" in ck and "theme=dark" in ck,
+          "cookies set by a redirect come back on the next request", f"{got[-200:]!r} {ck!r}")
+    kill_all()
+
+    # ---- Forms: type into the field, Enter. The server echoes the fields in the title.
+    got, found = load(f"{base}/form.html")
+    check(found, "form.html loads", got[-200:])
+    time.sleep(0.5)
+    o = origin("Form page")
+    if o:
+        s.click(o[0] + 40, o[1] + 30)
+        time.sleep(0.3)
+        s.sendkeys(["a", "b", "c", "ret"])
+        got = s.read_until(b"browse: title 'Echo GET", 60).decode(errors="replace") + s.read_until(b"\n", 5).decode(errors="replace")
+        check("submit GET" in got and "q=abc&h=hid&c=on" in got, "a GET form is echoed by the server", got[-300:])
+        req = srv.last("/echo")
+        check(req is not None and req["path"] == "/echo?q=abc&h=hid&c=on", "the GET query string the server saw",
+              str(req and req["path"]))
+        s.sendkeys(["alt-left"])
+        ok, got = read_title("Form page", 30)
+        check(ok, "Alt-Left goes back to the form", got[-200:])
+        time.sleep(0.8)
+        o = origin("Form page")
+        if o:
+            s.click(o[0] + 40, o[1] + 90)
+            time.sleep(0.3)
+            s.sendkeys(["x", "y", "z", "ret"])
+            got = s.read_until(b"browse: title 'Echo POST", 60).decode(errors="replace") + s.read_until(b"\n", 5).decode(errors="replace")
+            check("submit POST" in got and "p=xyz&h=post" in got, "a POST form is echoed by the server", got[-300:])
+            post = None
+            with srv.lock:
+                for r in srv.requests:
+                    if r["method"] == "POST":
+                        post = r
+            check(post is not None and post["body"] == b"p=xyz&h=post"
+                  and post["headers"].get("content-type", "").startswith("application/x-www-form-urlencoded"),
+                  "the POST body and content type the server saw", repr(post and (post["body"], post["headers"])))
+    kill_all()
+
+    # ---- Errors: an HTTP 404 with a body, a refused port.
+    got, found = load(f"{base}/no/such/page")
+    check("title 'Not found'" in got, "an HTTP 404 shows the server's page", got[-300:])
+    kill_all()
+    launch(f"http://10.0.2.2:{free_port()}/")
+    ok, got = read_title("Connection refused", 60)
+    time.sleep(0.5)
+    check(ok and find("Connection refused")[0] is not None, "a refused connection is an error page (and the window title)", got[-300:])
+    kill_all()
+
+    # ---- HTTPS with the test CA.
+    got, found = load(f"{sbase}/", TLSARGS)
+    check(found and "title 'Web fixtures'" in got, "https:// index through TLS 1.3", got[-300:])
+    time.sleep(0.5)
+    px = pixel_in_page("Web fixtures", 40, 30, "D02080")
+    check(px == bytes.fromhex("D02080"), "the https page is drawn", px.hex() if px else "no window")
+    kill_all()
+    got, found = load(f"{sbase}/gzip", TLSARGS)
+    check(found and "title 'Gzip page'" in got, "a gzip response over TLS", got[-300:])
+    kill_all()
+
+    # ---- Hostile servers. Each in its own browser; afterwards it must be alive.
+    def hostile(name, expect=None, stop=False, settle=25.0, b=base, flags=""):
+        """Open /hostile/<name>. Without `stop`, the load must end (a "done" or
+        "error" line) and the line must match the regex `expect`. With stop=True
+        the load never ends by itself: after `settle` seconds it is still
+        pending, Escape (Stop) must log "browse: stopped". Either way the
+        browser must still be running."""
+        url = f"{b}/hostile/{name}"
+        launch(url, flags)
+        pat = re.compile(rb"browse: (done|error) " + re.escape(url.encode()) + rb"[^\n]*")
+        got = b""
+        deadline = time.time() + (settle if stop else 120)
+        while time.time() < deadline and not pat.search(got):
+            got += s.read_until(b"\n", min(5.0, max(0.1, deadline - time.time())))
+        m = pat.search(got)
+        text = got.decode(errors="replace")
+        if stop:
+            check(m is None, f"hostile {name}: the load is still pending after {settle:.0f} s", text[-300:])
+            s.sendkeys(["esc"])
+            more = s.read_until(b"browse: stopped", 20)
+            check(b"browse: stopped" in more, f"hostile {name}: Escape stops the load", more.decode(errors="replace")[-300:])
+        else:
+            line = m.group(0).decode(errors="replace") if m else ""
+            check(m is not None and re.search(expect, line) is not None, f"hostile {name}: the load ends ({expect})", text[-400:])
+        n = len(browsers())
+        check(n == 1, f"hostile {name}: the browser is still running", f"{n} browsers")
+        return text
+
+    hostile("stall-headers", stop=True)
+    kill_all()
+    hostile("stall-body", stop=True)
+    kill_all()
+    hostile("truncated", r"")
+    kill_all()
+    hostile("reset", r"error \S+: (Connection failed|Bad response|Connection refused)")
+    kill_all()
+    hostile("garbage", r"error \S+: Bad response")
+    kill_all()
+    hostile("hugeheaders", r"")
+    kill_all()
+    hostile("bomb", r"error \S+: (Too large|Content encoding error)")
+    kill_all()
+    got = hostile("pngdims", r"done ")
+    check("title 'Lying PNG'" in got, "the lying PNG page itself still loads", got[-300:])
+    kill_all()
+    hostile("truncated", r"", b=sbase, flags=TLSARGS)
+    kill_all()
+    # An endless chunked stream is cut off by a size limit, or stopped by hand.
+    url = f"{base}/hostile/endless"
+    launch(url)
+    pat = re.compile(rb"browse: (done|error) " + re.escape(url.encode()) + rb"[^\n]*")
+    got, deadline = b"", time.time() + 40
+    while time.time() < deadline and not pat.search(got):
+        got += s.read_until(b"\n", 5)
+    m = pat.search(got)
+    if m is None:
+        s.sendkeys(["esc"])
+        more = s.read_until(b"browse: stopped", 30)
+        check(b"browse: stopped" in more, "hostile endless: still streaming after 40 s, Escape stops it",
+              more.decode(errors="replace")[-300:])
+    else:
+        check(b"error" in m.group(0), "hostile endless: cut off by a limit", m.group(0).decode(errors="replace"))
+    check(len(browsers()) == 1, "hostile endless: the browser is still running")
+    kill_all()
+
+    # The system is still sound afterwards: a fresh browser loads a page.
+    got, found = load(f"{base}/layout/lists.html")
+    check(found and "title 'Layout: lists'" in got, "a fresh browser still loads a page after all the hostile servers", got[-300:])
+    m = re.search(r"(\d+) used \((\d+) MiB\)", s.command("mem", timeout))
+    if m:
+        print(f"harness: memory in use at the end of the web checks: {m.group(2)} MiB")
+    kill_all()
+    return 0
 
 
 def wait_exit(s: Session, timeout: float):

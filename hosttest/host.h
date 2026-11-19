@@ -55,3 +55,10 @@ static inline void host_close(int fd) { close(fd); }
 static inline FILE *host_popen(const char *cmd) { return popen(cmd, "r"); }
 static inline int host_pclose(FILE *f) { return pclose(f); }
 static inline int host_system(const char *cmd) { return system(cmd); }
+
+// Runaway guard (hosttest/guard.c): a watchdog thread that fails the run
+// on a runaway allocation or a hang. Started by the runner's main().
+void host_guard_start(void);
+void host_guard_label(const char *section);
+void host_guard_finish(void);
+long host_peak_rss_mb(void);

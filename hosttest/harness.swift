@@ -14,7 +14,7 @@ final class Tests {
     init(lib: String) { self.lib = lib }
 
     /// Label the checks that follow (shown in failure lines).
-    func section(_ name: String) { group = name }
+    func section(_ name: String) { group = name; host_guard_label("\(lib): \(name)") }
 
     func check(_ ok: Bool, _ label: String, _ detail: String = "") {
         if ok { passed += 1; return }
@@ -154,9 +154,12 @@ func hostMillis() -> Int { Int(clock()) / (Int(CLOCKS_PER_SEC) / 1000) }
     static func main() {
         let name = getenv("WIFFER_HOSTTEST_LIB").map { String(cString: $0) } ?? "?"
         let t = Tests(lib: name)
+        host_guard_start()
+        host_guard_label("\(name): start")
         let start = hostMillis()
         libTests(t)
-        print("\(t.failed == 0 ? "ok" : "FAILED") \(name): \(t.passed) passed, \(t.failed) failed (\(hostMillis() - start) ms)")
+        host_guard_finish()
+        print("\(t.failed == 0 ? "ok" : "FAILED") \(name): \(t.passed) passed, \(t.failed) failed (\(hostMillis() - start) ms, peak \(host_peak_rss_mb()) MiB)")
         exit(t.failed == 0 ? 0 : 1)
     }
 }

@@ -47,6 +47,9 @@ if [[ $# -gt 0 ]]; then LIBS=("$@"); else
   LIBS=(); for d in lib/*/; do [[ -d "$d/tests" ]] && LIBS+=("$(basename "$d")"); done
 fi
 
+# The runaway guard (hosttest/guard.c), linked into every test binary.
+cc -O1 -c hosttest/guard.c -o "$OUT/guard.o"
+
 status=0
 for lib in "${LIBS[@]}"; do
   ORDER=(); visit "$lib"
@@ -70,7 +73,7 @@ for lib in "${LIBS[@]}"; do
   TESTS=(lib/"$lib"/tests/*.swift)
   if ! swiftc "${SWIFT_FLAGS[@]}" -import-objc-header hosttest/host.h \
        "${SRCS[@]}" "${TESTS[@]}" hosttest/harness.swift hosttest/runtime.swift \
-       "${HOST_LIBS[@]}" -o "$OUT/$lib"; then
+       "$OUT/guard.o" "${HOST_LIBS[@]}" -o "$OUT/$lib"; then
     echo "FAIL $lib: host test build failed"; status=1; continue
   fi
   WIFFER_HOSTTEST_LIB="$lib" "$OUT/$lib" || status=1
