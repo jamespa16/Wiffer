@@ -118,7 +118,7 @@ final class LayoutBuilder {
         return box
     }
 
-    private func buildElement(_ node: HTMLNode, into parent: LayoutBox, parentStyle: LayoutBox?, depth: Int,
+    func buildElement(_ node: HTMLNode, into parent: LayoutBox, parentStyle: LayoutBox?, depth: Int,
                               deco: UInt8, decoColor: CSSColor, center: Bool) {
         if depth > limits.maxDepth || boxCount >= limits.maxBoxes { return }
         guard let box = makeElementBox(node, parentStyle, depth, deco, decoColor, center) else { return }

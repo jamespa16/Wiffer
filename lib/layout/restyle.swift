@@ -95,12 +95,24 @@ extension LayoutEngine {
 
     /// Restyle the subtrees under `roots` in place. Returns false if a
     /// layout-affecting property changed (the caller then restyles everything).
-    func restyleInPlace(_ roots: [HTMLNode]) -> Bool {
+    /// `widen` starts at the parent of each root (hover: sibling combinators);
+    /// otherwise the roots are restyled as given.
+    func restyleInPlace(_ roots: [HTMLNode], widen: Bool = true) -> Bool {
         var done: Set<ObjectIdentifier> = []
         for r0 in roots {
-            let r = r0.parent?.kind == .element ? r0.parent! : r0
+            let r = widen && r0.parent?.kind == .element ? r0.parent! : r0
             if done.contains(ObjectIdentifier(r)) { continue }
             done.insert(ObjectIdentifier(r))
+            if !widen && box(for: r) == nil {
+                // No box: fine if the element (or its parent) stays unrendered.
+                guard let pn = r.parent, pn.kind == .element else { return false }
+                if let pb = box(for: pn) {
+                    let sp = styleParent(pb)
+                    let s = resolver.computeStyle(LayoutElement(r, state), parent: sp?.style, hints: layoutHints(r))
+                    if s.display != .none { return false }
+                } else if !unrenderedNode(pn) { return false }
+                continue
+            }
             guard let rb = box(for: r) else { return false }
             var stack: [(HTMLNode, LayoutBox)] = [(r, rb)]
             var steps = 0
@@ -115,17 +127,24 @@ extension LayoutEngine {
                     continue
                 }
                 let parentStyleBox: LayoutBox? = n === r ? b.parent.flatMap { styleParent($0) } : styleParent(b.parent)
-                if n !== r || b.parent != nil {
+                if n !== r || b.parent != nil || !widen {
                     if !restyleOne(b, n, parentStyleBox) { return false }
                 }
                 for c in n.children.reversed() where c.kind == .element { stack.append((c, b)) }
             }
-            refreshDecorations(rb)
+            if restyleDecoChanged { restyleDecoChanged = false; if !widen || !refreshDecorations(rb) { return false } }
         }
         return true
     }
 
-    private func styleParent(_ b: LayoutBox?) -> LayoutBox? {
+    /// An element without a box whose own display is none (computed against its parent's box).
+    func unrenderedNode(_ n: HTMLNode) -> Bool {
+        guard box(for: n) == nil, let gp = n.parent, gp.kind == .element, let gb = box(for: gp) else { return false }
+        let s = resolver.computeStyle(LayoutElement(n, state), parent: styleParent(gb)?.style, hints: layoutHints(n))
+        return s.display == .none
+    }
+
+    func styleParent(_ b: LayoutBox?) -> LayoutBox? {
         var p = b
         while let q = p, q.anonymous { p = q.parent }
         return p
@@ -137,6 +156,19 @@ extension LayoutEngine {
         if s.fontSize != s.fontSize { s.fontSize = 16 }
         if layoutStyleAffectsLayout(b.style, s) { return false }
         if s.backgroundImage != b.style.backgroundImage, s.backgroundImage != nil { return false }
+        // A ::before/::after that appears or disappears changes the box tree.
+        var hasBefore = false, hasAfter = false
+        var nestedPseudo = false
+        layoutFindPseudos(b, &hasBefore, &hasAfter, &nestedPseudo, 0)
+        if nestedPseudo { return false }
+        if b.kind != .replaced && b.kind != .lineBreak {
+            for which in [CSSPseudoElement.before, CSSPseudoElement.after] {
+                let ps = resolver.computePseudoStyle(LayoutElement(n, state), which, elementStyle: s)
+                let exists = ps != nil && ps!.display != .none
+                if exists != (which == .before ? hasBefore : hasAfter) { return false }
+            }
+        }
+        if s.textDecoration != b.style.textDecoration || (s.textDecoration.rawValue != 0 && s.color != b.style.color) { restyleDecoChanged = true }
         b.style = s
         for c in b.children {
             if c.kind == .text && (c.node?.parent === n || c.pseudo == .marker) { c.style = s }
@@ -149,18 +181,28 @@ extension LayoutEngine {
             }
             if c.anonymous {
                 // Anonymous wrappers inherit; their text children follow the element.
-                let anon = layoutAnonStyle(s, c.style.display)
-                if layoutStyleAffectsLayout(c.style, anon) { return false }
-                c.style = anon
-                for t in c.children where t.kind == .text && t.node?.parent === n { t.style = s }
+                if !restyleAnon(c, s, n) { return false }
             }
         }
         if let m = b.marker { m.style = s }
         return true
     }
 
-    /// Recompute propagated text-decoration under `b`.
-    private func refreshDecorations(_ b: LayoutBox) {
+    /// Anonymous wrappers (possibly nested) inherit from the element; its text follows it.
+    private func restyleAnon(_ c: LayoutBox, _ s: CSSComputedStyle, _ n: HTMLNode) -> Bool {
+        let anon = layoutAnonStyle(s, c.style.display)
+        if layoutStyleAffectsLayout(c.style, anon) { return false }
+        c.style = anon
+        for t in c.children {
+            if t.kind == .text && t.node?.parent === n { t.style = s }
+            else if t.anonymous && t.kind != .text { if !restyleAnon(t, s, n) { return false } }
+        }
+        return true
+    }
+
+    /// Recompute propagated text-decoration under `b`. False if anonymous
+    /// boxes are involved (their deco is derived at build time): rebuild then.
+    private func refreshDecorations(_ b: LayoutBox) -> Bool {
         var stack: [(LayoutBox, UInt8, CSSColor)] = []
         var d0: UInt8 = 0, c0 = CSSColor.black
         if let p = b.parent { d0 = p.deco; c0 = p.decoColor }
@@ -171,9 +213,20 @@ extension LayoutEngine {
                 if x.isOutOfFlow || x.isAtomicInline { nd = 0 }
                 if x.style.textDecoration.rawValue != 0 && !x.anonymous { nd |= x.style.textDecoration.rawValue; nc = x.style.color }
             }
+            if x.anonymous && x.kind != .text && x !== b { return false }
             x.deco = nd
             x.decoColor = nc
             for ch in x.children { stack.append((ch, nd, nc)) }
         }
+        return true
+    }
+}
+
+/// ::before/::after boxes among `b`'s children, looking through anonymous wrappers.
+func layoutFindPseudos(_ b: LayoutBox, _ before: inout Bool, _ after: inout Bool, _ nested: inout Bool, _ depth: Int) {
+    for c in b.children {
+        if c.pseudo == .before { before = true; if depth > 0 { nested = true } }
+        if c.pseudo == .after { after = true; if depth > 0 { nested = true } }
+        if c.anonymous && c.pseudo == .none && c.kind != .text && depth < 6 { layoutFindPseudos(c, &before, &after, &nested, depth + 1) }
     }
 }
