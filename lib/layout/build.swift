@@ -32,7 +32,7 @@ final class LayoutBuilder {
         return root
     }
 
-    private func noteImage(_ url: String) {
+    func noteImage(_ url: String) {
         if url.isEmpty || seenImages.contains(url) { return }
         seenImages.insert(url)
         imageURLs.append(url)
@@ -58,6 +58,7 @@ final class LayoutBuilder {
         if style.fontSize > limits.maxFontSize { style.fontSize = limits.maxFontSize }
         if style.fontSize != style.fontSize { style.fontSize = 16 }
         if let bg = style.backgroundImage { noteImage(bg) }
+        if let m = style.mask.image { noteImage(m) }
         let name = node.name
 
         if style.display == .contents && !layoutIsReplacedName(name) {
@@ -247,6 +248,8 @@ final class LayoutBuilder {
         case .image:
             if let s = node.attribute("src") { box.src = s; noteImage(s) }
             if let a = node.attribute("alt"), !a.isEmpty { box.label = a }
+        case .svg:
+            setUpSVG(box, node)
         case .button:
             if node.name == "input" {
                 let t = layoutLowerASCII(node.attribute("type") ?? "")
@@ -587,7 +590,8 @@ func layoutReplacedKind(_ node: HTMLNode) -> LayoutReplacedKind {
         }
     case "select": return .select
     case "textarea": return .textarea
-    case "iframe", "video", "canvas", "embed", "svg": return .frame
+    case "svg": return .svg
+    case "iframe", "video", "canvas", "embed": return .frame
     case "object": return node.attribute("data") != nil ? .frame : .none
     case "meter", "progress", "audio": return .other
     default: return .none

@@ -27,7 +27,7 @@ WEB = os.path.join(ROOT, "tests", "web")
 CERTS = os.path.join(ROOT, "tests", "certs")
 
 TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css", ".png": "image/png", ".jpg": "image/jpeg",
-         ".gif": "image/gif", ".txt": "text/plain", ".der": "application/x-x509-ca-cert"}
+         ".gif": "image/gif", ".svg": "image/svg+xml", ".txt": "text/plain", ".der": "application/x-x509-ca-cert"}
 
 def html(title, body=""):
     return f"<!DOCTYPE html><html><head><meta charset=utf-8><title>{title}</title></head><body>{body}</body></html>".encode()

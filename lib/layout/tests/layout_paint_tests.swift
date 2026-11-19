@@ -391,3 +391,41 @@ func layoutSiteTests(_ t: Tests) {
         print("  Wikipedia resize to 700 px (restyle + layout): \(hostMillis() - t2) ms")
     }
 }
+
+func layoutSVGTests(_ t: Tests) {
+    t.section("svg")
+    let w = 300, h = 120
+    func svgImage(_ s: String) -> ImageBitmap? {
+        do throws(ImageError) { return try imageDecode(Array(s.utf8), maxBytes: 1 << 22) } catch { return nil }
+    }
+    let sprite = svgImage("<svg xmlns='http://www.w3.org/2000/svg'><symbol id='sq' viewBox='0 0 10 10'><rect width='10' height='10' fill='#30a050'/><rect width='5' height='5' fill='currentColor'/></symbol></svg>")
+    let mask = svgImage("<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'><circle cx='10' cy='10' r='7'/></svg>")
+    let tri = svgImage("<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 16'><path d='M2 14L16 2L30 14z' fill='#999'/></svg>")
+    let imgs: [String: ImageBitmap] = ["sprite.svg": sprite!, "mask.svg": mask!, "tri.svg": tri!, "icon.svg": tri!]
+    let html = """
+    <!DOCTYPE html><style>body{margin:0} .ic{color:#2060e0} .ic path{fill:#ff0000} .sp{color:#a02020}
+    .m{position:absolute;left:180px;top:0;width:40px;height:40px;background-color:#c02080;mask-image:url(mask.svg);mask-size:contain;mask-repeat:no-repeat}
+    .v{position:absolute;left:240px;top:0;width:10px;height:10px;background:url(tri.svg) no-repeat;background-size:10px}</style>
+    <div style='position:absolute;left:0;top:0'><svg class=ic width=40 height=40 viewBox='0 0 24 24'><rect width=24 height=24 fill=currentColor /><path d='M4 4h8v8H4z' fill='#fff'/></svg></div>
+    <div style='position:absolute;left:60px;top:0'><svg class=sp width=40 height=40><use href='sprite.svg#sq'/></svg></div>
+    <div style='position:absolute;left:120px;top:0'><img src=icon.svg width=40 height=20></div>
+    <div class=m></div><div class=v></div>
+    <div style='position:absolute;left:0;top:60px;width:100px'><svg viewBox='0 0 2 1'><rect width=2 height=1 fill='#008000'/></svg></div>
+    """
+    let e = layoutPage(t, html, width: w, height: h, images: ["icon.svg": (32, 32)])
+    t.check(e.imageURLs.contains("sprite.svg") && e.imageURLs.contains("mask.svg"), "sprite and mask URLs are fetched")
+    let px = layoutRender(e, w, h, images: { imgs[$0] })
+    t.equal(hexColor(at(px, w, 35, 35)), "2060e0", "inline svg: currentColor from page CSS")
+    t.equal(hexColor(at(px, w, 12, 12)), "ff0000", "inline svg: page CSS beats presentation attribute")
+    t.equal(hexColor(at(px, w, 95, 35)), "30a050", "external use sprite")
+    t.equal(hexColor(at(px, w, 65, 5)), "a02020", "sprite currentColor from the page")
+    t.equal(hexColor(at(px, w, 140, 15)), "999999", "img svg rendered at its box size")
+    t.equal(hexColor(at(px, w, 200, 20)), "c02080", "mask-image: inside")
+    t.equal(hexColor(at(px, w, 181, 1)), "ffffff", "mask-image: outside")
+    t.equal(hexColor(at(px, w, 245, 5)), "999999", "background-size scales an svg background")
+    t.equal(hexColor(at(px, w, 50, 105)), "008000", "viewBox-only svg spans its container")
+    t.equal(hexColor(at(px, w, 50, 115)), "ffffff", "with the viewBox ratio")
+    // Without the sprite and mask loaded: no crash, mask hides the box.
+    let px2 = layoutRender(e, w, h, images: nil)
+    t.equal(hexColor(at(px2, w, 200, 20)), "ffffff", "unloaded mask paints nothing")
+}

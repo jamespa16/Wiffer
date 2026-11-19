@@ -110,6 +110,7 @@ func libTests(_ t: Tests) {
     if want("fixtures") { fixtureTests(t) }
     if want("paint") { layoutPaintTests(t) }
     if want("hit") { layoutHitTests(t) }
+    if want("svg") { layoutSVGTests(t) }
     if want("api") { layoutAPITests(t) }
     if want("robustness") { layoutRobustnessTests(t) }
     if want("fuzz") { layoutFuzzTests(t) }
