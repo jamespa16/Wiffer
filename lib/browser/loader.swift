@@ -305,7 +305,7 @@ final class BrowserLoader {
         }
         if laidOut && jobs.isEmpty && relayoutAt == nil && phase == .subresources {
             phase = .done
-            timings.totalMs = now - timings.started
+            timings.totalMs = clock() - timings.started
             changes.finished = true
             changes.status = true
             if let p = page {

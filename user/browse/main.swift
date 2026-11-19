@@ -109,6 +109,7 @@ func scrollTo(x: Int, y: Int) {
     scrollY = ny
     closeDropdown()
     placePageField()
+    if hoverHref != nil { hoverHref = nil; refreshStatus() }
     app.requestPaint()
     say("scroll y=\(scrollY)")
 }
