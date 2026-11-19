@@ -36,7 +36,7 @@ private func incFragment(_ s: String) -> HTMLNode? {
     let d = htmlParse("<i></i>" + s)
     guard let b = d.body, b.children.count > 1 else { return nil }
     let n = b.children[1]
-    n.detach()
+    _ = try? b.removeChild(n)
     return n
 }
 
@@ -53,11 +53,7 @@ private func incIsWithin(_ n: HTMLNode, _ anc: HTMLNode) -> Bool {
 }
 
 private func incSetAttr(_ n: HTMLNode, _ name: String, _ value: String?) {
-    if let i = n.attributes.firstIndex(where: { $0.name == name }) {
-        if let v = value { n.attributes[i].value = v } else { n.attributes.remove(at: i) }
-    } else if let v = value {
-        n.attributes.append(HTMLAttribute(name: name, value: v))
-    }
+    if let v = value { try? n.setAttribute(name, v) } else { _ = n.removeAttribute(name) }
 }
 
 /// Apply one random mutation, reporting it to the engine. Returns a description.
@@ -75,13 +71,11 @@ private func incMutate(_ e: LayoutEngine, _ doc: HTMLNode, _ rng: inout TestRand
         var names = n.classNames
         if let i = names.firstIndex(of: c) { names.remove(at: i) } else { names.append(c) }
         incSetAttr(n, "class", names.isEmpty ? nil : names.joined(separator: " "))
-        e.noteAttributeChanged(n, name: "class")
         return "class \(c) on <\(n.name) \(n.attribute("id") ?? "")> parent <\(n.parent?.name ?? "")>"
     case 3:
         guard n.kind == .element else { return "skip" }
         let s = incStyles[rng.below(incStyles.count)]
         incSetAttr(n, "style", s.isEmpty ? nil : s)
-        e.noteAttributeChanged(n, name: "style")
         return "style \(s)"
     case 4:
         guard n.kind == .element else { return "skip" }
@@ -89,38 +83,28 @@ private func incMutate(_ e: LayoutEngine, _ doc: HTMLNode, _ rng: inout TestRand
                                           ("colspan", "2"), ("bgcolor", "#ffcc00"), ("data-x", "1"), ("src", "b.png")]
         let (a, v) = opts[rng.below(opts.count)]
         incSetAttr(n, a, v)
-        e.noteAttributeChanged(n, name: a)
         return "attr \(a)"
     case 5, 6:
         guard n.kind == .element, let f = incFragment(incSnippets[rng.below(incSnippets.count)]) else { return "skip" }
         let ri = rng.below(n.children.count + 1)
         let ref: HTMLNode? = ri < n.children.count ? n.children[ri] : nil
-        n.insertChild(f, before: ref)
-        n.assignIndices()
-        e.noteChildrenChanged(n, added: [f])
+        _ = try? n.insertBefore(f, ref)
         return "insert \(f.name) into \(n.name)"
     case 7:
         guard structural, let p = n.parent else { return "skip" }
-        n.detach()
-        p.assignIndices()
-        e.noteChildrenChanged(p, removed: [n])
+        _ = try? p.removeChild(n)
         return "remove \(n.name) from \(p.name)"
     case 8:
         guard n.kind == .text else { return "skip" }
-        n.data = Array("changed text \(rng.below(100)) and more words to wrap around the line".utf8)
-        e.noteTextChanged(n)
+        n.setData("changed text \(rng.below(100)) and more words to wrap around the line")
         return "text"
     default:
         // Move a node somewhere else.
         guard structural, let p = n.parent else { return "skip" }
         let dst = nodes[rng.below(nodes.count)]
         guard dst.kind == .element, !incIsWithin(dst, n) else { return "skip" }
-        n.detach()
-        p.assignIndices()
-        e.noteChildrenChanged(p, removed: [n])
-        dst.insertChild(n, before: nil)
-        dst.assignIndices()
-        e.noteChildrenChanged(dst, added: [n])
+        _ = try? p.removeChild(n)
+        _ = try? dst.insertBefore(n, nil)
         return "move \(n.name) -> \(dst.name)"
     }
 }
@@ -245,7 +229,6 @@ func layoutIncrementalTests(_ t: Tests) {
         let before = e.stats
         let h0 = e.documentHeight
         incSetAttr(a, "class", "wide hl")
-        e.noteAttributeChanged(a, name: "class")
         t.check(e.hasPendingWork, "pending after note")
         e.updateIfNeeded()
         t.check(!e.hasPendingWork, "clean after update")
@@ -259,7 +242,6 @@ func layoutIncrementalTests(_ t: Tests) {
         let q0 = e.stats.forcedQueries, f0 = e.stats.forcedFlushes
         let hBefore = e.rect(of: c)?.h ?? 0
         incSetAttr(a, "style", "height:200px")
-        e.noteAttributeChanged(a, name: "style")
         let y1 = e.rect(of: c)?.y ?? 0
         t.check(y1 > (e.rect(of: a)?.y ?? 0) + 190, "rect flushes pending style and layout", "\(y1)")
         t.equal(e.stats.forcedQueries - q0, 3, "queries counted")
@@ -272,31 +254,52 @@ func layoutIncrementalTests(_ t: Tests) {
 
         // Insert and remove a block.
         let n = incFragment("<div id=n>new</div>")!
-        c.insertChild(n, before: c.children.first)
-        c.assignIndices()
-        e.noteChildrenChanged(c, added: [n])
+        _ = try? c.insertBefore(n, c.children.first)
         t.check(e.rect(of: n) != nil, "inserted element has a box after flush")
         let sub = e.stats.subtreeRebuilds
         t.check(sub > 0, "child insertion rebuilt a subtree, not the document")
-        n.detach()
-        c.assignIndices()
-        e.noteChildrenChanged(c, removed: [n])
+        _ = try? c.removeChild(n)
         e.updateIfNeeded()
         t.check(e.box(for: n) == nil, "removed element lost its box")
         // display:none appears and disappears.
         incSetAttr(a, "style", "display:none")
-        e.noteAttributeChanged(a, name: "style")
         t.check(e.rect(of: a) == nil, "display none removes the box")
         incSetAttr(a, "style", nil)
-        e.noteAttributeChanged(a, name: "style")
         t.check(e.rect(of: a) != nil, "display none removed brings it back")
         // New <style> element.
         let st = incFragment("<style>#b { color: #f00 }</style>")!
-        e.document.body!.insertChild(st, before: nil)
+        _ = try? e.document.body!.appendChild(st)
         e.document.body!.assignIndices()
-        e.noteChildrenChanged(e.document.body!, added: [st])
         t.equal(e.computedStyle(of: e.document.getElementById("b")!)?.color.r ?? 0, 255, "inserted <style> applies")
         t.check(e.styleSourcesVersion > 0, "sources rescanned")
+    }
+
+    // Wired to lib/html's mutation records: public DOM API calls restyle with no manual notes.
+    do {
+        let e = layoutPage(t, """
+        <style>.hl{color:red}.big{font-size:30px}#t{width:200px}</style>
+        <div id=a>one</div><div id=b>two</div><ul id=u><li>x</li></ul>
+        """)
+        let a = e.document.getElementById("a")!, u = e.document.getElementById("u")!
+        let before = e.stats
+        try? a.setAttribute("class", "hl")
+        t.check(e.hasPendingWork, "mutation observer queued a change")
+        t.equal(e.computedStyle(of: a)?.color.r ?? 0, 255, "setAttribute restyles via observer")
+        t.equal(e.stats.paintOnly, before.paintOnly + 1, "observer class change is paint-only")
+        let h0 = e.rect(of: e.document.getElementById("b")!)?.y ?? 0
+        try? a.setAttribute("class", "big")
+        let h1 = e.rect(of: e.document.getElementById("b")!)?.y ?? 0
+        t.check(h1 > h0, "font-size change moves the next block", "\(h0) -> \(h1)")
+        e.document.body!.setInnerHTML("<div id=t>fresh <b>text</b></div>")
+        t.check(e.rect(of: e.document.getElementById("t")!) != nil, "setInnerHTML shows new content")
+        t.check(e.box(for: u) == nil, "old content gone")
+        let tn = e.document.getElementById("t")!.firstChild!
+        let w0 = e.rect(of: tn.parent!)?.h ?? 0
+        tn.setData("a much longer run of text that will certainly wrap around several lines in a two hundred pixel box")
+        t.check((e.rect(of: tn.parent!)?.h ?? 0) > w0, "setData relayouts")
+        let fresh = LayoutEngine(document: e.document, text: layoutFonts(t), viewportWidth: 400, viewportHeight: 300)
+        fresh.update()
+        t.check(e.dump() == fresh.dump(), "observer-driven result equals from scratch")
     }
 
     // Fuzz: incremental result == from-scratch result.
@@ -337,7 +340,6 @@ func layoutIncrementalTests(_ t: Tests) {
         let target2 = li.count > 100 ? li[100] : target
         func toggle(_ n: HTMLNode, _ c: String, _ on: Bool) {
             incSetAttr(n, "class", on ? c : nil)
-            e.noteAttributeChanged(n, name: "class")
         }
         let N = 20
         var t0 = hostMillis()

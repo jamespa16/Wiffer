@@ -107,6 +107,7 @@ final class LayoutEngine {
     var styleSourcesVersion = 0
     var pendingRescan = false
     var inUpdate = false
+    var observerID = 0
     var restyleDecoChanged = false
     var hasSiblingRules = false
     var stats = LayoutUpdateStats()
@@ -125,6 +126,26 @@ final class LayoutEngine {
         self.resolver = CSSStyleResolver(ctx: c)
         self.resolveURL = resolveURL
         scanDocument()
+        observeMutations()
+    }
+
+    deinit {
+        if observerID != 0 { document.removeMutationObserver(observerID) }
+    }
+
+    /// Subscribe to the document's mutation records (lib/html) so DOM changes
+    /// made through its mutation API reach the note* entry points. The
+    /// document holds the closure, so it captures the engine unowned.
+    private func observeMutations() {
+        unowned(unsafe) let me = self
+        observerID = document.addMutationObserver { m in
+            if !m.target.isConnected { return }
+            switch m.kind {
+            case .attributes: me.noteAttributeChanged(m.target, name: m.attributeName)
+            case .childList: me.noteChildrenChanged(m.target, added: m.addedNodes, removed: m.removedNodes)
+            case .characterData: if m.target.kind == .text { me.noteTextChanged(m.target) }
+            }
+        }
     }
 
     // MARK: Style sheets

@@ -3948,7 +3948,7 @@ Groundwork, no engine needed (can start beside 9A):
   decoration refresh, stale canvas color when the root disappears.
 - Wikipedia host timings: class toggle paint-only 8 ms, layout-affecting
   (subtree rebuild + whole-document layout) 18 ms, full restyle+layout 145 ms.
-- Not yet wired: lib/html's mutation hook (call the `note*` functions from it).
+- Wired to lib/html: `LayoutEngine.init` registers a mutation observer (unowned capture, removed in `deinit`) that forwards connected records to the `note*` calls; the fuzz test mutates only through lib/html's public API.
 
 Bindings (needs 9F):
 
