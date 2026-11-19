@@ -3806,6 +3806,12 @@ documented at the top of each file:
   no zone database, and the RTC reads UTC), parsing of the ISO format
   and the RFC 2822 forms sites use, toISOString and the locale-less
   toString forms.
+- **Date core results (done, VM-independent):** `lib/js/jsdate.swift`
+  (API documented at its top) has the spec date math, a `JSDateZone` hook
+  (UTC now; base offset plus a transition list for later), the ISO and
+  legacy/RFC 2822 parsers (input capped at 512 units, no traps) and all
+  toString/toLocale forms. 1124 js host checks pass, including a 20k-mutant
+  parser fuzz. The built-ins still need wrapping. test262 not run (absent).
 - **`RegExp`:** a backtracking engine compiled to its own small bytecode.
   Classes, quantifiers (greedy and lazy), groups, backreferences,
   lookahead, the `gimsuy` flags, Unicode mode with case folding from a
