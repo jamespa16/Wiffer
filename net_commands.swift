@@ -37,10 +37,13 @@ func netInit() {
         stack.dhcp = d
         d.start()
     }
+    // Phase 7F: netd parks; the main loop's netPollHook and the MSI-X
+    // interrupt (netInterrupt, allocation-free) unpark it.
     netdTask = spawn("netd") {
         while true {
-            _ = waitEvent()
+            if !netIRQPending { park() }
             netdKicked = false
+            netIRQPending = false
             netStack?.poll(now: ticks)
             for t in netWaiters { t.post(.message(1)) }
         }
@@ -60,7 +63,7 @@ func netSettle() {
 func netPollHook() {
     guard !netdKicked, let s = netStack, let t = netdTask, s.needsPoll(ticks) else { return }
     netdKicked = true
-    t.post(.message(0))
+    unpark(t)
 }
 
 /// Block the calling task until `cond()` holds (true) or `timeout` ticks pass
@@ -101,6 +104,13 @@ func ifconfigLines() -> [String] {
             lines.append("  dhcp: lease from \(ipString(dhcp.server)), \(dhcp.leaseRemaining) of \(dhcp.leaseSeconds) s left (\(dhcp.stateName))")
         default:
             lines.append(dhcp.usingFallback ? "  dhcp: no offer, static fallback (\(dhcp.stateName))" : "  dhcp: \(dhcp.stateName)")
+        }
+    }
+    if let nic = d as? VirtioNet {
+        if let v = nic.msixVector {
+            lines.append("  irq: msi-x vector 0x\(hexDigits(UInt64(v), 2)) on cpu 0, \(netInterrupts) interrupts")
+        } else {
+            lines.append("  irq: none (polled)")
         }
     }
     let c = d.counters

@@ -122,7 +122,7 @@ func handleSyscall(_ n: UInt64, _ a1: UInt64, _ a2: UInt64, _ a3: UInt64, _ a4: 
     case SyscallNumber.testWaitIRQs:
         return sysTestWaitIRQs(a1, a2)
     default:
-        return fail(Errno.ENOSYS)
+        return netSyscall(p, n, a1, a2, a3, a4, a5) // 50-69: sockets, resolve, getrandom, time
     }
 }
 

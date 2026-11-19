@@ -24,6 +24,11 @@ XCC=(); for f in "${KFLAGS[@]}"; do XCC+=(-Xcc "$f"); done
 #      packet and DNS/DHCP parsers use it); it is the one lib/ file the
 #      kernel compiles in directly. Other lib/ modules join this list as
 #      the kernel needs them.
+#    KERNEL_CRYPTO (Phase 8A getrandom): lib/crypto's ChaChaDRBG and what it
+#      needs (ChaCha20, SHA-256, the shared helpers and tables). LTO drops
+#      the unused parts (AES tables, Poly1305, SHA-512).
+KERNEL_CRYPTO=(lib/crypto/common.swift lib/crypto/tables.swift lib/crypto/sha2.swift lib/crypto/chacha.swift
+  lib/crypto/drbg.swift)
 swiftc \
   -target x86_64-unknown-none-elf \
   -enable-experimental-feature Embedded \
@@ -32,7 +37,7 @@ swiftc \
   -Xfrontend -disable-swift-specific-llvm-optzns \
   -import-objc-header bridge.h \
   "${XCC[@]}" \
-  -emit-ir *.swift abi/*.swift lib/bytes/reader.swift -o build/kernel.raw.ll
+  -emit-ir *.swift abi/*.swift lib/bytes/reader.swift "${KERNEL_CRYPTO[@]}" -o build/kernel.raw.ll
 
 # 2. Drop @llvm.used, which pins embedded runtime stubs
 #    (swift_isClassType, _swift_fatalError, ...) so they survive DCE.
@@ -126,7 +131,7 @@ for dir in user/*/; do
   [[ "$prog" == libwiffer || ! -f "$dir/main.swift" ]] && continue
   USER_LIB_ORDER=()
   if [[ -f "$dir/LIBS" ]]; then for l in $(cat "$dir/LIBS"); do user_lib_visit "$l"; done; fi
-  SRCS=("$dir"*.swift user/libwiffer/*.swift abi/syscalls.swift heap.swift)
+  SRCS=("$dir"*.swift user/libwiffer/*.swift abi/*.swift heap.swift)
   for l in "${USER_LIB_ORDER[@]+"${USER_LIB_ORDER[@]}"}"; do
     for f in lib/"$l"/*.swift; do [[ -e "$f" ]] && SRCS+=("$f"); done
   done

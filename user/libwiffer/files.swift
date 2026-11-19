@@ -42,7 +42,7 @@ func errnoMessage(_ e: Int) -> String {
     case Errno.ENOMEM: return "out of memory"
     case Errno.ENOEXEC: return "not an executable"
     case Errno.ENAMETOOLONG: return "name too long"
-    default: return "error \(e)"
+    default: return netErrnoMessage(e)
     }
 }
 

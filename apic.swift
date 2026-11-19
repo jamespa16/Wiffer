@@ -6,6 +6,8 @@
 enum Vector {
     /// Phase 6D: the LAPIC timer (APs; preemption only).
     static let timer: UInt8 = 0xEF
+    /// Phase 7F: virtio-net MSI-X (rx), aimed at CPU 0.
+    static let net: UInt8 = 0x50
     static let reschedule: UInt8 = 0xF0
     static let halt: UInt8 = 0xF1
     static let ping: UInt8 = 0xF2
