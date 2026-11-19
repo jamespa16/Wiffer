@@ -23,6 +23,11 @@ lib/<name>/
                    t.readFile("lib/<name>/fixtures/x.bin")
 ```
 
+`lib/dns` is host-test only: its `SRCS` compiles the kernel's net_dns.swift
+against stand-ins in `lib/dns/stubs.swift`. Every test binary also links
+`hosttest/guard.c`, a watchdog that fails the run on a runaway allocation
+(`WIFFER_HOSTTEST_MAX_MB`, default 1024) or a hang (`WIFFER_HOSTTEST_MAX_SECS`).
+
 `hosttest/harness.swift` has `Tests` (`section`, `check`, `equal`,
 `readFile`, `fuzz`), `TestRandom`, `hex` and `unhex`. `hosttest/host.h`
 also has loopback TCP and popen helpers (`host_tcp_connect`,

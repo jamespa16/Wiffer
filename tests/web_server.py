@@ -161,7 +161,7 @@ class WebServer:
             fields = urllib.parse.parse_qsl(raw, keep_blank_values=True)
             text = "&".join(f"{k}={v}" for k, v in fields)
             ctype = req["headers"].get("content-type", "")
-            self.page(c, html(escape(f"Echo {method} {text}"), f"<pre>{escape(method)} {escape(text)}\n{escape(ctype)}</pre>"))
+            self.page(c, html(escape(f"Echo {method} {text}"), f"<pre style='position:absolute;left:300px;top:0;margin:0'>{escape(method)} {escape(text)}\n{escape(ctype)}</pre>"))
         elif path == "/redir/ok":
             self.page(c, html("Redirect target", "<p>arrived"))
         elif path in ("/redir/301", "/redir/302", "/redir/303", "/redir/307"):
@@ -202,6 +202,8 @@ class WebServer:
             self.page(c, html(escape(f"Cookie {ck}"), f"<pre>{escape(ck)}</pre>"))
         elif path == "/testca.der":
             self.send(c, 200, [("Content-Type", "application/x-x509-ca-cert")], self.ca)
+        elif path == "/ht":  # short alias of /hostile/truncated (guest command lines are short)
+            self.hostile(c, req, "truncated")
         elif path.startswith("/hostile/"):
             self.hostile(c, req, path[len("/hostile/"):])
         else:

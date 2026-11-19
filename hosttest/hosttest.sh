@@ -50,8 +50,11 @@ fi
 # The runaway guard (hosttest/guard.c), linked into every test binary.
 cc -O1 -c hosttest/guard.c -o "$OUT/guard.o"
 
-status=0
-for lib in "${LIBS[@]}"; do
+# One lib: both builds, then the test. Runs in a subshell, up to JOBS at a
+# time (WIFFER_HOSTTEST_JOBS, default 4; the swiftc builds dominate), with
+# its output in $OUT/<lib>.log, printed in order at the end.
+run_lib() {
+  local lib="$1" n f e dup
   ORDER=(); visit "$lib"
   SRCS=()
   for n in "${ORDER[@]}"; do
@@ -67,15 +70,30 @@ for lib in "${LIBS[@]}"; do
   # 1. Freestanding Embedded compile (what user programs get).
   if ! swiftc -target x86_64-unknown-none-elf "${SWIFT_FLAGS[@]}" \
        -Xcc -mno-red-zone -emit-ir "${SRCS[@]}" -o "$OUT/$lib.elf.ll"; then
-    echo "FAIL $lib: does not build for x86_64-unknown-none-elf"; status=1; continue
+    echo "FAIL $lib: does not build for x86_64-unknown-none-elf"; return 1
   fi
   # 2. Host test binary.
   TESTS=(lib/"$lib"/tests/*.swift)
   if ! swiftc "${SWIFT_FLAGS[@]}" -import-objc-header hosttest/host.h \
        "${SRCS[@]}" "${TESTS[@]}" hosttest/harness.swift hosttest/runtime.swift \
        "$OUT/guard.o" "${HOST_LIBS[@]}" -o "$OUT/$lib"; then
-    echo "FAIL $lib: host test build failed"; status=1; continue
+    echo "FAIL $lib: host test build failed"; return 1
   fi
-  WIFFER_HOSTTEST_LIB="$lib" "$OUT/$lib" || status=1
+  WIFFER_HOSTTEST_LIB="$lib" "$OUT/$lib"
+}
+
+JOBS="${WIFFER_HOSTTEST_JOBS:-4}"
+running=0
+for lib in "${LIBS[@]}"; do
+  rm -f "$OUT/$lib.status"
+  ( if run_lib "$lib" > "$OUT/$lib.log" 2>&1; then echo 0; else echo 1; fi > "$OUT/$lib.status" ) &
+  running=$((running + 1))
+  if (( running >= JOBS )); then wait; running=0; fi
+done
+wait
+status=0
+for lib in "${LIBS[@]}"; do
+  cat "$OUT/$lib.log"
+  [[ "$(cat "$OUT/$lib.status" 2>/dev/null)" == 0 ]] || status=1
 done
 exit $status

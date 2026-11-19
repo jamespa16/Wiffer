@@ -2483,7 +2483,7 @@ def web_checks_run(s, timeout, check, find, browsers, kill_all, srv, tsrv, base,
              ("layout/colors.html", "Layout: colors"), ("big.html", "Tall page")]
     pixels = {"layout/colors.html": [(10, 25, "FF0000"), (10, 75, "00FF00"), (10, 125, "0000FF"), (10, 175, "FF8000")],
               "layout/float.html": [(50, 50, "E04040")],
-              "layout/position.html": [(340, 130, "8040C0"), (30, 20, "C0A020")]}
+              "layout/position.html": [(340, 130, "8040C0"), (110, 45, "C0A020")]}
     t0 = time.time()
     for path, title in pages:
         got, found = load(f"{base}/{path}")
@@ -2533,8 +2533,9 @@ def web_checks_run(s, timeout, check, find, browsers, kill_all, srv, tsrv, base,
 
     # ---- Redirects.
     for code in (301, 302, 303, 307):
-        got, found = load(f"{base}/redir/{code}")
-        check("title 'Redirect target'" in got, f"a {code} redirect is followed", got[-300:])
+        launch(f"{base}/redir/{code}")
+        ok, got = read_title("Redirect target", 90)
+        check(ok and srv.last("/redir/ok") is not None, f"a {code} redirect is followed", got[-300:])
         kill_all()
     launch(f"{base}/redir/chain")
     ok, got = read_title("Redirect target", 90)
@@ -2572,6 +2573,10 @@ def web_checks_run(s, timeout, check, find, browsers, kill_all, srv, tsrv, base,
         s.sendkeys(["a", "b", "c", "ret"])
         got = s.read_until(b"browse: title 'Echo GET", 60).decode(errors="replace") + s.read_until(b"\n", 5).decode(errors="replace")
         check("submit GET" in got and "q=abc&h=hid&c=on" in got, "a GET form is echoed by the server", got[-300:])
+        time.sleep(1.0)
+        px = pixel_in_page("Echo GET q=abc&h=hid&c=on", 60, 30, "FFFFFF")
+        check(px == b"\xff\xff\xff", "the page after a submit has no leftover text field where the input was",
+              px.hex() if px else "no window")
         req = srv.last("/echo")
         check(req is not None and req["path"] == "/echo?q=abc&h=hid&c=on", "the GET query string the server saw",
               str(req and req["path"]))
@@ -2618,13 +2623,13 @@ def web_checks_run(s, timeout, check, find, browsers, kill_all, srv, tsrv, base,
     kill_all()
 
     # ---- Hostile servers. Each in its own browser; afterwards it must be alive.
-    def hostile(name, expect=None, stop=False, settle=25.0, b=base, flags=""):
+    def hostile(name, expect=None, stop=False, settle=10.0, b=base, flags="", path=None):
         """Open /hostile/<name>. Without `stop`, the load must end (a "done" or
         "error" line) and the line must match the regex `expect`. With stop=True
         the load never ends by itself: after `settle` seconds it is still
         pending, Escape (Stop) must log "browse: stopped". Either way the
         browser must still be running."""
-        url = f"{b}/hostile/{name}"
+        url = f"{b}{path or '/hostile/' + name}"
         launch(url, flags)
         pat = re.compile(rb"browse: (done|error) " + re.escape(url.encode()) + rb"[^\n]*")
         got = b""
@@ -2662,20 +2667,20 @@ def web_checks_run(s, timeout, check, find, browsers, kill_all, srv, tsrv, base,
     got = hostile("pngdims", r"done ")
     check("title 'Lying PNG'" in got, "the lying PNG page itself still loads", got[-300:])
     kill_all()
-    hostile("truncated", r"", b=sbase, flags=TLSARGS)
+    hostile("truncated over TLS", r"", b=sbase, flags=TLSARGS, path="/ht")  # (short: the command line must fit the terminal)
     kill_all()
     # An endless chunked stream is cut off by a size limit, or stopped by hand.
     url = f"{base}/hostile/endless"
     launch(url)
     pat = re.compile(rb"browse: (done|error) " + re.escape(url.encode()) + rb"[^\n]*")
-    got, deadline = b"", time.time() + 40
+    got, deadline = b"", time.time() + 15
     while time.time() < deadline and not pat.search(got):
         got += s.read_until(b"\n", 5)
     m = pat.search(got)
     if m is None:
         s.sendkeys(["esc"])
         more = s.read_until(b"browse: stopped", 30)
-        check(b"browse: stopped" in more, "hostile endless: still streaming after 40 s, Escape stops it",
+        check(b"browse: stopped" in more, "hostile endless: still streaming after 15 s, Escape stops it",
               more.decode(errors="replace")[-300:])
     else:
         check(b"error" in m.group(0), "hostile endless: cut off by a limit", m.group(0).decode(errors="replace"))

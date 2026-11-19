@@ -14,7 +14,8 @@
 - **Part 7: Networking.** Done (7A–7F: virtio-net with MSI-X,
   Ethernet/ARP/IPv4/ICMP, UDP, DHCP, DNS, TCP, sockets for user space,
   /bin/fetch (HTTP and HTTPS), nc, ping, host). 8A's getrandom is in too.
-- **Part 8: Web browser.** 8A–8G done, 8H in progress, 8I not started.
+- **Part 8: Web browser.** Done (8A–8I: crypto and TLS 1.3, URLs/HTTP/inflate,
+  HTML, CSS, fonts, layout, images, the browser app, tests and target sites).
   See the end of this document.
 
 Goal: boot into a desktop with overlapping, draggable windows. Each shell
@@ -3222,7 +3223,7 @@ in the harness). Decisions and results:
   protocol-relative URLs on file:// pages resolve to file:// hosts; style
   for big pages is the slow step (1.7-2 s for Wikipedia under TCG).
 
-## Phase 8I: tests and target sites
+## Phase 8I: tests and target sites (done)
 
 - **Harness:** a host HTTP and HTTPS server (test CA) serves
   `tests/web/`: fixture pages covering each layout feature, images,
@@ -3245,6 +3246,107 @@ in the harness). Decisions and results:
 
 **Done when:** every harness check passes under BIOS and UEFI, and the
 target sites (except the stretch one) are readable and navigable.
+
+**Done** (tests/web_server.py, tests/web/, `web_checks` in tests/serial_session.py,
+lib/dns, hosttest/guard.c). Results:
+
+- **Web harness session** (`web_checks`, its own desktop QEMU, runs beside the
+  others; `python3 tests/serial_session.py --web-only` runs just it, about 80 s,
+  75 checks). `tests/web_server.py` is a hand-written HTTP/1.1 server
+  (Connection: close, one thread per connection, TLS 1.3 with tests/certs
+  handled per connection so a stalled handshake blocks nobody) that serves
+  `tests/web/` (index, `layout/` block, inline, float, position, table, flex,
+  lists, fonts, colors; images.html with an RGBA PNG, baseline and
+  progressive JPEG and a GIF; form.html; a tall page) and dynamic routes:
+  `/echo` (GET or POST, fields in the `<title>`), `/redir/301|302|303|307`,
+  a four-hop chain and a loop, `/chunked`, `/gzip`, `/deflate`,
+  `/cookie/set` (two Set-Cookie headers and a 302) and `/cookie/echo`, and
+  `/hostile/*`: stall-headers, stall-body, truncated (Content-Length 5000,
+  113 bytes sent), reset (RST via SO_LINGER 0), garbage (20 KB of random
+  bytes), hugeheaders (8 MiB of header lines), endless (chunked forever), bomb
+  (1 GiB of spaces as gzip), pngdims (a PNG claiming 60000x60000). It records
+  every request, so the harness also checks what the browser *sent* (the
+  GET query string, the POST body and content type, the Cookie header, the
+  redirect chain). Checks, over HTTP unless noted: every layout page loads
+  with its title, no error and no failed subresource, and a few have pixels
+  at known places (colour bands, a left float, an absolutely positioned
+  box, a relative box); images.html (4/4 resources, an opaque PNG pixel
+  exact, an alpha pixel blended, both JPEGs drawn); the index, a link click,
+  Alt-Left/Right; the four redirect codes, the chain, the loop (an error
+  page); chunked, gzip, deflate; cookies through a redirect; a GET form and a
+  POST form typed into and submitted with Enter (echo title, and the server's
+  view of the request), and that the page after a submit shows no leftover
+  text field; a 404 with a body, a refused port; over HTTPS with the test CA:
+  the index with a pixel, a gzip page; the hostile cases: stall-headers and
+  stall-body (still pending after 10 s, Escape logs `browse: stopped`),
+  truncated (also over TLS), reset, garbage (Bad response), hugeheaders, bomb
+  (an error page), pngdims (the page loads), endless (never ends, so Escape
+  stops it); after each, `ps` shows the browser still running; at the end a
+  fresh browser still loads a page (30 MiB in use). All waits are on `browse:`
+  serial lines. Command lines stay under 76 characters (the HTTPS hostile
+  case uses the short alias `/ht`; the first attempt ran the browser in the
+  foreground because the `&` was cut off).
+- **Fuzzing (`./run.sh --hosttest`, about 2.5 minutes on a busy machine: the
+  swiftc builds dominate and now run four libs at a time, `WIFFER_HOSTTEST_JOBS`;
+  the tests themselves total about 15 s).** Audit: every lib
+  already had a `t.fuzz` run except DNS and the browser. Added: **lib/dns**
+  (hosttest-only lib: `SRCS` compiles the kernel's own net_dns.swift, and
+  `stubs.swift` stands in for IPv4Addr, UDPSocket and NetStack, so the real
+  parser and resolver run on the host), and a whole-loader fuzz in lib/browser
+  (a mutated document, stylesheet or image through fetch, decode, parse,
+  style, layout and paint). lib/layout already had the html -> layout ->
+  paint pipeline fuzz. Iterations (per seed set, deterministic): bytes 2000;
+  inflate 6000; html 3000; css 6000 + 4000 (selectors); url 60000; http 40000
+  (parser) + 40000 (cookies); text 20000; image (PNG, JPEG, GIF) 6000;
+  font (TrueType) 400; x509 10000 (certificates) + 1500 (validator); tls 3000
+  (records) + 3000 (ServerHello) + 4000 (server flight); crypto ECDSA 300 +
+  3000 (DER), RSA 400 + 200; layout pipeline 400; **dns 30000 (parser) +
+  20000 (whole replies into a resolver)**; **browser loader 600**.
+- **Runaway guard.** `_swift_allocate` lives in libswiftEmbeddedPlatformPOSIX.a
+  together with the rest of the runtime, so it can't be wrapped, and
+  RLIMIT_AS is not enforced on macOS. Instead `hosttest/guard.c` (linked into
+  every test binary) starts a watchdog thread that polls peak resident size
+  every 5 ms and wall time; past `WIFFER_HOSTTEST_MAX_MB` (default 1024) or
+  `WIFFER_HOSTTEST_MAX_SECS` (default 240) it prints `FAIL hosttest: runaway
+  allocation: peak N MiB ... (section "lib: name")` and exits non-zero. The
+  summary line now reports each lib's peak (largest: html 113 MiB, layout
+  92 MiB). Checked with `WIFFER_HOSTTEST_MAX_MB=5 ./run.sh --hosttest dns`.
+  A single allocation that is never touched is not seen (resident, not
+  virtual).
+- **Target sites** (headless QEMU, SLIRP to the real internet, 2026-11-18;
+  load times are QEMU TCG on Apple silicon; screendumps judged by eye):
+
+  | Site | Status | Load | Notes |
+  | --- | --- | --- | --- |
+  | info.cern.ch | readable, navigable | 0.4 s | heading, list, links as on any browser |
+  | example.com | readable, navigable | 0.3 s | |
+  | lite.duckduckgo.com (search for "wiffer") | works | 0.5 s, search 1 s | POST search returns the result list with links; "Next Page" button; region select drawn |
+  | en.wikipedia.org article (Web_browser) | readable, navigable | 5.3 s | Vector layout, infobox, images (PNG/JPEG); SVG icons are black squares (no SVG) |
+  | Wikipedia search | partly | 2 s | GET `search=operating+system` redirects to the article and works. The Special:Search form submits correctly (`search=...&title=...&fulltext=1`), but Wikimedia answered 429 "robot policy" to every full-text search from the guest while curl with the same User-Agent got 200; the error page itself renders. Not fixed (server-side) |
+  | Wikipedia with tables and images (Solar_System) | readable, navigable | 18.9 s | 66 resources, 6 MB; infobox tables, thumbnails, text wraps around floats; style 6.7 s and first layout 8.4 s are the slow part |
+  | news.ycombinator.com | readable, navigable | 1.1 s | orange header bar, ranked list, points/comments; the vote triangles (SVG) are missing |
+  | text.npr.org | readable, navigable | 0.4 s | one headline has a missing-glyph box for an emoji |
+  | lite.cnn.com | readable, navigable | 0.6 s | 267 KB document, headline list |
+  | github.com/octocat/Hello-World (stretch) | usable | 8.3 s | README, file list and sidebar readable; every SVG icon is a grey box; some skeleton placeholders stay |
+
+  **Bug fixed:** after submitting a form, a grey rectangle the size of the
+  text field stayed on the new page. `Container.invalidateAll` (a full
+  repaint: the app paints, then every widget) kept the hidden text field's
+  stale area, and a hidden widget still cleared its frame, over the page that
+  had just been painted. Fixed in lib/gui/widget.swift (invalidateAll drops
+  stale areas; only visible widgets clear their frame); host test in
+  lib/gui, and the web harness checks the pixel on the page after a submit.
+- **Known gaps found:** no SVG (icons everywhere on Wikipedia, HN, GitHub);
+  Wikimedia's 429 on full-text search (above); new browser windows open
+  taller than the 800 px screen's free area, so the bottom of long pages and
+  the status line are off-screen until the window is moved; an endless
+  chunked response was still streaming after 15 s (the harness stops it by
+  hand; no size cut-off was observed in that time); the 30 s idle timeout
+  is not exercised by the harness (Escape is, to keep it fast).
+- **Part 8 done-when:** `./run.sh --test` and `./run.sh --test --uefi` both exit 0 (434 PASS, no FAIL, with the new web session), `--hosttest` is all ok and
+  every target site except the stretch one is readable and navigable. The
+  one partial item is Wikipedia's full-text search results, which depend on
+  Wikimedia's rate limiting, not on the browser.
 
 ---
 

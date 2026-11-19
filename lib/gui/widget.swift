@@ -197,8 +197,12 @@ final class Container {
 
     // MARK: Drawing
 
+    /// Everything repaints, over a freshly painted background: leftover
+    /// stale areas (a widget hidden since the last render) must not clear
+    /// what the app has just painted there.
     func invalidateAll() {
-        for w in widgets { w.needsDraw = true }
+        stale = .empty
+        for w in widgets { w.stale = .empty; w.needsDraw = true }
     }
 
     /// Paint dirty widgets (and what overlaps them) into `s`; the damaged
@@ -221,7 +225,7 @@ final class Container {
         var clearAreas: [Rect] = []
         if !stale.isEmpty { clearAreas.append(stale.intersection(s.bounds)); stale = .empty }
         for w in widgets where w.needsDraw {
-            clearAreas.append(w.frame.union(w.stale))
+            clearAreas.append((w.visible ? w.frame : .empty).union(w.stale))
             w.stale = .empty
         }
         for a in clearAreas where !a.isEmpty {

@@ -491,4 +491,31 @@ private func hostileTests(_ t: Tests) {
         pump(l, &now, rounds: 40)
         t.check(l.page != nil && l.phase == .done, "survives " + u)
     }
+    // Whole-loader fuzz (ROADMAP 8I): mutated documents, stylesheets and
+    // images go through fetch, decode, parse, style, layout and paint.
+    t.section("fuzz")
+    let page = Array("<!DOCTYPE html><title>F</title><link rel=stylesheet href=s.css><style>p{color:red}</style><body><div id=box>box</div><img src=i.png width=20><table><tr><td>a<td>b</table><form><input name=q value=x><select><option>1</select></form><a href=#box>l</a>".utf8)
+    let css = Array("@import url(imp.css); #box{width:100px;height:50px;background:#2040c0;float:left} p{margin:1em;display:flex} td{border:1px solid} a:hover{color:blue}".utf8)
+    let png = t.readFileIfPresent("lib/image/fixtures/pngsuite/basn2c08.png") ?? []
+    let tx = fonts(t)
+    var buf = [UInt32](repeating: 0, count: 100 * 80)
+    var n = 0
+    t.fuzz("loader", seeds: [page, css] + (png.isEmpty ? [] : [png]), iterations: 600) { data in
+        n += 1
+        let mem = BrowserMemoryTransport()
+        let l = BrowserLoader(text: tx, width: 300, height: 200)
+        l.addTransport(mem)
+        // Rotate which resource is the mutant.
+        mem.add("http://f.test/", bytes: n % 3 == 0 ? data : page, type: "text/html")
+        mem.add("http://f.test/s.css", bytes: n % 3 == 1 ? data : css, type: "text/css")
+        mem.add("http://f.test/imp.css", bytes: n % 3 == 1 ? Array(data.reversed()) : css, type: "text/css")
+        mem.add("http://f.test/i.png", bytes: n % 3 == 2 ? data : png, type: "image/png")
+        var now = 0
+        l.navigate(BrowserRequest(url: url("http://f.test/")), now: now)
+        pump(l, &now, rounds: 30)
+        _ = l.takeChanges()
+        if let e = l.page?.engine {
+            buf.withUnsafeMutableBufferPointer { p in e.paint(into: p.baseAddress!, stride: 100, width: 100, height: 80, scrollY: 0) }
+        }
+    }
 }

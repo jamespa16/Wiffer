@@ -241,6 +241,23 @@ private func containerTests(_ t: Tests, _ font: PSFFont) {
     d = c.render(into: s)
     t.check(d.intersects(Rect(10, 10, 60, 24)) && d.intersects(Rect(100, 10, 60, 24)), "moving damages old and new")
     t.check(s.pixel(12, 12) == c.theme.background, "old spot cleared")
+    // A widget hidden and then a full repaint (App.paintAll: the app paints
+    // its page, invalidateAll, render): the page must survive under the
+    // hidden widget's old area.
+    let pf = c.textField(frame: Rect(140, 40, 50, 24))
+    _ = c.render(into: s)
+    pf.visible = false
+    c.invalidateAll()
+    s.fill(Rect(0, 0, 200, 120), 0x123456)  // the app's page
+    _ = c.render(into: s)
+    t.check(s.pixel(150, 50) == 0x123456, "a hidden widget leaves the page alone on a full repaint")
+    pf.visible = true
+    _ = c.render(into: s)
+    pf.visible = false
+    s.fill(Rect(0, 0, 200, 120), 0x654321)
+    c.invalidateAll()
+    _ = c.render(into: s)
+    t.check(s.pixel(150, 50) == 0x654321, "hidden since the last render: still no gray block")
     // Overlap: a widget under a dirty one repaints too.
     let top = c.label("TOP", x: 100, y: 10, width: 40)
     _ = c.render(into: s)
