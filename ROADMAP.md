@@ -7,14 +7,15 @@
   items not started). Phase O (stretch) is open. This document.
 - **Part 4: SMP.** Done (Phases P–T).
 - **Part 5: Writing to disk.** Done (Phases U–Z): a FAT32 virtio disk at /disk.
-- **Parts 6–8: Toward a web browser.** Planned: user space (6A–6G),
-  networking (7A–7F), and a browser (8A–8I). See the end of this document.
-  Part 6: 6A–6E done (page tables, ring 3 and syscalls, processes, ELF
-  programs in /bin, libwiffer, preemption and timed sleeps, fds, pipes,
-  wait); 6F–6G open.
-  Part 7: done (7A–7F: virtio-net with MSI-X, Ethernet/ARP/IPv4/ICMP, UDP,
-  DHCP, DNS, TCP, sockets for user space, /bin/fetch (HTTP and HTTPS), nc,
-  ping, host). 8A's getrandom is in too.
+- **Part 6: User space.** Done (6A–6F: page tables, ring 3 and syscalls,
+  processes, ELF programs in /bin, libwiffer, preemption and timed sleeps,
+  fds, pipes, wait, windows for processes). 6G is this docs pass. The
+  /bin/edit stretch item is not started.
+- **Part 7: Networking.** Done (7A–7F: virtio-net with MSI-X,
+  Ethernet/ARP/IPv4/ICMP, UDP, DHCP, DNS, TCP, sockets for user space,
+  /bin/fetch (HTTP and HTTPS), nc, ping, host). 8A's getrandom is in too.
+- **Part 8: Web browser.** 8A–8G done, 8H in progress, 8I not started.
+  See the end of this document.
 
 Goal: boot into a desktop with overlapping, draggable windows. Each shell
 runs in its own terminal window, and a text editor can open, edit and save
@@ -41,21 +42,21 @@ What Part 3 builds on:
 - **Interrupts and input.** GDT/TSS/IDT with exception reports, 8259 PIC,
   PIT at 100 Hz, and PS/2 keyboard and mouse into ring buffers.
   `KeyEvent` has characters (Ctrl-letters arrive as control codes),
-  arrows, Home/End, PgUp/PgDn, Insert and Delete. It has no Alt,
-  function keys, or key-up events.
+  arrows, Home/End, PgUp/PgDn, Insert and Delete, plus Alt/AltGr, Super
+  and F1–F12 (Phase H2). It has no key-up or repeat events.
 - **Memory.** A frame allocator and a size-class Swift heap. Large blocks
   are contiguous frame runs. QEMU has 256 MiB. Classes, `Array`, `String`,
   `Dictionary`, `Set` and `Float` all work (SSE is on).
-- **Display.** `Console` is a cell grid with ANSI escapes. `Display`
-  renders it into a back buffer and copies dirty rows to the framebuffer.
-  The G4 layout is a status bar plus one titled "window", which is really
-  a frame drawn in the cell grid. The mouse cursor is drawn straight onto
-  the framebuffer and repainted after each row copy.
+- **Display.** `Console` is a cell grid with ANSI escapes. Pixel surfaces
+  (Phase I) and a compositor (Phase J) draw into a RAM back buffer and copy
+  only damaged rectangles to the framebuffer. The mouse cursor is the top
+  layer. Before Part 3, the G4 layout was a status bar plus one titled
+  "window" drawn in the cell grid. The window manager (Phase K) replaced it.
 - **Shell.** `Shell<T: Terminal>` is generic over a blocking
   `read() -> KeyEvent`. It has history, completion, and a command table.
-- **One flow of control.** `readKey()` is the idle loop. It polls serial,
-  keyboard and mouse, refreshes the status bar, flushes the console, and
-  calls `hlt`.
+- **One flow of control.** `pollEvents()` drains serial, keyboard, mouse
+  and the timer into one event queue (Phase H). The idle step flushes the
+  screen and calls `hlt`. `readKey()` is a thin wrapper over it.
 - **Tests.** `./run.sh --test` (and `--test --uefi`) runs in-kernel
   selftests plus a Python harness. The harness types through the QEMU
   monitor (`sendkey`, `mouse_move`) and checks `screendump` against a
@@ -77,18 +78,37 @@ What Part 3 builds on:
   the host. Commands: `disks`, `lspci`, `mkfs`, `mount`, `umount`, `sync`,
   `fsck` and `df`.
 
-Two things stand in the way of a window manager:
+Two things stood in the way of a window manager (Part 3 solved both):
 
 1. **Everything is cell-based.** Overlapping windows need pixel surfaces,
    clipping, and a compositor that owns the screen.
 2. **The shell blocks inside `read()`.** Two shells can't both be waiting
    for a key. Phase H solves this without rewriting the shell.
 
+Parts 6–8 add:
+
+- **User space (Part 6).** Each process has its own address space (PML4
+  slots 1–254 are private) and runs in ring 3. Syscalls are defined once,
+  in `abi/syscalls.swift`, and compiled into the kernel and libwiffer.
+  Programs in /bin are ELF files built from `user/`. The timer preempts
+  ring-3 code, so a spinning program can't freeze the desktop. Processes
+  have fds, pipes and `wait`, and can open windows with the `lib/gui`
+  widget kit.
+- **Networking (Part 7).** virtio-net with MSI-X. The IPv4, ARP, ICMP,
+  UDP, DHCP, DNS and TCP stack runs in the kernel on CPU 0. User programs
+  get sockets (`abi/netcalls.swift`). `/bin/fetch` does HTTP and HTTPS,
+  and `nc`, `ping` and `host` are programs too. The kernel has `getrandom`.
+- **Libraries (Part 8).** Pure-Swift libraries in `lib/` (crypto and TLS 1.3,
+  X.509, URL, HTTP, inflate, HTML, CSS, fonts, layout, images, and the fetch
+  and gui kits). They build for user programs and for the host, and
+  `./run.sh --hosttest` runs their tests. See `lib/README.md`.
+
 ## Ground rules (carried over, plus new ones)
 
 - Kernel flags stay: `-mno-red-zone`, `-mcmodel=kernel`, no stack protector.
-- **No allocation in interrupt handlers.** IRQs only fill ring buffers. The
-  event loop does the work.
+- **No allocation in interrupt handlers.** IRQs only fill ring buffers, set
+  flags, or unpark a task (allocation-free). The event loop does the work.
+  A timer IRQ that interrupts ring 3 may switch tasks after its EOI.
 - **Heap objects and stacks live at lower-half addresses** (the C3
   tag-bit problem). The framebuffer stays a raw
   `UnsafeMutablePointer<UInt32>`. New task stacks come from the heap or
@@ -103,6 +123,15 @@ Two things stand in the way of a window manager:
   Swift). Where a heterogeneous list is unavoidable, such as the window
   list, use a class hierarchy (`class Window`, subclassed by apps). Embedded
   Swift supports class inheritance and dynamic dispatch.
+- **The kernel never dereferences a user pointer outside `copyIn`,
+  `copyOut` or `withUserBuffer`.** Those check the range against the page
+  tables and bracket the access with stac/clac.
+- **Nothing in the kernel trusts a value from a syscall.** Every fd,
+  length, count, flag and path is checked.
+- **Libraries in `lib/` stay within the Embedded Swift subset and never
+  trap on hostile input.** See `lib/README.md`.
+- **Network input is hostile.** A bad packet is dropped or fails with an
+  error. It never panics the kernel.
 
 ---
 

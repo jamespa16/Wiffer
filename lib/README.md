@@ -15,6 +15,9 @@ Swift, x86_64-unknown-none-elf) and into a host test binary.
 lib/<name>/
   *.swift          the library (no imports, no libc, no Foundation)
   DEPS             other libs it uses, whitespace-separated (optional)
+  SRCS             repo files outside lib/ it also compiles, e.g. the
+                   kernel's surface.swift (lib/gui only; optional)
+  USERSRCS         extra files for user programs only (lib/gui; optional)
   tests/*.swift    host tests: exactly one `func libTests(_ t: Tests)`
   fixtures/        test inputs, read from the repo root:
                    t.readFile("lib/<name>/fixtures/x.bin")
