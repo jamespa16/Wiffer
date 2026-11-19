@@ -31,6 +31,15 @@ final class App {
     private var running = true
     private var exitCode: Int32 = 0
     private var watched: [(fd: Int, events: Int16, handler: (Int16) -> Void)] = []
+    /// Phase 8H: fds that change from one wait to the next (a browser's
+    /// sockets), asked for before every wait; `onDynamicReady` gets them back
+    /// with revents filled in.
+    var dynamicWaits: (() -> [WaitFD])?
+    var onDynamicReady: (([WaitFD]) -> Void)?
+    /// ms until the program wants `onIdle` again (0: right away; nil: no limit).
+    var nextTimeout: (() -> Int?)?
+    /// Runs after every wait (events, watched fds and ticks handled first).
+    var onIdle: (() -> Void)?
 
     init?(title: String, width: Int, height: Int) {
         guard let font = GUIFont.spleen, let w = AppWindow.create(title: title, width: width, height: height) else {
@@ -98,8 +107,11 @@ final class App {
             var timeout = -1
             if let i = tickInterval { timeout = max(nextTickAt - now, 0); _ = i }
             if let d = ui.nextTick(now) { timeout = timeout < 0 ? d : min(timeout, d) }
+            if let d = nextTimeout?() { timeout = timeout < 0 ? max(d, 0) : min(timeout, max(d, 0)) }
             var fds = [WaitFD(fd: Int32(window.fd), events: WaitEvent.readable, revents: 0)]
             for w in watched { fds.append(WaitFD(fd: Int32(w.fd), events: w.events, revents: 0)) }
+            let dynamicStart = fds.count
+            if let d = dynamicWaits?() { fds += d.prefix(64 - fds.count) }
             let r = wait(&fds, timeoutMs: timeout)
             if r < 0 { return 1 } // killed
             if fds[0].revents & WaitEvent.readable != 0 {
@@ -114,12 +126,14 @@ final class App {
                 pending.removeAll()
             }
             for (i, w) in watched.enumerated() where fds[i + 1].revents != 0 { w.handler(fds[i + 1].revents) }
+            if dynamicStart < fds.count { onDynamicReady?(Array(fds[dynamicStart...])) }
             let t = Time.now
             if let i = tickInterval, t >= nextTickAt {
                 nextTickAt = t + i
                 onTick?(t)
             }
             ui.tick(t)
+            onIdle?()
         }
         window.close()
         return exitCode

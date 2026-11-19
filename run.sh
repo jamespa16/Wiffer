@@ -89,5 +89,5 @@ if (( ! NONET )); then
   EXTRA+=(-netdev user,id=n0 -device virtio-net-pci,netdev=n0,disable-legacy=off,disable-modern=on)
   (( PCAP )) && EXTRA+=(-object filter-dump,id=f0,netdev=n0,file=build/net.pcap)
 fi
-exec qemu-system-x86_64 -M q35 -m 256M -cpu max -smp "$SMP" -cdrom "$ISO" -boot d -no-reboot -no-shutdown \
+exec qemu-system-x86_64 -M q35 -m 1G -cpu max -smp "$SMP" -cdrom "$ISO" -boot d -no-reboot -no-shutdown \
   ${EXTRA[@]+"${EXTRA[@]}"} "${DISPLAY_ARGS[@]}"

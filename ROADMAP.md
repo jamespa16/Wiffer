@@ -1910,7 +1910,7 @@ user/libwiffer/gui/, user/{clock,sysmon,wintest}):
   mouse, drag, resize, close, kill while focused, flood, hung close, bad
   arguments from ring 3, frames and heap back to baseline), `gui_checks`
   in the harness, and host tests for lib/gui.
-- Known gaps: no mouse wheel (the field exists, always 0); no key-up or
+- Known gaps: no mouse wheel (the field exists, always 0; 8H added it); no key-up or
   repeat events; text is Latin-1 bytes; the clipboard is per-program; no
   scrollbar buttons; the main-thread stack is 1 MiB (UserLayout.stackSize).
 
@@ -3074,7 +3074,7 @@ output; PNG about 53 MP/s and JPEG about 62 MP/s (baseline) and 55 MP/s
 photos will be slower per pixel). All of this is plain Swift without
 SIMD.
 
-## Phase 8H: the browser app (`user/browse`)
+## Phase 8H: the browser app (`user/browse`) (done)
 
 - **Window:** an address bar (the 6F `TextField`), back, forward,
   reload/stop buttons, a page view, and a status line (loading progress,
@@ -3101,6 +3101,126 @@ SIMD.
   TLS failure (with the reason), and HTTP errors.
 - **Desktop:** a taskbar launcher entry, and `browse <url>` from a
   terminal.
+
+**Done** (user/browse, lib/browser; `./run.sh --hosttest browser`, `browse_checks`
+in the harness). Decisions and results:
+
+- **Split.** Everything that needs no OS is in **lib/browser** (DEPS url
+  http text inflate html css font image layout tls), host-tested with a
+  memory transport and scripted streams: address-bar normalization
+  (`browserNormalizeInput`: "example.com" -> https://example.com/, "/path"
+  -> file://, localhost and IP literals -> http://, words and text with spaces
+  -> a lite.duckduckgo.com search), `BrowserHistory` (scroll positions, POST
+  entries repeat their request, 100 entries), the built-in pages
+  (about:home with the 8I bookmarks, about:blank, error pages, view-source
+  with line numbers, text/plain in a `<pre>`, an image document, file://
+  directory listings), forms (`BrowserFormState`, entry list per the HTML
+  Standard incl. submitter, checkbox/radio groups, select/optgroup,
+  textarea CRLF, disabled fieldsets, `form=` owners, GET replaces the query,
+  POST urlencoded, reset, labels), the **loader** (`BrowserLoader`) and an
+  **HTTP/1.1 client** (`BrowserHTTPTransport`). /bin/browse (user/browse:
+  main.swift, filetransport.swift, sockstream.swift) is the window, input
+  routing, painting and the OS-facing transports.
+- **Loader.** One document at a time; `navigate`, `pump(now:)`,
+  `timeout(now:)` (for the event loop), `takeChanges()` (newPage, layout,
+  title, status, finished), `stop`, `setViewport`. The document is decoded
+  (charset from Content-Type, BOM, `<meta>`, via lib/text), parsed, and
+  every `<link rel=stylesheet>` (and its @imports, depth 4, media-filtered
+  when flattened) and every `<img src>` start at once. The first layout waits
+  for the CSS or `cssTimeout` (3 s); images decode as they arrive (32 MiB per
+  image, 192 MiB per page) and relayout in batches (250 ms, or at once when
+  nothing else is pending); background images found by layout are fetched
+  after it. Stop cancels every request and lays out what arrived. Error
+  documents are pages (`BrowserLoadError`: file not found, DNS failure,
+  connection refused/failed, timeout, TLS with TLSError's description, bad
+  response, redirect loop, unsupported scheme, too large, bad
+  Content-Encoding); an HTTP error with a body shows the server's page, an
+  empty one an "HTTP 404" page.
+- **Transports** are a class hierarchy (`BrowserTransport`: start, cancel,
+  poll, hasImmediateWork, nextDeadline, waitDescriptors). file:// reads
+  through the File API one request per poll (synchronous; the RAM fs answers
+  at once). http/https: `BrowserHTTPTransport` over `BrowserStream`s
+  (`BrowseSocketStream`: non-blocking `DNS.resolve`, polled on a 20 ms timer
+  while pending, non-blocking connect, reads/writes that never wait; TLS is
+  `BrowserTLSStream`, lib/tls's TLSClient over any stream, trust from
+  /etc/roots.der). Per-origin pool of 6 (lib/http's HTTPConnectionPool,
+  keep-alive, one retry when a reused connection turns out dead), cookies
+  (HTTPCookieJar), an in-memory HTTPCache with 304 revalidation (bodies
+  stored decoded), redirects (httpRedirectDecision, 10), gzip/deflate via
+  lib/inflate, 20 s connect / 30 s idle timeouts. **lib/fetch** (7F) is
+  not used: it drives one exchange at a time, and the browser needed the
+  pool, cookies and cache around the same sans-IO parts (lib/http, lib/tls),
+  so it reuses those directly. Options: `browse [-k] [--ca file]
+  [-r|--resolve name:ip] [url]` (for the harness's test CA).
+- **Event loop.** App (libwiffer) gained `dynamicWaits`/`onDynamicReady`
+  (fds that change per wait: the sockets), `nextTimeout` and `onIdle`; the
+  browser's loop is App.run's single `wait` on the window plus the sockets,
+  with a timeout from the loader (CSS deadline, relayout batch, DNS polling,
+  request timeouts) and the hover timer.
+- **UI.** Toolbar (back, forward, Reload/Stop, Home, the address bar as a
+  6F TextField), the page (LayoutEngine.paint straight into the window
+  buffer, a scrollbar you can click to page), a status line (progress, or the
+  link under the pointer). Window title = `<title>` (else the URL), 120
+  bytes. Keys: Ctrl-L, Alt-Left/Right and Backspace, F5/Ctrl-R, Escape
+  stops, arrows/PgUp/PgDn/Space/Shift-Space/Home/End; wheel 60 px a notch.
+  Text inputs and textareas are edited by a TextField laid over the control
+  (lib/gui TextField gained `secure` for passwords); Enter submits the form
+  (its default button). `<select>` opens an in-page list (mouse, wheel,
+  arrows, Enter, Escape). Hover (`setHover`) is applied 60 ms after the
+  pointer rests; if one restyle takes over 250 ms, hover effects are turned off
+  for that page. Fragment links on the same document only scroll (and push
+  history). The launcher menu lists browse (third row).
+- **Mouse wheel.** ps2.swift sends the IntelliMouse knock (F3 200, 100, 80),
+  reads the ID (3 = wheel), then MousePacketParser takes 4-byte packets
+  (`packetSize`, `MousePacket.dz`); the sample rate goes back to 100. A wheel
+  turn posts `Event.wheel(x:y:delta:)` (positive = up), the WM sends it to the
+  window under the pointer (or the one holding a grab), and UserWindow posts a
+  mouse WinEvent with `c` = delta and the current buttons (wheel records are
+  never coalesced as motion). QEMU: `mouse_move 0 0 1` is one notch up.
+- **Memory.** QEMU now has 1 GiB (run.sh, harness): pmm's bitmap and the
+  identity/HHDM maps already scaled; BIOS and UEFI both boot and pass. The
+  user runtime gained the libm calls the browser's libraries reach (floor,
+  round, trunc, fmod and the Float versions), written without calling Swift's
+  rounding (which would lower to the same symbols).
+- **Serial debug channel** (for 8I): every line starts `browse: `:
+  `navigate <url>`, `load <url>`, `page <display url> title '<t>'`,
+  `title '<t>'`, `done <url> in N ms (document, parse, first layout, style,
+  layout; k/n resources, bytes)`, `error <url>: <title>: <detail>`,
+  `scroll y=N`, `fragment #id y=N`, `click link <url>`, `submit GET|POST
+  <url>`, `select '<label>'`, `css timeout ...`, `subresource failed ...`,
+  `image <url>: can't decode`, `stopped`, `exit`.
+- **Harness** (`browse_checks`, its own desktop QEMU): rootfs /www
+  (index.html with a #C02080 box at page (0,0) 200x80, a style.css-coloured
+  line at y 80-100, a link block "Second page" at y 100-140 to page2.html
+  (#20A0C0 box), a form absolutely placed at (420,10), a 3000 px spacer and a
+  #2060E0 end block; deep.html, junk.html, green.png). Checks: IntelliMouse
+  on, title, pixels, stylesheet, link click, Alt-Left/Right, End/Home/PgDn,
+  wheel both ways, a form typed into and submitted, a missing file, hostile
+  pages (4 browsers alive), kill closes the window; then over the network:
+  http:// with a redirect, stylesheet and image (pixels checked), https://
+  with the test CA (`--ca /ca.der -r localhost:10.0.2.2`), an untrusted
+  certificate, a refused port and an unknown host (error pages), all
+  browsers alive. Command lines stay under 76 characters (the desktop
+  terminal's width truncates longer ones, and a lost `&` runs the browser in
+  the foreground).
+- **Timings** (QEMU TCG on Apple silicon, 4 CPUs): browser start (12 fonts,
+  5.3 MB, from the RAM fs) 90-300 ms; the /www test page 130-180 ms; a saved
+  Wikipedia article (Web_browser, 417 KB HTML + the 228 KB fixture CSS, from
+  /disk via file://) 3.0 s (parse 140 ms, style 1.7 s, layout 70 ms); the
+  live https://en.wikipedia.org/wiki/Web_browser 5.2 s (document 0.5 s,
+  first layout 2.1 s, 19 resources, 854 KB). Paging through it is
+  interactive (one full repaint per step).
+- **Memory use:** four browsers
+  (test page, deep, junk, missing) with the system 61 MiB of frames in use;
+  the live Wikipedia article about 23 MiB of process heap.
+- **Known gaps:** no SVG (Wikipedia's icons are missing), no WebP; no text
+  selection/copy in the page; textarea is edited as one line; no cursor
+  shapes (the WM has one sprite), so links show only in the status line; no
+  multipart/form-data (sent urlencoded) and no file inputs; `target` is
+  ignored; no favicon, no downloads, no tabs; hover restyles of big pages
+  are switched off; the cache and cookies live as long as the process;
+  protocol-relative URLs on file:// pages resolve to file:// hosts; style
+  for big pages is the slow step (1.7-2 s for Wikipedia under TCG).
 
 ## Phase 8I: tests and target sites
 

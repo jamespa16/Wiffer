@@ -58,6 +58,8 @@ final class WinChannel {
     private var shut = false
     /// Buttons of the last mouse event posted (a change is not "motion").
     private var lastButtons: UInt16 = 0
+    /// Buttons of the last mouse record (a wheel record repeats them).
+    var buttons: UInt16 { lastButtons }
     private(set) var dropped = 0
     private(set) var coalesced = 0
     private(set) var posted = 0
@@ -88,7 +90,7 @@ final class WinChannel {
         posted += 1
         var isMotion = false
         if e.kind == WinEventKind.mouse {
-            isMotion = e.mods == lastButtons
+            isMotion = e.mods == lastButtons && e.c == 0
             lastButtons = e.mods
         }
         // Coalesce into the tail: motion with motion, resize with resize.
@@ -299,6 +301,10 @@ final class UserWindow: Window {
         case .mouse(let x, let y, let b):
             channel.post(WinEvent(kind: WinEventKind.mouse, mods: UInt16(b & 7), a: Int32(truncatingIfNeeded: x),
                                   b: Int32(truncatingIfNeeded: y), c: 0))
+        case .wheel(let x, let y, let d):
+            // A mouse record with the wheel in c (6F's ABI), buttons as last sent.
+            channel.post(WinEvent(kind: WinEventKind.mouse, mods: channel.buttons, a: Int32(truncatingIfNeeded: x),
+                                  b: Int32(truncatingIfNeeded: y), c: Int32(truncatingIfNeeded: max(-100, min(100, d)))))
         case .focus(let on):
             channel.post(WinEvent(kind: WinEventKind.focus, mods: 0, a: on ? 1 : 0, b: 0, c: 0))
         case .resize(let w, let h):
@@ -577,7 +583,7 @@ func sysSysinfo(_ p: Process, _ out: UInt64) -> Int {
 // MARK: Launching programs from the desktop
 
 /// The programs the taskbar's "+ Apps" menu lists (in /bin).
-let guiApps = ["clock", "sysmon"]
+let guiApps = ["clock", "sysmon", "browse"]
 
 /// Run /bin/<name> as a background process (no console: its output goes to
 /// the kernel log; it is reaped when it exits). CPU 0.
