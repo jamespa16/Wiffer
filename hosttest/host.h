@@ -56,6 +56,21 @@ static inline FILE *host_popen(const char *cmd) { return popen(cmd, "r"); }
 static inline int host_pclose(FILE *f) { return pclose(f); }
 static inline int host_system(const char *cmd) { return system(cmd); }
 
+// Run fn(arg) on a thread with a `bytes` stack and wait for it (tests that
+// recursion stays within Wiffer's 512 KB user stack). -1 if it can't start.
+#include <pthread.h>
+static inline int host_run_with_stack(size_t bytes, void *(*fn)(void *), void *arg) {
+    pthread_attr_t a;
+    pthread_t t;
+    pthread_attr_init(&a);
+    pthread_attr_setstacksize(&a, bytes);
+    int r = pthread_create(&t, &a, fn, arg);
+    pthread_attr_destroy(&a);
+    if (r != 0) return -1;
+    pthread_join(t, NULL);
+    return 0;
+}
+
 // Runaway guard (hosttest/guard.c): a watchdog thread that fails the run
 // on a runaway allocation or a hang. Started by the runner's main().
 void host_guard_start(void);

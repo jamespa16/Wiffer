@@ -13,7 +13,7 @@
 //   - JSHeap reads `heapBytes` and `maxStringLength` (it refuses to build a
 //     longer string); the VM owns `maxCallDepth`, `maxNativeNesting`,
 //     `interruptInterval`; the parser owns `maxSourceBytes` and
-//     `maxASTDepth`; the RegExp engine owns `maxRegexSteps`.
+//     `maxASTDepth`, `maxParseStackBytes`, `maxASTHeight`, `maxASTNodes`; the RegExp engine owns `maxRegexSteps`.
 
 public struct JSLimits {
     /// Live bytes a heap (one realm) may hold after a full collection
@@ -36,6 +36,17 @@ public struct JSLimits {
     public var maxSourceBytes: Int
     /// Parser/compiler nesting depth (expressions, statements, scopes).
     public var maxASTDepth: Int
+    /// Stack bytes the parser may use below its entry point (frame sizes
+    /// vary by production and target: about 100 to 900 bytes per nesting
+    /// level on arm64 -Osize). Deeper input is a SyntaxError. The default
+    /// leaves half of Wiffer's 512 KiB user stack to the caller.
+    public var maxParseStackBytes: Int
+    /// Height of a finished AST (the parser checks it after parsing, so the
+    /// compiler may recurse once per level); left-associative chains such as
+    /// `a + b + c ...` add a level per operator without parser recursion.
+    public var maxASTHeight: Int
+    /// AST nodes per script.
+    public var maxASTNodes: Int
     /// Backtracking steps per regular expression match.
     public var maxRegexSteps: Int
     /// The VM checks its interrupt budget at least every this many
@@ -50,6 +61,9 @@ public struct JSLimits {
                 maxNativeNesting: Int = 64,
                 maxSourceBytes: Int = 64 << 20,
                 maxASTDepth: Int = 1_000,
+                maxParseStackBytes: Int = 256 << 10,
+                maxASTHeight: Int = 2_000,
+                maxASTNodes: Int = 20_000_000,
                 maxRegexSteps: Int = 10_000_000,
                 interruptInterval: Int = 10_000) {
         self.heapBytes = heapBytes
@@ -60,6 +74,9 @@ public struct JSLimits {
         self.maxNativeNesting = maxNativeNesting
         self.maxSourceBytes = maxSourceBytes
         self.maxASTDepth = maxASTDepth
+        self.maxParseStackBytes = maxParseStackBytes
+        self.maxASTHeight = maxASTHeight
+        self.maxASTNodes = maxASTNodes
         self.maxRegexSteps = maxRegexSteps
         self.interruptInterval = interruptInterval
     }
@@ -68,7 +85,8 @@ public struct JSLimits {
     public static var small: JSLimits {
         JSLimits(heapBytes: 16 << 20, maxStringLength: 1 << 20, maxDenseArrayLength: 1 << 16,
                  maxArrayLength: 1 << 20, maxCallDepth: 500,
-                 maxNativeNesting: 16, maxSourceBytes: 1 << 20, maxASTDepth: 200,
+                 maxNativeNesting: 16, maxSourceBytes: 1 << 20, maxASTDepth: 200, maxASTHeight: 400,
+                 maxASTNodes: 1 << 20,
                  maxRegexSteps: 100_000, interruptInterval: 1_000)
     }
 }
