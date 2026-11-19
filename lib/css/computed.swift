@@ -37,6 +37,12 @@ struct CSSComputedStyle {
     /// The url() as given (or resolved by the parser's resolveURL); nil = none.
     var backgroundImage: String? = nil
     var backgroundRepeat = CSSBackgroundRepeat.repeat
+    var backgroundSize = CSSBgSize()
+    var backgroundPosition = CSSBgPosition()
+
+    // SVG presentation properties and CSS masks (svgprops.swift)
+    var svg = CSSSVGStyle()
+    var mask = CSSMaskStyle()
 
     // Text
     var fontFamily: [String] = ["serif"]
@@ -118,6 +124,7 @@ struct CSSComputedStyle {
         visibility = p.visibility; borderCollapse = p.borderCollapse
         borderSpacingH = p.borderSpacingH; borderSpacingV = p.borderSpacingV; cursor = p.cursor
         customProperties = p.customProperties
+        svg.inherit(from: p.svg)
     }
 
     mutating func copyProperty(_ prop: CSSProp, from s: CSSComputedStyle) {
@@ -195,6 +202,10 @@ struct CSSComputedStyle {
         case .tableLayout: tableLayout = s.tableLayout
         case .content: contentKind = s.contentKind; contentItems = s.contentItems
         case .cursor: cursor = s.cursor
+        case .fill, .fillOpacity, .fillRule, .stroke, .strokeWidth, .strokeOpacity, .strokeLinecap, .strokeLinejoin,
+             .strokeMiterlimit, .strokeDasharray, .strokeDashoffset, .clipRule, .stopColor, .stopOpacity, .clipPath,
+             .maskImage, .maskMode, .maskRepeat, .maskSize, .maskPosition, .backgroundSize, .backgroundPosition:
+            copySVGProperty(prop, from: s)
         case .custom: break
         }
     }
@@ -396,6 +407,10 @@ struct CSSComputedStyle {
             default: break
             }
         case .cursor: if case .ident(let s) = v { cursor = s }
+        case .fill, .fillOpacity, .fillRule, .stroke, .strokeWidth, .strokeOpacity, .strokeLinecap, .strokeLinejoin,
+             .strokeMiterlimit, .strokeDasharray, .strokeDashoffset, .clipRule, .stopColor, .stopOpacity, .clipPath,
+             .maskImage, .maskMode, .maskRepeat, .maskSize, .maskPosition, .backgroundSize, .backgroundPosition:
+            applySVG(prop, v, ctx: ctx)
         case .custom: break
         }
     }

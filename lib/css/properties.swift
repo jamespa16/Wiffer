@@ -20,6 +20,10 @@ enum CSSProp: UInt8 {
     case flexDirection, flexWrap, flexGrow, flexShrink, flexBasis
     case justifyContent, alignItems, alignSelf, rowGap, columnGap
     case borderCollapse, borderSpacingH, borderSpacingV, tableLayout, content, cursor
+    // SVG, masks, background geometry (svgprops.swift)
+    case fill, fillOpacity, fillRule, stroke, strokeWidth, strokeOpacity, strokeLinecap, strokeLinejoin
+    case strokeMiterlimit, strokeDasharray, strokeDashoffset, clipRule, stopColor, stopOpacity, clipPath
+    case maskImage, maskMode, maskRepeat, maskSize, maskPosition, backgroundSize, backgroundPosition
     case custom
 }
 
@@ -48,7 +52,7 @@ func cssIsInherited(_ p: CSSProp) -> Bool {
          .textTransform, .whiteSpace, .listStyleType, .listStylePosition, .visibility, .borderCollapse,
          .borderSpacingH, .borderSpacingV, .cursor:
         return true
-    default: return false
+    default: return cssIsSVGInherited(p)
     }
 }
 
@@ -79,6 +83,13 @@ private let cssLonghandNames: [String: CSSProp] = [
     "flex-shrink": .flexShrink, "flex-basis": .flexBasis, "justify-content": .justifyContent,
     "align-items": .alignItems, "align-self": .alignSelf, "row-gap": .rowGap, "column-gap": .columnGap,
     "border-collapse": .borderCollapse, "table-layout": .tableLayout, "content": .content, "cursor": .cursor,
+    "fill": .fill, "fill-opacity": .fillOpacity, "fill-rule": .fillRule, "stroke": .stroke,
+    "stroke-width": .strokeWidth, "stroke-opacity": .strokeOpacity, "stroke-linecap": .strokeLinecap,
+    "stroke-linejoin": .strokeLinejoin, "stroke-miterlimit": .strokeMiterlimit,
+    "stroke-dasharray": .strokeDasharray, "stroke-dashoffset": .strokeDashoffset, "clip-rule": .clipRule,
+    "stop-color": .stopColor, "stop-opacity": .stopOpacity, "clip-path": .clipPath,
+    "mask-image": .maskImage, "mask-mode": .maskMode, "mask-repeat": .maskRepeat, "mask-size": .maskSize,
+    "mask-position": .maskPosition, "background-size": .backgroundSize, "background-position": .backgroundPosition,
 ]
 
 private let cssAliases: [String: String] = [
@@ -92,6 +103,9 @@ private let cssAliases: [String: String] = [
     "inset-inline-start": "left", "inset-inline-end": "right", "inset-block-start": "top",
     "inset-block-end": "bottom", "grid-gap": "gap", "grid-row-gap": "row-gap", "grid-column-gap": "column-gap",
     "-webkit-text-decoration": "text-decoration",
+    "-webkit-mask-image": "mask-image", "-webkit-mask-repeat": "mask-repeat", "-webkit-mask-size": "mask-size",
+    "-webkit-mask-position": "mask-position", "-webkit-mask": "mask", "-webkit-background-size": "background-size",
+    "-webkit-clip-path": "clip-path", "-webkit-mask-source-type": "mask-mode",
 ]
 
 private let cssShorthands: [String: [CSSProp]] = [
@@ -110,7 +124,8 @@ private let cssShorthands: [String: [CSSProp]] = [
     "border-right": [.borderRightWidth, .borderRightStyle, .borderRightColor],
     "border-bottom": [.borderBottomWidth, .borderBottomStyle, .borderBottomColor],
     "border-left": [.borderLeftWidth, .borderLeftStyle, .borderLeftColor],
-    "background": [.backgroundColor, .backgroundImage, .backgroundRepeat],
+    "background": [.backgroundColor, .backgroundImage, .backgroundRepeat, .backgroundPosition, .backgroundSize],
+    "mask": [.maskImage, .maskRepeat, .maskMode, .maskPosition, .maskSize],
     "font": [.fontStyle, .fontWeight, .fontSize, .lineHeight, .fontFamily],
     "list-style": [.listStyleType, .listStylePosition],
     "overflow": [.overflowX, .overflowY],
@@ -471,7 +486,7 @@ func cssParseLonghand(_ p: CSSProp, _ c: [CSSComponent], resolveURL: ((String) -
     case .cursor:
         for item in c { if let id = cssIdent(item) { return .ident(id) } }
         return nil
-    default: return nil
+    default: return cssParseSVGLonghand(p, c, resolveURL: resolveURL)
     }
 }
 
@@ -533,7 +548,21 @@ private func cssParseBackground(_ comps: [CSSComponent], _ url: ((String) -> Str
     // Layers are comma separated; only the last (bottom) layer's color counts, the
     // first image wins. Everything else (position, size, attachment, box) is skipped.
     var sawComma = false
+    var pos: [CSSComponent] = [], size: [CSSComponent] = []
+    var afterSlash = false
     for item in comps {
+        if !sawComma {
+            switch item {
+            case .token(.delim(0x2f)): afterSlash = true
+            case .token(.dimension), .token(.percentage), .token(.number): if afterSlash { size.append(item) } else { pos.append(item) }
+            case .function(let n, _) where cssLower(n) == "calc": if afterSlash { size.append(item) } else { pos.append(item) }
+            case .token(.ident(let s)):
+                let l = cssLower(s)
+                if ["left", "right", "top", "bottom", "center"].contains(l) { pos.append(item) }
+                else if afterSlash && (l == "auto" || l == "cover" || l == "contain") { size.append(item) }
+            default: break
+            }
+        }
         switch item {
         case .token(.comma): sawComma = true
         case .token(.ident(let s)):
@@ -562,7 +591,10 @@ private func cssParseBackground(_ comps: [CSSComponent], _ url: ((String) -> Str
     func mk(_ p: CSSProp, _ v: CSSValue?) -> CSSDeclaration {
         v.map { CSSDeclaration(prop: p, kind: .value, value: $0) } ?? CSSDeclaration(prop: p, kind: .initial)
     }
-    return [mk(.backgroundColor, color), mk(.backgroundImage, image), mk(.backgroundRepeat, rep)]
+    let pv = pos.isEmpty ? nil : cssParseLonghand(.backgroundPosition, pos, resolveURL: nil)
+    let sv = size.isEmpty ? nil : cssParseLonghand(.backgroundSize, size, resolveURL: nil)
+    return [mk(.backgroundColor, color), mk(.backgroundImage, image), mk(.backgroundRepeat, rep),
+            mk(.backgroundPosition, pv), mk(.backgroundSize, sv)]
 }
 
 private func cssParseFont(_ comps: [CSSComponent]) -> [CSSDeclaration]? {
@@ -716,6 +748,7 @@ func cssExpandDeclaration(_ name: String, _ comps: [CSSComponent], resolveURL: (
     case "border-bottom": return cssBorderSide(.borderBottomWidth, .borderBottomStyle, .borderBottomColor, comps)
     case "border-left": return cssBorderSide(.borderLeftWidth, .borderLeftStyle, .borderLeftColor, comps)
     case "background": return cssParseBackground(comps, resolveURL)
+    case "mask": return cssParseMaskShorthand(comps, resolveURL)
     case "font": return cssParseFont(comps)
     case "list-style": return cssParseListStyle(comps)
     case "overflow": return cssParseOverflow(comps)
