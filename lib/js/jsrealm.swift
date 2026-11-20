@@ -111,8 +111,23 @@ public enum JSIntrinsic: Int {
     case syntaxErrorConstructor, evalErrorConstructor, uriErrorConstructor, aggregateErrorConstructor
     case regExpConstructor, dateConstructor
     case eval, arrayValues, stringIterator, throwTypeError
+    // Phase 9E (jspromise.swift, jsgenerator.swift).
+    case promisePrototype, promiseConstructor, generatorPrototype, asyncGeneratorPrototype
+    case generatorFunctionPrototype, asyncFunctionPrototype, asyncGeneratorFunctionPrototype
+    case asyncIteratorPrototype, asyncFromSyncIteratorPrototype
     case symbolRegistry, regExpExecFn, regExpStringIteratorPrototype
     case arrayJoinStack, mathObject
+    // Phase 9E
+    case mapPrototype, setPrototype, mapConstructor, setConstructor, mapIteratorPrototype, setIteratorPrototype
+    case weakMapPrototype, weakSetPrototype, weakRefPrototype, finalizationRegistryPrototype
+    case arrayBufferPrototype, arrayBufferConstructor, dataViewPrototype
+    case typedArrayPrototype, typedArrayConstructor, typedArrayValues
+    case int8ArrayPrototype, uint8ArrayPrototype, uint8ClampedArrayPrototype, int16ArrayPrototype
+    case uint16ArrayPrototype, int32ArrayPrototype, uint32ArrayPrototype, float32ArrayPrototype
+    case float64ArrayPrototype, float16ArrayPrototype
+    case int8ArrayConstructor, uint8ArrayConstructor, uint8ClampedArrayConstructor, int16ArrayConstructor
+    case uint16ArrayConstructor, int32ArrayConstructor, uint32ArrayConstructor, float32ArrayConstructor
+    case float64ArrayConstructor, float16ArrayConstructor
     case count
 }
 
@@ -129,6 +144,9 @@ struct JSFrame {
     var callerEnv: JSValue
     var mode: UInt8
     var entry: Bool
+    /// The generator / async state object of a suspendable frame
+    /// (jsgenerator.swift), else undefined.
+    var gen: JSValue = .undefined
 }
 
 enum JSFrameMode {
@@ -137,6 +155,8 @@ enum JSFrameMode {
     static let construct: UInt8 = 1
     /// A setter call: the result is dropped (the assigned value is below).
     static let discard: UInt8 = 2
+    /// A getter run for a method call (`o.m()`): [o] -> [result o].
+    static let getterForCall: UInt8 = 3
 }
 
 /// An uncaught exception.
@@ -188,6 +208,9 @@ public final class JSRealm {
     var scriptCount = 0
     var callNativeIndex = -1
     var applyNativeIndex = -1
+    /// Phase 9E state: the job queue, promise hooks, generator natives,
+    /// modules (jspromise.swift, jsgenerator.swift, jsmodule.swift).
+    let es = JSESState()
 
     /// print(): nil collects lines in `output`.
     public var printHandler: ((String) -> Void)? = nil
@@ -202,6 +225,9 @@ public final class JSRealm {
     /// Finalizer for host objects (embedder; called during GC sweep, must
     /// not touch the heap).
     public var hostFinalizer: ((JSHandle, Int64) -> Void)? = nil
+    /// Phase 9E state: Map/Set indexes, weak tables, finalization
+    /// registries, exotic-object handlers (jsexotic.swift).
+    public let tables = JSRealmTables()
 
     init(runtime: JSRuntime) {
         self.runtime = runtime
@@ -230,6 +256,10 @@ public final class JSRealm {
         jsInstallRegExp(self)
         jsInstallSymbol(self)
         jsInstallDate(self)
+        jsInstallES2015Runtime(self)
+        jsInstallPromise(self)
+        jsInstallGenerators(self)
+        jsInstallModules(self)
     }
 
     func markRoots(_ h: JSHeap) {
@@ -237,8 +267,9 @@ public final class JSRealm {
         while i < sp { h.markValue(stack[i]); i += 1 }
         for f in frames {
             h.markValue(f.callee); h.markValue(f.this); h.markValue(f.newTarget)
-            h.markValue(f.home); h.markValue(f.callerEnv)
+            h.markValue(f.home); h.markValue(f.callerEnv); h.markValue(f.gen)
         }
+        es.mark(h)
         h.markValue(env)
         h.markValue(exception)
         h.markValue(global)
@@ -404,6 +435,7 @@ public final class JSRealm {
 
     /// A closure over `env` for compiled code.
     func makeClosure(_ code: JSCode, env: JSValue, home: JSValue = .undefined) -> JSValue {
+        if code.genKind != 0 { return makeGeneratorClosure(code, env: env, home: home) }
         var flags: JSObjectFlags = [.extensible, .callable]
         if code.isConstructor { flags.insert(.constructor) }
         if code.kind == .classConstructor || code.kind == .derivedConstructor { flags.insert(.classConstructor) }

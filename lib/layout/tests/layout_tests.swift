@@ -61,7 +61,7 @@ private func writePPM(_ e: LayoutEngine, _ path: String, width: Int, height: Int
 }
 
 let layoutFixtureNames = ["block", "margins", "inline", "whitespace", "valign", "floats", "position", "tables",
-                          "flex", "lists", "replaced", "pseudo", "hints", "overflow", "hn"]
+                          "flex", "lists", "replaced", "pseudo", "hints", "overflow", "shadow", "shadowstyle", "hn"]
 let layoutFixtureImages: [String: (Int, Int)] = ["a.png": (40, 30), "b.png": (100, 50), "wide.png": (600, 200), "tall.png": (20, 80)]
 
 private func firstDiff(_ a: String, _ b: String) -> String {
@@ -100,6 +100,24 @@ private func fixtureTests(_ t: Tests) {
             _ = hostWriteFile("build/hosttest/layout-\(name).actual", Array(got.utf8))
             t.check(false, "\(name) dump", firstDiff(got, w))
         } else { t.check(true, name) }
+    }
+
+    // The web harness's declarative shadow DOM page paints exactly like its light-DOM twin.
+    if let a = t.readFileIfPresent("tests/web/layout/shadow.html"), let b = t.readFileIfPresent("tests/web/layout/shadow-light.html") {
+        func paint(_ h: [UInt8]) -> [UInt32] {
+            let e = LayoutEngine(document: htmlParse(h), text: layoutFonts(t), viewportWidth: 400, viewportHeight: 300)
+            e.update()
+            var px = [UInt32](repeating: 0, count: 400 * 300)
+            px.withUnsafeMutableBufferPointer { p in e.paint(into: p.baseAddress!, stride: 400, width: 400, height: 300, scrollX: 0, scrollY: 0) }
+            return px
+        }
+        let pa = paint(a), pb = paint(b)
+        var diff = 0
+        for i in 0..<pa.count where pa[i] != pb[i] { diff += 1 }
+        t.check(diff == 0, "declarative shadow DOM page paints like its light-DOM twin", "\(diff) pixels differ")
+        for (x, y, want) in [(12, 12, 0x802040), (300, 25, 0x2060E0), (32, 57, 0xE0A020)] as [(Int, Int, UInt32)] {
+            t.check(pa[y * 400 + x] & 0xffffff == want, "shadow page pixel (\(x),\(y))", hex([UInt8(pa[y * 400 + x] >> 16 & 255), UInt8(pa[y * 400 + x] >> 8 & 255), UInt8(pa[y * 400 + x] & 255)]))
+        }
     }
 }
 

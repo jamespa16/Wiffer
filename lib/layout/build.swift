@@ -3,6 +3,12 @@
 // fix-ups (inline runs among blocks, block-in-inline, table structure, flex
 // items). Recursion is one level per element and is bounded by
 // LayoutLimits.maxDepth; deeper elements generate no boxes.
+//
+// The builder walks the flat tree (Shadow DOM): a shadow host's boxes come
+// from its shadow root's children, a slot (display: contents by default)
+// holds its assigned nodes, or its own children as fallback when nothing is
+// assigned, and a host's light children that no slot takes get no boxes.
+// Styles inherit along the same tree.
 
 final class LayoutBuilder {
     let resolver: CSSStyleResolver
@@ -153,7 +159,8 @@ final class LayoutBuilder {
         // List numbering (ol start, li value).
         var counter = 1
         if node.name == "ol", let s = node.attribute("start"), let v = layoutParseInt(s) { counter = v }
-        for c in node.children {
+        // The flat tree: a host's shadow root's children, a slot's assigned nodes.
+        for c in node.flatTreeChildren {
             if boxCount >= limits.maxBoxes { break }
             switch c.kind {
             case .element:

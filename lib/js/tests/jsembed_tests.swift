@@ -71,6 +71,12 @@ let jsInspectCases: [(String, String)] = [
     ("new Error('boom').message", "'boom'"),
     ("new Date(0)", "1970-01-01T00:00:00.000Z"),
     ("/a+b/gi", "/a+b/gi"),
+    ("new Map([[1, 'a'], ['k', {x: 1}]])", "Map(2) { 1 => 'a', 'k' => { x: 1 } }"),
+    ("new Set([1, 2, 'x'])", "Set(3) { 1, 2, 'x' }"),
+    ("new Map()", "Map(0) {}"),
+    ("Promise.resolve(4)", "Promise { 4 }"),
+    ("new Promise(() => {})", "Promise { <pending> }"),
+    ("var p = Promise.reject(1); p.catch(() => {}); p", "Promise { <rejected> 1 }"),
     ("new Number(3)", "[Number: 3]"),
     ("new String('s')", "[String: 's']"),
     ("[1.5, 'a', null, undefined]", "[ 1.5, 'a', null, undefined ]"),
@@ -127,7 +133,7 @@ final class JSLoopClock {
     var now = 0.0
 }
 
-func jsLoopRun(_ src: String, steps: [Double] = [], gc: Bool = false) -> [String] {
+func jsLoopRun(_ src: String, steps: [Double] = [], gc: Bool = false, rejections: Bool = false) -> [String] {
     let rt = JSRuntime(limits: JSLimits.small)
     let realm = rt.makeRealm()
     realm.heap.gcEveryAllocation = gc
@@ -136,6 +142,7 @@ func jsLoopRun(_ src: String, steps: [Double] = [], gc: Bool = false) -> [String
     var lines: [String] = []
     jsInstallConsole(realm, now: { clock.now }) { _, text in lines.append(text) }
     loop.reportException = { e in lines.append("!" + e.message) }
+    loop.reportRejection = { text in if rejections { lines.append(text.hasPrefix("Uncaught (in promise) Error: nope") ? "Uncaught (in promise) Error: nope" : text) } }
     switch realm.evaluate(source: src, name: "t") {
     case .exception(let e): lines.append("!" + e.message)
     default: break
@@ -190,6 +197,13 @@ func jsEventLoopTests(_ t: Tests) {
     var ts = ""
     for x in times { ts += "\(x) " }
     t.check(times == [0, 0, 0, 0, 0, 4, 8, 12, 16], "nested timers clamp to 4 ms after five levels", ts)
+    // Promises: jobs drain in the checkpoint, after the sync code and before timers.
+    jsEqLines(t, jsLoopRun("setTimeout(() => console.log('timer'), 0); Promise.resolve(1).then(v => console.log('then' + v)); (async () => { await null; console.log('async') })(); console.log('sync')"),
+              ["sync", "then1", "async", "timer"], "promise jobs run at the checkpoint")
+    jsEqLines(t, jsLoopRun("Promise.reject(new Error('nope')); Promise.reject(7).catch(() => {})", rejections: true),
+              ["Uncaught (in promise) Error: nope"], "unhandled rejections are reported")
+    jsEqLines(t, jsLoopRun("var w = new WeakRef({}); queueMicrotask(() => console.log(typeof w.deref()))"),
+              ["object"], "WeakRef and queueMicrotask")
     // Timers survive GC.
     jsEqLines(t, jsLoopRun("var f = (function (x) { return () => console.log(x.v) })({v: 'kept'}); setTimeout(f, 5); f = null; setTimeout(() => console.log('x'), 6)", gc: true),
             ["kept", "x"], "callbacks are GC roots")

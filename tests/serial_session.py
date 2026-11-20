@@ -1550,6 +1550,11 @@ def js_checks(s: Session, timeout: float) -> int:
     order = re.findall(r"^(sync|micro|t0-first|t0-second|t50|t200|tick\d|done)\r?$", got, re.M)
     check(order == ["sync", "micro", "t0-first", "t0-second", "t50", "tick1", "t200", "tick2", "tick3", "done"]
           and "never" not in got, "timer sequence runs in due order", repr(got))
+    got = s.command("js /js/mod.mjs", 30.0)
+    check("module dep 144\r\nawaited\r\n" in got and "Uncaught (in promise) Error: unhandled on purpose" in got,
+          "an ES module with an import, top-level await and an unhandled rejection", repr(got))
+    got = s.command("js -e Promise.resolve(5).then(v=>console.log('p'+v));console.log('s')", 30.0)
+    check("s\r\np5\r\n" in got, "promise jobs run after the script", repr(got))
     got = s.command("js /js/nosuch.js", 30.0)
     check("js: /js/nosuch.js: no such file" in got, "a missing file is reported", repr(got))
     got = s.command("js -e throw new TypeError('bad')", 30.0)
@@ -2622,6 +2627,33 @@ def web_checks_run(s, timeout, check, find, browsers, kill_all, srv, tsrv, base,
             check(px == bytes.fromhex(want), f"{path}: pixel ({x},{y}) is #{want}", px.hex() if px else "no window")
         kill_all()
     print(f"harness: {len(pages)} layout pages in {time.time() - t0:.0f} s")
+
+    # ---- Declarative shadow DOM (Phase 9I), with no script engine: the page
+    # renders pixel for pixel like its light-DOM equivalent.
+    def page_region(path, title, want_pixels, w=360, h=200):
+        got, found = load(f"{base}/{path}")
+        ok = found and f"title '{title}'" in got and "browse: error" not in got
+        if not check(ok, f"{path} loads with title '{title}'", got[-300:]):
+            kill_all()
+            return None
+        time.sleep(0.8)
+        for x, y, want in want_pixels:
+            px = pixel_in_page(title, x, y, want)
+            check(px == bytes.fromhex(want), f"{path}: pixel ({x},{y}) is #{want}", px.hex() if px else "no window")
+        o = origin(title)
+        region = None
+        if o:
+            s.screendump(dump)
+            pw, ph, pix = read_ppm(dump)
+            region = [pixel(pw, pix, o[0] + x, o[1] + y) for y in range(0, h, 2) for x in range(0, w, 2)]
+        kill_all()
+        return region
+    dsd_pixels = [(12, 12, "802040"), (300, 25, "2060E0"), (32, 57, "E0A020")]
+    shadow = page_region("layout/shadow.html", "Layout: shadow", dsd_pixels)
+    light = page_region("layout/shadow-light.html", "Layout: shadow light", dsd_pixels)
+    if shadow is not None and light is not None:
+        diff = sum(1 for a, b in zip(shadow, light) if a != b)
+        check(diff == 0, "declarative shadow DOM page renders like its light-DOM twin (JS off)", f"{diff} of {len(shadow)} sampled pixels differ")
 
     # ---- Images: PNG with alpha, JPEG baseline and progressive, GIF.
     got, found = load(f"{base}/images.html")

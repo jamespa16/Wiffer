@@ -23,9 +23,10 @@
 // above 5 (nested timeouts, or an interval's repeats) waits at least 4 ms.
 // Callbacks run as tasks in (due time, creation order) order.
 //
-// The microtask checkpoint is `performMicrotaskCheckpoint()`: it drains the
-// queue behind queueMicrotask and, when the VM's Promise job queue exists
-// (9E), that too (the single place to wire it).
+// The microtask checkpoint is `performMicrotaskCheckpoint()`: it runs the
+// realm's job queue (Promise reactions, await, queueMicrotask), reports
+// unhandled rejections through `reportRejection`, and clears the kept
+// objects (WeakRef). FinalizationRegistry cleanups run as their own task.
 
 public final class JSEventLoop {
     public unowned(unsafe) let realm: JSRealm
@@ -48,9 +49,8 @@ public final class JSEventLoop {
 
     var tasks: [() -> Void] = []
     var taskHead = 0
-    var microtasks: [JSPersistent] = []
-    var microHead = 0
     var inCheckpoint = false
+    var cleanupNeeded = false
 
     /// Timer limits: a page may not hold more than this many pending timers.
     public var maxTimers = 100_000
@@ -58,6 +58,9 @@ public final class JSEventLoop {
     public var beginTask: (() -> Void)? = nil
     public var reportException: ((JSUncaughtException) -> Void)? = nil
     public var reportTermination: ((JSTerminationReason) -> Void)? = nil
+    /// An unhandled promise rejection: the text for the console
+    /// ("Uncaught (in promise) ...").
+    public var reportRejection: ((String) -> Void)? = nil
 
     public init(realm: JSRealm, clock: @escaping () -> Double) {
         self.realm = realm
@@ -105,37 +108,17 @@ public final class JSEventLoop {
 
     // MARK: Microtasks
 
-    /// Drain the microtask queue. After a termination the queue is dropped.
+    /// Run the job queue to empty (a microtask checkpoint), then clear the
+    /// kept objects. After a termination the remaining jobs are dropped.
     public func performMicrotaskCheckpoint() {
         if inCheckpoint { return }
         inCheckpoint = true
         defer { inCheckpoint = false }
-        var guardCount = 0
-        while microHead < microtasks.count && guardCount < 10_000_000 {
-            guardCount += 1
-            let p = microtasks[microHead]
-            microHead += 1
-            let f = realm.heap[p]
-            realm.heap.release(p)
-            beginMicrotask()
-            let c = realm.runCallback(f, this: .undefined, args: [])
-            handle(c)
-            if case .terminated = c { dropMicrotasks() }
-        }
-        dropMicrotasks()
-        drainVMJobs()
+        beginTask?()
+        let c = realm.runJobs()
+        handle(c)
+        realm.clearKeptObjects()
     }
-
-    func beginMicrotask() {}
-
-    func dropMicrotasks() {
-        for i in microHead..<microtasks.count { realm.heap.release(microtasks[i]) }
-        microtasks.removeAll(keepingCapacity: true)
-        microHead = 0
-    }
-
-    /// 9E: run the VM's Promise jobs here (and report unhandled rejections).
-    func drainVMJobs() {}
 
     // MARK: Timers
 
@@ -174,7 +157,8 @@ public final class JSEventLoop {
         while taskHead < tasks.count { taskHead += 1 }
         tasks.removeAll()
         taskHead = 0
-        dropMicrotasks()
+        realm.es.jobs = []
+        realm.es.jobHead = 0
     }
 
     public var pendingTimerCount: Int { timers.count }
@@ -191,12 +175,12 @@ public final class JSEventLoop {
 
     // MARK: Running
 
-    public var hasPendingWork: Bool { taskHead < tasks.count || microHead < microtasks.count || !timers.isEmpty }
+    public var hasPendingWork: Bool { taskHead < tasks.count || realm.hasPendingJobs || cleanupNeeded || !timers.isEmpty }
 
     /// Milliseconds until something is due: nil when idle, 0 when a task
     /// is ready now.
     public func nextDeadline() -> Double? {
-        if taskHead < tasks.count || microHead < microtasks.count { return 0 }
+        if taskHead < tasks.count || realm.hasPendingJobs || cleanupNeeded { return 0 }
         guard let i = earliestTimer() else { return nil }
         return max(0, timers[i].due - clock())
     }
@@ -205,7 +189,17 @@ public final class JSEventLoop {
     /// Returns false when nothing was ready.
     @discardableResult
     public func runOneTask() -> Bool {
-        if microHead < microtasks.count { performMicrotaskCheckpoint(); return true }
+        if realm.hasPendingJobs { performMicrotaskCheckpoint(); return true }
+        if cleanupNeeded {
+            cleanupNeeded = false
+            beginTask?()
+            do throws(JSThrow) { try realm.runFinalizationCleanups() } catch {
+                if realm.isTerminating { handle(.terminated(realm.heap.termination ?? .interrupted)); realm.heap.clearTermination() }
+                else { reportException?(realm.uncaught()); realm.exception = .undefined }
+            }
+            performMicrotaskCheckpoint()
+            return true
+        }
         if taskHead < tasks.count {
             let t = tasks[taskHead]
             taskHead += 1
@@ -282,13 +276,21 @@ public final class JSEventLoop {
         }
         r.defineMethod(g, "clearTimeout", length: 1, clear)
         r.defineMethod(g, "clearInterval", length: 1, clear)
-        r.defineMethod(g, "queueMicrotask", length: 1) { [self] (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        r.defineMethod(g, "queueMicrotask", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             let f = args[0]
             if !realm.heap.isCallable(f) { throw realm.throwTypeError("queueMicrotask: argument is not a function") }
-            if self.microtasks.count - self.microHead >= self.maxTimers { throw realm.throwRangeError("too many microtasks") }
-            self.microtasks.append(realm.heap.retain(f))
+            realm.enqueueJob(f, args: [])
             return .undefined
         }
+        r.jobErrorHandler = { [self] (realm: JSRealm, e: JSUncaughtException) in self.reportException?(e) }
+        r.unhandledRejectionHandler = { [self] (realm: JSRealm, promise: JSValue, reason: JSValue) in
+            let d = realm.heap.rootDepth
+            _ = realm.heap.root(reason)
+            let text = jsInspect(realm, reason, JSInspectOptions())
+            realm.heap.popRoots(to: d)
+            self.reportRejection?("Uncaught (in promise) " + text)
+        }
+        r.tables.onFinalizationCleanupNeeded = { [self] in self.cleanupNeeded = true }
     }
 
     func jsSetTimer(_ realm: JSRealm, _ args: JSArgs, repeating: Bool) throws(JSThrow) -> JSValue {

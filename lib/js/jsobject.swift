@@ -55,12 +55,28 @@
 //   and toPrimitiveString(v) -> JSValue? (nil for objects/symbols: the VM's
 //   ToPrimitive / TypeError).
 //   Store failures from the heap cap (termination) also return false.
+//
+// Exotic objects (Phase 9E; the full contract is at the top of
+// jsexotic.swift). Arrays, String wrappers and typed arrays (integer-
+// indexed exotic objects, kind .typedArray, whose elements live in an
+// ArrayBuffer byte store, see jsbuiltins_typedarray.swift) are handled
+// right here. Objects with flag .exotic (Proxy, host objects with exotic
+// hooks) need the realm, because their internal methods can run JS:
+// getProperty / setProperty stop at the first such object on the chain
+// and return .exotic(obj) for the realm to finish (JSRealm.objGet /
+// objSet). setProperty also returns .exotic when the receiver is exotic or
+// a typed array element store needs ToNumber of an object. The other heap
+// methods treat a Proxy as its target (no traps run) and a host object as
+// ordinary: code that may see arbitrary objects should call the realm's
+// obj* methods (jsexotic.swift), which run traps and hooks.
 
 public enum JSObjectKind: UInt8 {
     case free, dead, ordinary, array, function, boundFunction, nativeFunction, arguments, error,
          booleanWrapper, numberWrapper, stringWrapper, symbolWrapper, bigintWrapper, date, regexp,
          map, set, weakMap, weakSet, weakRef, promise, proxy, generator, asyncGenerator, iterator,
-         arrayBuffer, typedArray, dataView, environment, host, internalObject
+         arrayBuffer, typedArray, dataView, environment, host, internalObject,
+         // Phase 9E
+         mapIterator, setIterator, finalizationRegistry
 }
 
 public struct JSObjectFlags: OptionSet {
@@ -75,6 +91,9 @@ public struct JSObjectFlags: OptionSet {
     public static let hasFinalizer = JSObjectFlags(rawValue: 1 << 4)
     public static let classConstructor = JSObjectFlags(rawValue: 1 << 5)
     public static let strict = JSObjectFlags(rawValue: 1 << 6)
+    /// Internal methods dispatch through the realm (Proxy, host exotic
+    /// objects): see jsexotic.swift.
+    public static let exotic = JSObjectFlags(rawValue: 1 << 7)
     /// Bits 8...15 are free for the VM and embedder.
     public static let user0 = JSObjectFlags(rawValue: 1 << 8)
     public static let user1 = JSObjectFlags(rawValue: 1 << 9)
@@ -162,6 +181,10 @@ public enum JSGetResult: Equatable {
     case value(JSValue)
     /// Call this getter with the original receiver as `this`.
     case getter(JSValue)
+    /// The lookup reached an object with flag .exotic (no earlier object
+    /// on the chain had the key): finish with realm.objGet(obj, key,
+    /// receiver: original receiver).
+    case exotic(JSValue)
 }
 
 public enum JSSetResult: Equatable {
@@ -171,6 +194,11 @@ public enum JSSetResult: Equatable {
     case failed
     /// Call this setter with the receiver as `this` and the value.
     case setter(JSValue)
+    /// The ordinary algorithm can't finish here (an .exotic object on the
+    /// chain, an exotic receiver, or a typed array store that needs
+    /// ToNumber of an object): finish with realm.objSet(obj, key, value,
+    /// receiver: original receiver), which may run JS.
+    case exotic(JSValue)
 }
 
 struct JSObjectCell {
@@ -312,6 +340,7 @@ extension JSHeap {
 
     public func getPrototypeOf(_ o: JSValue) -> JSValue {
         guard let i = objectIndex(o) else { return .null }
+        if objects[i].kind == .proxy { return proxyFallback(o) { t in getPrototypeOf(t) } ?? .null }
         return objects[i].proto
     }
 
@@ -320,6 +349,7 @@ extension JSHeap {
     public func setPrototypeOf(_ o: JSValue, _ p: JSValue) -> Bool {
         guard let i = objectIndex(o) else { return false }
         guard p.isNull || p.isObject else { return false }
+        if objects[i].kind == .proxy { return proxyFallback(o) { t in setPrototypeOf(t, p) } ?? false }
         if objects[i].proto == p { return true }
         if !objects[i].flags.contains(.extensible) { return false }
         var cur = p
@@ -337,12 +367,14 @@ extension JSHeap {
 
     public func isExtensible(_ o: JSValue) -> Bool {
         guard let i = objectIndex(o) else { return false }
+        if objects[i].kind == .proxy { return proxyFallback(o) { t in isExtensible(t) } ?? false }
         return objects[i].flags.contains(.extensible)
     }
 
     @discardableResult
     public func preventExtensions(_ o: JSValue) -> Bool {
         guard let i = objectIndex(o) else { return o.isObject }
+        if objects[i].kind == .proxy { return proxyFallback(o) { t in preventExtensions(t) } ?? false }
         objects[i].flags.remove(.extensible)
         return true
     }
@@ -429,6 +461,11 @@ extension JSHeap {
 
     public func getOwnProperty(_ o: JSValue, _ k: JSPropertyKey) -> JSProperty? {
         guard let i = objectIndex(o) else { return nil }
+        if objects[i].kind == .typedArray, let x = typedArrayNumericIndex(k) {
+            guard let v = typedArrayElement(i, x) else { return nil }
+            return .data(v)
+        }
+        if objects[i].kind == .proxy { return proxyFallback(o) { t in getOwnProperty(t, k) } ?? nil }
         if k.isIndex {
             let idx = Int(k.index)
             if objects[i].kind == .stringWrapper {
@@ -471,6 +508,8 @@ extension JSHeap {
 
     public func hasOwnProperty(_ o: JSValue, _ k: JSPropertyKey) -> Bool {
         guard let i = objectIndex(o) else { return false }
+        if objects[i].kind == .typedArray, let x = typedArrayNumericIndex(k) { return typedArrayValidIndex(i, x) }
+        if objects[i].kind == .proxy { return proxyFallback(o) { t in hasOwnProperty(t, k) } ?? false }
         if k.isIndex {
             let idx = Int(k.index)
             if idx < stringWrapperLength(i) { return true }
@@ -537,6 +576,8 @@ extension JSHeap {
     public func defineOwnProperty(_ o: JSValue, _ k: JSPropertyKey, _ d: JSPropertyDescriptor) -> Bool {
         guard let i = objectIndex(o) else { return false }
         let kindI = objects[i].kind
+        if kindI == .typedArray, let x = typedArrayNumericIndex(k) { return typedArrayDefine(i, x, d) }
+        if kindI == .proxy { return proxyFallback(o) { t in defineOwnProperty(t, k, d) } ?? false }
         if k.isIndex {
             let idx = k.index
             if kindI == .array && idx >= objects[i].arrayLength && objects[i].flags.contains(.lengthReadOnly) {
@@ -654,6 +695,8 @@ extension JSHeap {
 
     public func deleteProperty(_ o: JSValue, _ k: JSPropertyKey) -> Bool {
         guard let i = objectIndex(o) else { return o.isObject }
+        if objects[i].kind == .typedArray, let x = typedArrayNumericIndex(k) { return !typedArrayValidIndex(i, x) }
+        if objects[i].kind == .proxy { return proxyFallback(o) { t in deleteProperty(t, k) } ?? false }
         if k.isIndex {
             let x = Int(k.index)
             if x < stringWrapperLength(i) { return false }
@@ -682,9 +725,14 @@ extension JSHeap {
 
     public func ownKeys(_ o: JSValue) -> [JSPropertyKey] {
         guard let i = objectIndex(o) else { return [] }
+        if objects[i].kind == .proxy { return proxyFallback(o) { t in ownKeys(t) } ?? [] }
         var out: [JSPropertyKey] = []
         let swLen = stringWrapperLength(i)
         if swLen > 0 { for x in 0..<swLen { out.append(.index(UInt32(x))) } }
+        if objects[i].kind == .typedArray {
+            let n = typedArrayLength(i)
+            if n > 0 { out.reserveCapacity(n + 4); for x in 0..<n { out.append(.index(UInt32(truncatingIfNeeded: x))) } }
+        }
         // Indices: dense and sparse, merged in ascending order.
         var sparseKeys: [UInt32] = []
         if !objects[i].sparse.isEmpty {
@@ -700,7 +748,8 @@ extension JSHeap {
         while s < sparseKeys.count { out.append(.index(sparseKeys[s])); s += 1 }
         if objects[i].kind == .array || objects[i].kind == .stringWrapper { out.append(names.length) }
         for p in objects[i].props where p.key.isString { out.append(p.key) }
-        for p in objects[i].props where p.key.isSymbol { out.append(p.key) }
+        // Private names (Phase 9E, jsvm_private.swift) are own slots but never keys.
+        for p in objects[i].props where p.key.isSymbol && !isPrivateSymbol(p.key.handle) { out.append(p.key) }
         return out
     }
 
@@ -710,6 +759,10 @@ extension JSHeap {
         var cur = o
         var steps = 0
         while let i = objectIndex(cur) {
+            if objects[i].flags.contains(.exotic) { return .exotic(cur) }
+            if objects[i].kind == .typedArray, let x = typedArrayNumericIndex(k) {
+                return .value(typedArrayElement(i, x) ?? .undefined)
+            }
             // Fast paths: dense element, plain slot.
             if k.isIndex {
                 let x = Int(k.index)
@@ -733,6 +786,14 @@ extension JSHeap {
         var cur = o
         var steps = 0
         while let i = objectIndex(cur) {
+            if objects[i].kind == .proxy {
+                // No traps here (JSRealm.objHas runs them): the target.
+                cur = proxyFallback(cur) { t in t } ?? .null
+                steps += 1
+                if steps > JSHeap.maxProtoChain { break }
+                continue
+            }
+            if objects[i].kind == .typedArray, let x = typedArrayNumericIndex(k) { return typedArrayValidIndex(i, x) }
             if hasOwnProperty(cur, k) { return true }
             cur = objects[i].proto
             steps += 1
@@ -743,7 +804,7 @@ extension JSHeap {
 
     public func setProperty(_ o: JSValue, _ k: JSPropertyKey, _ v: JSValue, receiver: JSValue) -> JSSetResult {
         // Fast path: own writable dense element or own writable data slot.
-        if o == receiver, let i = objectIndex(o) {
+        if o == receiver, let i = objectIndex(o), !objects[i].flags.contains(.exotic) {
             if k.isIndex {
                 let x = Int(k.index)
                 if x < objects[i].elements.count && !objects[i].elements[x].isHole {
@@ -758,9 +819,24 @@ extension JSHeap {
                 }
             }
         }
+        if let ri = objectIndex(receiver), objects[ri].flags.contains(.exotic) { return .exotic(o) }
         var cur = o
         var steps = 0
         while let i = objectIndex(cur) {
+            if objects[i].flags.contains(.exotic) { return .exotic(cur) }
+            if objects[i].kind == .typedArray, let x = typedArrayNumericIndex(k) {
+                // TypedArray [[Set]]: the receiver itself stores (ToNumber
+                // of a non-primitive needs the realm); another receiver
+                // sees an invalid index as done, a valid one as a writable
+                // data property (OrdinarySet below).
+                if cur == receiver {
+                    guard let d = toPrimitiveNumber(v) else { return .exotic(cur) }
+                    typedArraySetElement(i, x, d)
+                    return .done
+                }
+                if !typedArrayValidIndex(i, x) { return .done }
+                break
+            }
             if let p = getOwnProperty(cur, k) {
                 if p.isAccessor { return p.setter.isUndefined ? .failed : .setter(p.setter) }
                 if !p.writable { return .failed }
@@ -771,6 +847,9 @@ extension JSHeap {
             if steps > JSHeap.maxProtoChain { break }
         }
         guard receiver.isObject else { return .failed }
+        if kind(receiver) == .typedArray && typedArrayNumericIndex(k) != nil && toPrimitiveNumber(v) == nil {
+            return .exotic(o)
+        }
         if let existing = getOwnProperty(receiver, k) {
             if existing.isAccessor || !existing.writable { return .failed }
             return defineOwnProperty(receiver, k, JSPropertyDescriptor(value: v)) ? .done : .failed

@@ -62,6 +62,10 @@ final class JSShell {
         jsInstallConsole(realm, now: { Double(Time.now) }) { [unowned(unsafe) self] level, text in
             self.write(level == .warn || level == .error ? 2 : 1, text + "\n")
         }
+        loop.reportRejection = { [unowned(unsafe) self] text in self.write(2, text + "\n"); self.failed = true }
+        realm.moduleLoader = { (realm: JSRealm, specifier: String, referrer: String) -> JSModuleLoadResult in
+            jsShellLoadModule(specifier, referrer)
+        }
         installPerformance()
     }
 
@@ -165,5 +169,65 @@ final class JSShell {
         case .terminated(let why): reportTermination(why)
         }
         return c
+    }
+}
+
+// MARK: Modules
+
+/// `spec` resolved against the directory of `referrer`, with . and .. folded.
+func jsShellResolve(_ spec: String, _ referrer: String) -> String {
+    var path = spec
+    if !spec.hasPrefix("/") {
+        var dir = referrer
+        if let slash = dir.lastIndex(of: "/") { dir = String(dir[dir.startIndex...slash]) } else { dir = "" }
+        path = dir + spec
+    }
+    var parts: [String] = []
+    var cur = ""
+    func flush() {
+        if cur == ".." { if !parts.isEmpty { parts.removeLast() } }
+        else if cur != "." && !cur.isEmpty { parts.append(cur) }
+        cur = ""
+    }
+    for c in path { if c == "/" { flush() } else { cur.append(c) } }
+    flush()
+    var out = ""
+    for p in parts { out += "/" + p }
+    if !path.hasPrefix("/") && !referrer.hasPrefix("/") {
+        // Relative to the working directory: keep it relative.
+        out = String(out.dropFirst())
+    }
+    return out
+}
+
+func jsShellLoadModule(_ spec: String, _ referrer: String) -> JSModuleLoadResult {
+    let url = jsShellResolve(spec, referrer)
+    do throws(SysError) {
+        let f = try File.open(url)
+        let bytes = try f.readAll()
+        f.close()
+        return .source(url: url, bytes: bytes)
+    } catch {
+        return .error("cannot load module '" + url + "': " + error.message)
+    }
+}
+
+extension JSShell {
+    /// Run `source` as the root module and wait for its promise (top-level
+    /// await included) through the event loop.
+    func runModule(_ source: [UInt8], name: String) {
+        beginTask()
+        switch realm.evaluateModule(source: source, name: name) {
+        case .exception(let e): reportException(e)
+        case .terminated(let why): reportTermination(why)
+        case .normal(let p):
+            let depth = realm.heap.rootDepth
+            let root = realm.heap.root(p)
+            loop.performMicrotaskCheckpoint()
+            if realm.promiseState(realm.heap[root]) == .rejected {
+                failed = true
+            }
+            realm.heap.popRoots(to: depth)
+        }
     }
 }

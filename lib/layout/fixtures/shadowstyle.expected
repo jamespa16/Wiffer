@@ -1,0 +1,20 @@
+block <html> 0,0 400x198
+  block <body> 0,0 400x198
+    block <x-card#h1.dark> 0,0 400x121
+      block <div.title> 9,9 382x29
+        text "Title" 39,9 51x28
+      anon-block 9,38 382x19
+        inline <x-icon> 9,38 50x19
+          inline-block <span> 9,43 50x10
+      block <p> 9,57 382x19
+        text "slotted paragraph" 29,57 143x19
+      block <p.big> 9,76 382x36
+        text "big one" 29,77 112x35
+    block <div#after> 0,131 400x47
+      block <p> 1,132 398x19
+        text "document p: no shadow padding" 1,132 263x19
+      anon-block 1,151 398x26
+        inline-block <x-card> 1,151 102x22
+    anon-block 0,178 400x19
+      inline <my-undefined> 0,179 202x19
+        text "shown: :defined not used" 0,179 202x19

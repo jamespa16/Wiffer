@@ -91,12 +91,14 @@ extension JSRealm {
 
     /// The object's [[SetPrototypeOf]] with the immutable-prototype rule of
     /// %Object.prototype%.
-    func jsSetPrototype(_ o: JSValue, _ p: JSValue) -> Bool {
-        if o == objectPrototype { return p == heap.getPrototypeOf(o) }
-        return heap.setPrototypeOf(o, p)
+    func jsSetPrototype(_ o: JSValue, _ p: JSValue) throws(JSThrow) -> Bool {
+        if o == objectPrototype { return p == (try objGetPrototypeOf(o)) }
+        return (try objSetPrototypeOf(o, p))
     }
 
     func jsBuiltinTag(_ o: JSValue) -> String {
+        // 9E: a proxy for an array is "Array" (IsArray sees through proxies).
+        if heap.kind(o) == .proxy, heap.proxyFallback(o, { t in heap.kind(t) == .array }) == true { return "Array" }
         switch heap.kind(o) {
         case .array: return "Array"
         case .function, .nativeFunction, .boundFunction: return "Function"
@@ -114,18 +116,18 @@ extension JSRealm {
     /// SetIntegrityLevel.
     func jsSetIntegrity(_ o: JSValue, frozen: Bool) throws(JSThrow) -> Bool {
         let h = heap
-        guard h.preventExtensions(o) else { return false }
-        for k in h.ownKeys(o) {
+        guard (try objPreventExtensions(o)) else { return false }
+        for k in (try objOwnKeys(o)) {
             if frozen {
-                guard let p = h.getOwnProperty(o, k) else { continue }
+                guard let p = (try objGetOwnProperty(o, k)) else { continue }
                 var d = JSPropertyDescriptor(configurable: false)
                 if !p.isAccessor { d.writable = false }
-                if !h.defineOwnProperty(o, k, d) {
+                if !(try objDefineOwnProperty(o, k, d)) {
                     try jsCheckAlloc()
                     throw throwTypeError("Cannot freeze property " + keyDisplay(k))
                 }
             } else {
-                if !h.defineOwnProperty(o, k, JSPropertyDescriptor(configurable: false)) {
+                if !(try objDefineOwnProperty(o, k, JSPropertyDescriptor(configurable: false))) {
                     try jsCheckAlloc()
                     throw throwTypeError("Cannot seal property " + keyDisplay(k))
                 }
@@ -134,11 +136,11 @@ extension JSRealm {
         return true
     }
 
-    func jsTestIntegrity(_ o: JSValue, frozen: Bool) -> Bool {
+    func jsTestIntegrity(_ o: JSValue, frozen: Bool) throws(JSThrow) -> Bool {
         let h = heap
-        if h.isExtensible(o) { return false }
-        for k in h.ownKeys(o) {
-            guard let p = h.getOwnProperty(o, k) else { continue }
+        if (try objIsExtensible(o)) { return false }
+        for k in (try objOwnKeys(o)) {
+            guard let p = (try objGetOwnProperty(o, k)) else { continue }
             if p.configurable { return false }
             if frozen && !p.isAccessor && p.writable { return false }
         }
@@ -155,7 +157,7 @@ extension JSRealm {
             if Double(u) != n { throw throwRangeError("Invalid array length") }
             d.value = .number(Int(u))
         }
-        return heap.defineOwnProperty(o, k, d)
+        return (try objDefineOwnProperty(o, k, d))
     }
 
     /// ObjectDefineProperties(o, props).
@@ -168,8 +170,8 @@ extension JSRealm {
         var keys: [JSPropertyKey] = []
         var descs: [JSPropertyDescriptor] = []
         // Descriptor values stay rooted on the root stack.
-        for k in h.ownKeys(props) {
-            guard let pr = h.getOwnProperty(props, k), pr.enumerable else { continue }
+        for k in (try objOwnKeys(props)) {
+            guard let pr = (try objGetOwnProperty(props, k)), pr.enumerable else { continue }
             let dv = try getV(props, k)
             _ = h.root(dv)
             let d = try toPropertyDescriptor(dv)
@@ -224,7 +226,7 @@ func jsInstallObject(_ realm: JSRealm) {
         let k = try realm.toPropertyKey(args[0])
         realm.jsRootKey(k)
         let o = try realm.toObject(args.this)
-        return .bool(realm.heap.hasOwnProperty(o, k))
+        return .bool(((try realm.objGetOwnProperty(o, k)) != nil))
     }
     realm.defineGetter(op, "__proto__", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
         let t = args.this
@@ -232,18 +234,18 @@ func jsInstallObject(_ realm: JSRealm) {
         let p = args[0]
         guard p.isObject || p.isNull else { return .undefined }
         guard t.isObject else { return .undefined }
-        if !realm.jsSetPrototype(t, p) { throw realm.throwTypeError("Cyclic __proto__ value or object is not extensible") }
+        if !(try realm.jsSetPrototype(t, p)) { throw realm.throwTypeError("Cyclic __proto__ value or object is not extensible") }
         return .undefined
     }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
         let o = try realm.toObject(args.this)
-        return realm.heap.getPrototypeOf(o)
+        return (try realm.objGetPrototypeOf(o))
     }
     realm.defineMethod(op, "__defineGetter__", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
         let o = try realm.toObject(args.this)
         guard realm.heap.isCallable(args[1]) else { throw realm.throwTypeError("Object.prototype.__defineGetter__: Expecting function") }
         let k = try realm.toPropertyKey(args[0])
         let d = JSPropertyDescriptor(getter: args[1], enumerable: true, configurable: true)
-        if !realm.heap.defineOwnProperty(o, k, d) { throw realm.throwTypeError("Cannot define property " + realm.keyDisplay(k)) }
+        if !(try realm.objDefineOwnProperty(o, k, d)) { throw realm.throwTypeError("Cannot define property " + realm.keyDisplay(k)) }
         return .undefined
     }
     realm.defineMethod(op, "__defineSetter__", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
@@ -251,7 +253,7 @@ func jsInstallObject(_ realm: JSRealm) {
         guard realm.heap.isCallable(args[1]) else { throw realm.throwTypeError("Object.prototype.__defineSetter__: Expecting function") }
         let k = try realm.toPropertyKey(args[0])
         let d = JSPropertyDescriptor(setter: args[1], enumerable: true, configurable: true)
-        if !realm.heap.defineOwnProperty(o, k, d) { throw realm.throwTypeError("Cannot define property " + realm.keyDisplay(k)) }
+        if !(try realm.objDefineOwnProperty(o, k, d)) { throw realm.throwTypeError("Cannot define property " + realm.keyDisplay(k)) }
         return .undefined
     }
     let lookup: (Bool) -> JSNativeFunction = { (getter: Bool) -> JSNativeFunction in
@@ -260,11 +262,11 @@ func jsInstallObject(_ realm: JSRealm) {
             let k = try realm.toPropertyKey(args[0])
             var steps = 0
             while o.isObject && steps < JSHeap.maxProtoChain {
-                if let p = realm.heap.getOwnProperty(o, k) {
+                if let p = (try realm.objGetOwnProperty(o, k)) {
                     if p.isAccessor { return getter ? p.getter : p.setter }
                     return .undefined
                 }
-                o = realm.heap.getPrototypeOf(o)
+                o = (try realm.objGetPrototypeOf(o))
                 steps += 1
             }
             return .undefined
@@ -276,13 +278,13 @@ func jsInstallObject(_ realm: JSRealm) {
     // ------------------------------------------------------- statics
     realm.defineMethod(oc, "getPrototypeOf", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
         let o = try realm.toObject(args[0])
-        return realm.heap.getPrototypeOf(o)
+        return (try realm.objGetPrototypeOf(o))
     }
     realm.defineMethod(oc, "setPrototypeOf", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
         let o = args[0], p = args[1]
         if o.isNullish { throw realm.throwTypeError("Object.setPrototypeOf called on null or undefined") }
         guard p.isObject || p.isNull else { throw realm.throwTypeError("Object prototype may only be an Object or null") }
-        if o.isObject && !realm.jsSetPrototype(o, p) { throw realm.throwTypeError("Cyclic __proto__ value or object is not extensible") }
+        if o.isObject, !(try realm.jsSetPrototype(o, p)) { throw realm.throwTypeError("Cyclic __proto__ value or object is not extensible") }
         return o
     }
     realm.defineMethod(oc, "create", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
@@ -326,7 +328,7 @@ func jsInstallObject(_ realm: JSRealm) {
         _ = h.root(o)
         let k = try realm.toPropertyKey(args[1])
         realm.jsRootKey(k)
-        guard let p = h.getOwnProperty(o, k) else { return .undefined }
+        guard let p = (try realm.objGetOwnProperty(o, k)) else { return .undefined }
         return realm.jsFromDescriptor(p)
     }
     realm.defineMethod(oc, "getOwnPropertyDescriptors", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
@@ -337,8 +339,8 @@ func jsInstallObject(_ realm: JSRealm) {
         _ = h.root(o)
         let res = h.newObject(proto: realm.objectPrototype)
         _ = h.root(res)
-        for k in h.ownKeys(o) {
-            guard let p = h.getOwnProperty(o, k) else { continue }
+        for k in (try realm.objOwnKeys(o)) {
+            guard let p = (try realm.objGetOwnProperty(o, k)) else { continue }
             let d = realm.jsFromDescriptor(p)
             _ = h.root(d)
             _ = h.createDataProperty(res, k, d)
@@ -356,7 +358,7 @@ func jsInstallObject(_ realm: JSRealm) {
             let a = realm.jsNewArray()
             _ = h.root(a)
             var n: UInt32 = 0
-            for k in h.ownKeys(o) where k.isSymbol == symbols {
+            for k in (try realm.objOwnKeys(o)) where k.isSymbol == symbols {
                 let d2 = h.rootDepth
                 let kv = symbols ? JSValue.symbol(k.handle) : h.keyValue(k)
                 _ = h.root(kv)
@@ -383,8 +385,8 @@ func jsInstallObject(_ realm: JSRealm) {
             _ = h.root(a)
             var n: UInt32 = 0
             var count = 0
-            for k in h.ownKeys(o) where !k.isSymbol {
-                guard let p = h.getOwnProperty(o, k), p.enumerable else { continue }
+            for k in (try realm.objOwnKeys(o)) where !k.isSymbol {
+                guard let p = (try realm.objGetOwnProperty(o, k)), p.enumerable else { continue }
                 let d2 = h.rootDepth
                 var item: JSValue
                 if mode == 0 {
@@ -424,8 +426,8 @@ func jsInstallObject(_ realm: JSRealm) {
                 let d2 = h.rootDepth
                 let from = try realm.toObject(src)
                 _ = h.root(from)
-                for k in h.ownKeys(from) {
-                    guard let p = h.getOwnProperty(from, k), p.enumerable else { continue }
+                for k in (try realm.objOwnKeys(from)) {
+                    guard let p = (try realm.objGetOwnProperty(from, k)), p.enumerable else { continue }
                     let v = try realm.getV(from, k)
                     _ = h.root(v)
                     try realm.setV(to, k, v, strict: true)
@@ -471,7 +473,7 @@ func jsInstallObject(_ realm: JSRealm) {
             let k = try realm.toPropertyKey(kv)
             realm.jsRootKey(k)
             var group: JSValue
-            if let p = h.getOwnProperty(res, k) { group = p.value } else {
+            if let p = (try realm.objGetOwnProperty(res, k)) { group = p.value } else {
                 group = realm.jsNewArray()
                 _ = h.root(group)
                 _ = h.createDataProperty(res, k, group)
@@ -491,16 +493,17 @@ func jsInstallObject(_ realm: JSRealm) {
         _ = h.root(o)
         let k = try realm.toPropertyKey(args[1])
         realm.jsRootKey(k)
-        return .bool(h.hasOwnProperty(o, k))
+        return .bool(((try realm.objGetOwnProperty(o, k)) != nil))
     }
     realm.defineMethod(oc, "is", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
         .bool(realm.heap.sameValue(args[0], args[1]))
     }
     realm.defineMethod(oc, "isExtensible", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
-        .bool(args[0].isObject && realm.heap.isExtensible(args[0]))
+        if !args[0].isObject { return .false }
+        return .bool(try realm.objIsExtensible(args[0]))
     }
     realm.defineMethod(oc, "preventExtensions", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
-        if args[0].isObject { realm.heap.preventExtensions(args[0]) }
+        if args[0].isObject, !(try realm.objPreventExtensions(args[0])) { throw realm.throwTypeError("Cannot prevent extensions") }
         return args[0]
     }
     realm.defineMethod(oc, "freeze", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
@@ -512,10 +515,12 @@ func jsInstallObject(_ realm: JSRealm) {
         return args[0]
     }
     realm.defineMethod(oc, "isFrozen", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
-        .bool(!args[0].isObject || realm.jsTestIntegrity(args[0], frozen: true))
+        if !args[0].isObject { return .true }
+        return .bool(try realm.jsTestIntegrity(args[0], frozen: true))
     }
     realm.defineMethod(oc, "isSealed", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
-        .bool(!args[0].isObject || realm.jsTestIntegrity(args[0], frozen: false))
+        if !args[0].isObject { return .true }
+        return .bool(try realm.jsTestIntegrity(args[0], frozen: false))
     }
     _ = tagKey
 }

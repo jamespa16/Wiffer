@@ -7,8 +7,8 @@
 // and sta.js, the test's `includes`, then the test itself, once sloppy and
 // once strict unless a flag says otherwise (strict = the whole concatenation
 // behind a "use strict" directive, as the official runner does). A
-// `$262` host object gives evalScript, gc and global; tests that need
-// createRealm, agent or detachArrayBuffer are skipped with that reason
+// `$262` host object gives evalScript, gc, global, detachArrayBuffer and
+// clearKeptObjects; tests that need createRealm or agent are skipped with that reason
 // (jstest262_skip.swift). A per-test budget (interruptHandler) makes a hang
 // a failure.
 //
@@ -40,7 +40,7 @@
 
 /// HOOK (Phase 9E, Promise and microtasks): run the realm's job queue to
 /// completion. nil = async tests are skipped.
-nonisolated(unsafe) var jsTest262DrainJobs: ((JSRealm) -> Void)? = nil
+nonisolated(unsafe) var jsTest262DrainJobs: ((JSRealm) -> Void)? = { (realm: JSRealm) in _ = realm.runJobs() }
 
 final class JSTest262Budget {
     var deadline = 0
@@ -89,9 +89,7 @@ final class JSTest262Runner {
 
     func skipReason(_ meta: JSTest262Meta, _ src: [UInt8]) -> String? {
         for f in meta.features where jsTest262RunSkipFeatures.contains(f) { return "feature " + f }
-        if meta.module { return "module" }
         if meta.async && jsTest262DrainJobs == nil { return "async" }
-        for inc in meta.includes where inc == "detachArrayBuffer.js" { return "$262.detachArrayBuffer" }
         let text = String(decoding: src, as: UTF8.self)
         for entry in jsTest262RunSkipSource where jsTestHas(text, entry.needle) { return entry.reason }
         return nil
@@ -100,7 +98,7 @@ final class JSTest262Runner {
     /// One variant (sloppy or strict) in a fresh realm.
     func runVariant(_ meta: JSTest262Meta, _ src: [UInt8], strict: Bool, path: String) -> JSTest262Result {
         var text: [UInt8] = []
-        if strict { text += Array("\"use strict\";\n".utf8) }
+        if strict && !meta.module { text += Array("\"use strict\";\n".utf8) }
         if !meta.raw {
             var files = ["assert.js", "sta.js"]
             if meta.async { files.append("doneprintHandle.js") }
@@ -111,7 +109,7 @@ final class JSTest262Runner {
                 text.append(0x0A)
             }
         }
-        text += src
+        if !meta.module { text += src }
         budget.calls = 0
         budget.hit = false
         budget.deadline = hostMillis() + (gcStress ? timeoutMs * 20 : timeoutMs)
@@ -120,8 +118,30 @@ final class JSTest262Runner {
         var printed: [String] = []
         realm.printHandler = { (s: String) in printed.append(s) }
         installHost(realm)
-        let completion = realm.evaluate(source: text, name: path)
-        if meta.async, let drain = jsTest262DrainJobs {
+        var completion = realm.evaluate(source: text, name: path)
+        if meta.module, case .normal = completion {
+            // Phase 9E: the test is the root module; imports resolve
+            // relative to its directory.
+            realm.moduleLoader = { (r: JSRealm, spec: String, ref: String) -> JSModuleLoadResult in
+                let url = jsTest262ResolveModule(spec, ref)
+                guard let b = hostReadFile(url) else { return .error("Cannot find module '" + spec + "'") }
+                return .source(url: url, bytes: b)
+            }
+            completion = realm.evaluateModule(source: src, name: path)
+            if case .normal(let p) = completion {
+                let keep = realm.heap.retain(p)
+                if let drain = jsTest262DrainJobs { drain(realm) }
+                let pv = realm.heap.persistent[keep.slot]
+                if realm.promiseState(pv) == .rejected {
+                    realm.heap.release(keep)
+                    _ = realm.throwValue(realm.promiseResult(pv))
+                    let u = realm.uncaught()
+                    completion = .exception(u)
+                } else {
+                    realm.heap.release(keep)
+                }
+            }
+        } else if meta.async, let drain = jsTest262DrainJobs {
             drain(realm)
         }
         switch completion {
@@ -149,8 +169,8 @@ final class JSTest262Runner {
         }
     }
 
-    /// `$262`: evalScript, gc, global (createRealm, agent and
-    /// detachArrayBuffer are skip-tagged).
+    /// `$262`: evalScript, gc, global, detachArrayBuffer (9E),
+    /// clearKeptObjects (createRealm and agent are skip-tagged).
     func installHost(_ realm: JSRealm) {
         let o = realm.heap.newObject(proto: realm.objectPrototype)
         let r = realm.heap.root(o)
@@ -158,6 +178,14 @@ final class JSTest262Runner {
         realm.defineValue(o, "global", realm.global, [.writable, .configurable])
         realm.defineMethod(o, "gc", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             realm.heap.collectGarbage()
+            return .undefined
+        }
+        realm.defineMethod(o, "detachArrayBuffer", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            if !realm.detachArrayBuffer(args[0]) { throw realm.throwTypeError("not an ArrayBuffer") }
+            return .null
+        }
+        realm.defineMethod(o, "clearKeptObjects", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            realm.clearKeptObjects()
             return .undefined
         }
         realm.defineMethod(o, "evalScript", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
@@ -175,7 +203,7 @@ final class JSTest262Runner {
     func run(path: String, src: [UInt8], meta: JSTest262Meta) -> JSTest262Result {
         if let why = skipReason(meta, src) { return JSTest262Result(status: .skip, message: why) }
         var variants: [Bool] = []
-        if meta.onlyStrict { variants = [true] } else if meta.noStrict { variants = [false] } else { variants = [false, true] }
+        if meta.onlyStrict || meta.module { variants = [true] } else if meta.noStrict { variants = [false] } else { variants = [false, true] }
         for strict in variants {
             let r = runVariant(meta, src, strict: strict, path: path)
             if r.status != .pass {
@@ -184,6 +212,18 @@ final class JSTest262Runner {
         }
         return JSTest262Result(status: .pass, message: "")
     }
+}
+
+/// A module specifier relative to the importing file (./x.js, ../x.js).
+func jsTest262ResolveModule(_ spec: String, _ referrer: String) -> String {
+    var parts = referrer.split(separator: "/", omittingEmptySubsequences: false).map { String($0) }
+    if !parts.isEmpty { parts.removeLast() }
+    for c in spec.split(separator: "/", omittingEmptySubsequences: false) {
+        if c == "." { continue }
+        if c == ".." { if !parts.isEmpty { parts.removeLast() }; continue }
+        parts.append(String(c))
+    }
+    return parts.joined(separator: "/")
 }
 
 func jsTest262DirKey(_ path: String) -> String {
@@ -285,8 +325,14 @@ func jsTest262RunTests(_ t: Tests) {
         var diff = 0
         let s0 = hostMillis()
         for path in sampled {
+            // The URI code-point sweeps take about a minute each with a GC per
+            // allocation; they still run in the normal pass above.
+            let parts = path.split(separator: "/")
+            if parts.contains("decodeURI") || parts.contains("decodeURIComponent") || parts.contains("encodeURI") || parts.contains("encodeURIComponent") { continue }
             guard let src = hostReadFile(path) else { continue }
+            let t0 = hostMillis()
             let r = runner.run(path: path, src: src, meta: jsTest262Meta(src))
+            if hostMillis() - t0 > 2000 { print("test262 gc stress: slow \(path) \(hostMillis() - t0) ms") }
             if r.status != .pass {
                 diff += 1
                 print("FAIL test262 gcEveryAllocation \(path): \(r.message)")

@@ -18,8 +18,10 @@
 // compile's entry), so deep input is a SyntaxError, never a crash.
 //
 // Syntax the runtime does not support yet compiles to code that throws
-// "not supported yet: ..." where it runs (generators and async functions
-// when called, private class members, BigInt literals, modules, ...).
+// "not supported yet: ..." where it runs (BigInt literals). Phase 9E:
+// generators and async functions (jsgenerator.swift documents the
+// suspension protocol), private names (jsvm_private.swift) and module
+// bodies (JSCompiler.compileModule in jsmodule.swift).
 
 struct JSCompileError: Error {
     var message: String
@@ -46,6 +48,8 @@ struct JSControl {
     var continueDepth = 0
     /// forOf: depth with the iterator pair on the stack; finally: try depth.
     var depth = 0
+    /// forOf: `for await` (closing the iterator awaits its return()).
+    var isAsync = false
     var finallyLabel = -1
     var exits: [(target: Int, mode: JSExitMode)] = []
     /// A labeled statement's own label set is consumed by the next loop.
@@ -76,6 +80,11 @@ final class JSFuncState {
     var optLabels: [Int] = []
     var isDerivedCtor = false
     var isClassCtor = false
+    /// JSGenKind of the function being compiled (0: ordinary).
+    var genKind: UInt8 = 0
+    /// Compiling parameter initializers (direct eval there may not
+    /// declare `arguments`).
+    var inParams = false
 }
 
 final class JSCompiler {
@@ -89,6 +98,8 @@ final class JSCompiler {
     var fsStack: [JSFuncState] = []
     var atoms: [Int32: JSValue] = [:]
     var scopeInfos: [Int32: JSValue] = [:]
+    /// A module body awaits at its top level (jsmodule.swift).
+    var moduleHasTLA = false
 
     init(ast: JSAST, analysis: JSScopeAnalysis, realm: JSRealm, source: JSScriptSource) {
         self.ast = ast
@@ -442,6 +453,8 @@ final class JSCompiler {
             try emit(check ? .getEnvChecked : .getEnv, 1)
             put16(h); put32(Int(bd.slot))
             if check { put32(bindingKeyName(b)) }
+            // An import: dereference the import record (live binding).
+            if bd.kind == .import_ { try emitU32(.getModuleBinding, bindingKeyName(b), 0) }
         } else {
             guard bd.slot >= 0 else { throw internalError("binding without slot") }
             if check {
@@ -546,6 +559,7 @@ final class JSCompiler {
             if !sa.scopes[0].strict {
                 for b in sa.scopes[0].bindings {
                     let bd = sa.bindings[Int(b)]
+                    if bd.name == JSWord.arguments && (bd.kind == .var_ || bd.kind == .function) { fs.code.declaresArguments = true }
                     if (bd.kind == .var_) && bd.name >= 0 { try emitU32(.declareVar, key(bd.name), 0) }
                 }
             }
@@ -636,7 +650,7 @@ final class JSCompiler {
         try guardStack(n)
         let node = ast[n]
         let fkind = JSFunctionKind(rawValue: node.op) ?? .normal
-        if sa.stubs.contains(n) {
+        if sa.stubs.contains(n) && false {
             let what = node.flags & JSNodeFlags.generator != 0 ? "generator functions" : "async functions"
             return try stubFunction(n, name: name, what: what)
         }
@@ -660,6 +674,13 @@ final class JSCompiler {
         }
         fs.isDerivedCtor = fkind == .derivedConstructor
         fs.isClassCtor = fkind == .classConstructor || fkind == .derivedConstructor
+        let isGen = node.flags & JSNodeFlags.generator != 0, isAsync = node.flags & JSNodeFlags.async != 0
+        if isGen || isAsync {
+            code.genKind = isGen ? (isAsync ? JSGenKind.asyncGenerator : JSGenKind.generator) : JSGenKind.asyncFunction
+            code.hasPrototype = false
+            code.isConstructor = false
+            fs.genKind = code.genKind
+        }
         fs.fnScope = fscope
         fs.scope = fscope
         computeBlockEnvs(fscope)
@@ -705,6 +726,8 @@ final class JSCompiler {
                 code.argumentsLocal = Int(bd.slot)
             }
         }
+        // Async functions start at once: parameter errors reject the promise.
+        if fs.genKind == JSGenKind.asyncFunction { try emit(.generatorStart, 0) }
         try emitPseudoPrologue(fscope)
         // Captured simple parameters move to the environment.
         for (b, i) in simple where sa.bindings[Int(b)].inEnv {
@@ -712,6 +735,8 @@ final class JSCompiler {
             try emitPutBinding(b, initialize: true)
         }
         // Patterns, defaults and the rest parameter.
+        fs.inParams = fkind != .arrow
+        defer { fs.inParams = false }
         for (i, p) in params.enumerated() {
             let pk = ast.kind(p)
             if pk == .identifier { continue }
@@ -723,6 +748,11 @@ final class JSCompiler {
                 try emitU32(.getLocal, i, 1)
                 try emitBindingInit(p, mode: .initialize)
             }
+        }
+        fs.inParams = false
+        // Generators suspend after the parameters are bound.
+        if fs.genKind == JSGenKind.generator || fs.genKind == JSGenKind.asyncGenerator {
+            try emit(.generatorStart, 0)
         }
         if fkind == .classConstructor {
             try emitThis()
@@ -828,7 +858,7 @@ final class JSCompiler {
                 try emit(.popEnv, 0)
             case .forOf:
                 try popN(fs.depth - c.depth)
-                try emit(.iterClose, -2)
+                try emitIterClose(async: c.isAsync)
             case .finally_:
                 try popN(fs.depth - c.depth)
                 if mode == .return_ { try emitU32(.getLocal, fs.returnLocal, 1) } else { try emit(.pushUndefined, 1) }
@@ -853,11 +883,113 @@ final class JSCompiler {
         let saved = fs.depth
         if c.kind == .forOf && mode == .break_ {
             try popN(fs.depth - c.depth)
-            try emit(.iterClose, -2)
+            try emitIterClose(async: c.isAsync)
         }
         try popN(fs.depth - depth)
         try emitJump(.jump, label)
         fs.depth = saved
+    }
+
+    /// [it next] -> []: IteratorClose, or AsyncIteratorClose (awaits).
+    func emitIterClose(async: Bool) throws(JSCompileError) {
+        if !async { try emit(.iterClose, -2); return }
+        try emitU8(.asyncReturnCall, 0, -1)
+        let skip = newLabel()
+        try emit(.dup, 1)
+        try emit(.pushHole, 1)
+        try emit(.strictEq, -1)
+        try emitJump(.jumpIfTrue, skip, effect: -1)
+        try emitAwait()
+        try emit(.checkObject, 0)
+        try place(skip)
+        try emit(.pop, -1)
+    }
+
+    /// [v] -> [awaited v] (throws the rejection).
+    func emitAwait() throws(JSCompileError) {
+        if fs.genKind == JSGenKind.module { moduleHasTLA = true }
+        try emit(.await_, 1)
+        try emit(.checkResume, -1)
+        put32(0)
+    }
+
+    /// A two-target jump (yieldStarResult).
+    func emitJump2(_ op: JSOp, _ l1: Int, _ l2: Int, effect: Int, targetEffect: Int) throws(JSCompileError) {
+        markPos()
+        fs.code.bytes.append(op.rawValue)
+        let at1 = fs.code.bytes.count
+        put32(0)
+        let at2 = fs.code.bytes.count
+        put32(0)
+        let end = fs.code.bytes.count
+        let tdepth = fs.depth + targetEffect
+        if tdepth < 0 { throw internalError("jump underflow") }
+        for (at, l) in [(at1, l1), (at2, l2)] {
+            try noteTarget(l, depth: tdepth)
+            if fs.labels[l].pc >= 0 { patch32(at, fs.labels[l].pc - end) } else { fs.labels[l].fixups.append((at, end)) }
+        }
+        try adjust(effect)
+    }
+
+    /// yield / yield* (the expression's value is left on the stack).
+    func emitYield(_ n: Int32) throws(JSCompileError) {
+        let node = ast[n]
+        let async = fs.genKind == JSGenKind.asyncGenerator
+        if node.flags & JSNodeFlags.delegate != 0 { try emitYieldStar(n); return }
+        if node.a >= 0 { try emitExpr(node.a) } else { try emit(.pushUndefined, 1) }
+        setPos(n)
+        if async {
+            try emitAwait()
+            try emit(.asyncGenYield, 1)
+        } else {
+            try emit(.yield_, 1)
+        }
+        let ret = newLabel(), end = newLabel()
+        try emitJump(.checkResume, ret, effect: -1, targetEffect: -1)
+        try emitJump(.jump, end)
+        try place(ret, dead: true)
+        if async { try emitAwait() }
+        try emitReturn(fromValue: true)
+        try place(end, dead: true)
+    }
+
+    func emitYieldStar(_ n: Int32) throws(JSCompileError) {
+        let node = ast[n]
+        let async = fs.genKind == JSGenKind.asyncGenerator
+        try emitExpr(node.a)
+        setPos(n)
+        try emit(async ? .getAsyncIterator : .getIterator, 1)
+        try emit(.pushUndefined, 1)
+        try pushInt(0)
+        let loop = newLabel(), done = newLabel(), retL = newLabel(), end = newLabel()
+        try place(loop)
+        try emitJump(.yieldStarCall, retL, effect: 0, targetEffect: -1)
+        if async { try emitAwait() }
+        try emitJump2(.yieldStarResult, done, retL, effect: -1, targetEffect: -1)
+        if async {
+            try emitU32(.getField, keyNamed("value"), 0)
+            try emit(.asyncGenYield, 1)
+            let r2 = newLabel()
+            try emitJump(.resumeIsReturn, r2, effect: 0, targetEffect: -1)
+            try emitJump(.jump, loop)
+            try place(r2, dead: true)
+            try emitAwait()
+            try pushInt(2)
+            try emitJump(.jump, loop)
+        } else {
+            try emit(.yieldRaw, 1)
+            try emitJump(.jump, loop)
+        }
+        try place(done, dead: true)
+        try emit(.rot3, 0)
+        try popN(2)
+        try emitJump(.jump, end)
+        try place(retL, dead: true)
+        try emit(.rot3, 0)
+        try popN(2)
+        if async { try emitAwait() }
+        try emitReturn(fromValue: true)
+        try place(end, dead: true)
     }
 
     // MARK: Statements
@@ -898,6 +1030,7 @@ final class JSCompiler {
         case .returnStmt:
             if node.a >= 0 {
                 try emitExpr(node.a)
+                if fs.genKind == JSGenKind.asyncGenerator { try emitAwait() }
                 try emitReturn(fromValue: true)
             } else {
                 try emitReturn(fromValue: false)
@@ -927,8 +1060,7 @@ final class JSCompiler {
         case .forIn:
             try emitForIn(n)
         case .forOf:
-            if node.flags & JSNodeFlags.await != 0 { try notSupported("for await") }
-            else { try emitForOf(n) }
+            try emitForOf(n)
         case .continueStmt, .breakStmt:
             try emitBreakContinue(n)
             fs.depth = startDepth
@@ -953,7 +1085,7 @@ final class JSCompiler {
             try emit(.popEnv, 0)
             fs.scope = sa.scopes[Int(w)].parent
         case .importDecl, .exportNamed, .exportDefault, .exportAll:
-            try notSupported("modules")
+            try emitModuleStatement(n)
         default:
             // An expression in statement position (should not happen).
             try emitExpr(n)
@@ -1126,18 +1258,29 @@ final class JSCompiler {
     func emitForOf(_ n: Int32) throws(JSCompileError) {
         let node = ast[n]
         let labels = takeLabels()
+        let isAsync = node.flags & JSNodeFlags.await != 0
         try emitExpr(node.b)
         setPos(n)
-        try emit(.getIterator, 1)
+        try emit(isAsync ? .getAsyncIterator : .getIterator, 1)
         let iterDepth = fs.depth
         let cont = newLabel(), done = newLabel(), brk = newLabel(), landing = newLabel()
         try place(cont)
-        try emitJump(.iterNext, done, effect: 1, targetEffect: 0)
+        if isAsync {
+            // [it next] -> [it next result] -> await -> [it next value] or done.
+            try emit(.dup2, 2)
+            try emit(.swap, 0)
+            try emitU16(.call, 0, -1)
+            try emitAwait()
+            try emitJump(.asyncIterResult, done, effect: 0, targetEffect: -1)
+        } else {
+            try emitJump(.iterNext, done, effect: 1, targetEffect: 0)
+        }
         let start = fs.code.bytes.count
         let scope = sa.nodeScope[n]
         if let s = scope { try enterScope(s) }
         try emitForTarget(node.a)
         var c = JSControl(kind: .forOf)
+        c.isAsync = isAsync
         c.labels = labels
         c.breakLabel = brk
         c.continueLabel = cont
@@ -1166,7 +1309,28 @@ final class JSCompiler {
         try place(landing, dead: true)
         fs.labels[landing].depth = iterDepth
         try adjust(1)
-        try emit(.iterCloseThrow, -3)
+        if isAsync {
+            // AsyncIteratorClose with a throw completion: await return(),
+            // ignore its outcome, rethrow.
+            let exc = tempLocal()
+            try emitU32(.putLocal, exc, -1)
+            try emitU8(.asyncReturnCall, 1, -1)
+            let skip = newLabel()
+            try emit(.dup, 1)
+            try emit(.pushHole, 1)
+            try emit(.strictEq, -1)
+            try emitJump(.jumpIfTrue, skip, effect: -1)
+            try emit(.await_, 1)
+            try popN(2)
+            try emit(.pushUndefined, 1)
+            try place(skip)
+            try emit(.pop, -1)
+            try emitU32(.getLocal, exc, 1)
+            try emit(.throwOp, -1)
+            freeTemp(exc)
+        } else {
+            try emit(.iterCloseThrow, -3)
+        }
         fs.code.handlers.append(JSHandler(start: UInt32(start), end: UInt32(end), target: UInt32(fs.labels[landing].pc),
                                           depth: UInt32(iterDepth)))
         try place(done, dead: true)

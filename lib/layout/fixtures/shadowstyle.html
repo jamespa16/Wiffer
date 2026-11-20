@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<style>
+body { margin: 0; font: 16px sans-serif; --gap: 6px }
+div { padding: 1px }
+p { margin: 0 }
+#h1 { margin-bottom: 10px }
+x-card::part(label) { padding-left: 30px }
+x-card::part(icon) { width: 50px }
+.dark { color: #fff }
+</style>
+<x-card id=h1 class=dark><template shadowrootmode=open>
+<style>
+:host { display: block; border: 3px solid #000; padding: var(--gap) }
+:host(.dark) .title { font-size: 24px }
+div { padding: 0 }
+.title { margin: 0 }
+::slotted(p) { padding-left: 20px; margin: 0 }
+::slotted(.big) { font-size: 30px }
+p { padding-left: 99px }
+</style>
+<div class=title part=label>Title</div><x-icon exportparts="glyph: icon"><template shadowrootmode=open><style>span { display: inline-block; width: 10px; height: 10px; background: red }</style><span part=glyph></span></template></x-icon><slot></slot></template>
+<p>slotted paragraph</p><p class=big>big one</p></x-card>
+<div id=after><p>document p: no shadow padding</p><x-card><template shadowrootmode=open><style>:host { display: inline-block; width: 100px; height: 20px; border: 1px solid }</style></template></x-card></div>
+<my-undefined>shown: :defined not used</my-undefined>
+<style>my-hidden:not(:defined) { display: none }</style>
+<my-hidden>hidden until defined</my-hidden>

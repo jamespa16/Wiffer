@@ -127,6 +127,7 @@ extension JSRealm {
             switch heap.getProperty(o, k) {
             case .value(let v): return v
             case .getter(let g): return try call(g, this: o, args: [])
+            case .exotic(let e): return try exoticGet(e, k, receiver: o)
             }
         }
         return try getPrimitive(o, k)
@@ -156,6 +157,7 @@ extension JSRealm {
         switch heap.getProperty(primitivePrototype(o), k) {
         case .value(let v): return v
         case .getter(let g): return try call(g, this: o, args: [])
+        case .exotic(let e): return try exoticGet(e, k, receiver: o)
         }
     }
 
@@ -181,6 +183,11 @@ extension JSRealm {
             if strict { throw throwTypeError("Cannot assign to read only property '" + keyDisplay(k) + "' of " + describeForError(o)) }
         case .setter(let s):
             _ = try call(s, this: o, args: [v])
+        case .exotic(let e):
+            // 9E: Proxy / host exotic / typed array conversion (jsexotic.swift).
+            if !(try objSetSlow(e, k, value, receiver: o)) && strict {
+                throw throwTypeError("Cannot assign to read only property '" + keyDisplay(k) + "' of " + describeForError(o))
+            }
         }
     }
 
@@ -218,6 +225,11 @@ extension JSRealm {
             push(o)
             push(val)
             return try dispatchCall(1, mode: JSFrameMode.discard)
+        case .exotic(let e):
+            // 9E: Proxy / host exotic / typed array conversion (jsexotic.swift).
+            if !(try objSetSlow(e, k, v, receiver: o)) && strict {
+                throw throwTypeError("'set' on proxy: trap returned falsish for property '" + keyDisplay(k) + "'")
+            }
         }
         stack[sp - 2] = stack[sp - 1]
         sp -= 1
@@ -230,7 +242,7 @@ extension JSRealm {
         }
         var ok = true
         if o.isObject {
-            ok = heap.deleteProperty(o, k)
+            ok = try objDelete(o, k)
         } else if o.isString {
             ok = !(k == heap.names.length || (k.isIndex && Int(k.index) < heap.stringLength(o)))
         }
@@ -245,6 +257,7 @@ extension JSRealm {
         switch heap.getProperty(p, k) {
         case .value(let v): return v
         case .getter(let g): return try call(g, this: this, args: [])
+        case .exotic(let e): return try exoticGet(e, k, receiver: this)
         }
     }
 
@@ -256,6 +269,10 @@ extension JSRealm {
         case .done: return
         case .failed: if strict { throw throwTypeError("Cannot assign to read only property '" + keyDisplay(k) + "'") }
         case .setter(let s): _ = try call(s, this: this, args: [v])
+        case .exotic(let e):
+            if !(try objSetSlow(e, k, v, receiver: this)) && strict {
+                throw throwTypeError("Cannot assign to read only property '" + keyDisplay(k) + "'")
+            }
         }
     }
 
@@ -378,11 +395,13 @@ extension JSRealm {
         guard v.isObject else { return false }
         let p = try getV(cc, heap.names.prototype)
         guard p.isObject else { throw throwTypeError("Function has non-object prototype in instanceof check") }
-        var o = heap.getPrototypeOf(v)
+        let rp = heap.root(p)
+        defer { heap.popRoots(to: rp.slot) }
+        var o = try objGetPrototypeOf(v)
         steps = 0
         while o.isObject && steps < JSHeap.maxProtoChain {
             if o == p { return true }
-            o = heap.getPrototypeOf(o)
+            o = try objGetPrototypeOf(o)
             steps += 1
         }
         return false
@@ -424,7 +443,7 @@ extension JSRealm {
             let fl = heap.flags(e)
             if fl.contains(.user0) {
                 let o = heap.slot(e, 2)
-                if heap.hasProperty(o, k) {
+                if try objHas(o, k) {
                     let u = try getV(o, .symbol(heap.symbolsWellKnown.unscopables.handle))
                     var blocked = false
                     if u.isObject { blocked = heap.toBoolean(try getV(u, k)) }
@@ -493,7 +512,7 @@ extension JSRealm {
         switch try lookupName(k) {
         case .slot, .lex: return false
         case .prop(let e): return heap.deleteProperty(e, k)
-        case .with(let o): return heap.deleteProperty(o, k)
+        case .with(let o): return try objDelete(o, k)
         case .global: return heap.deleteProperty(global, k)
         case .none: return true
         }
@@ -512,6 +531,10 @@ extension JSRealm {
             return v
         case .getter(let g):
             return try call(g, this: global, args: [])
+        case .exotic(let e):
+            // 9E: a Proxy on the global object's prototype chain.
+            if !orUndefined, !(try objHas(global, k)) { throw notDefined(k) }
+            return try exoticGet(e, k, receiver: global)
         }
     }
 
@@ -606,13 +629,17 @@ extension JSRealm {
         var seen = Set<UInt64>()
         var cur = o
         var steps = 0
+        let rc = heap.root(o)
         while cur.isObject && steps < JSHeap.maxProtoChain {
-            for k in heap.ownKeys(cur) where !k.isSymbol {
-                if seen.insert(k.bits).inserted, let p = heap.getOwnProperty(cur, k), p.enumerable {
+            // objOwnKeys / objGetOwnProperty: proxy traps (9E).
+            for k in try objOwnKeys(cur) where !k.isSymbol {
+                if seen.insert(k.bits).inserted, let p = try objGetOwnProperty(cur, k), p.enumerable {
                     keys.append(k.isIndex ? .number(Int(k.index)) : .string(k.handle))
+                    if k.isString { _ = heap.root(.string(k.handle)) }
                 }
             }
-            cur = heap.getPrototypeOf(cur)
+            cur = try objGetPrototypeOf(cur)
+            heap[rc] = cur
             steps += 1
         }
         let it = heap.newObject(proto: .null, kind: .internalObject)
@@ -630,7 +657,9 @@ extension JSRealm {
             let kv = heap.slot(it, i)
             i += 1
             let k: JSPropertyKey = kv.isString ? .atom(kv.handle) : .index(UInt32(truncatingIfNeeded: Int(kv.numberValue)))
-            if heap.hasProperty(o, k) {
+            // Exotic objects (9E: proxies, host hooks) skip the deleted-key
+            // check, which can't run traps here.
+            if heap.flags(o).contains(.exotic) || heap.hasProperty(o, k) {
                 heap.setInternalInt(it, Int64(i))
                 return kv.isString ? kv : heap.numberToString(kv.numberValue)
             }
@@ -736,8 +765,8 @@ extension JSRealm {
                 if let k = heap.propertyKey(heap.slot(excluding, i)) { excluded.insert(k.bits) }
             }
         }
-        for k in heap.ownKeys(s) where !excluded.contains(k.bits) {
-            guard let p = heap.getOwnProperty(s, k), p.enumerable else { continue }
+        for k in try objOwnKeys(s) where !excluded.contains(k.bits) {
+            guard let p = try objGetOwnProperty(s, k), p.enumerable else { continue }
             let v = try getV(s, k)
             _ = heap.createDataProperty(target, k, v)
         }
@@ -771,7 +800,7 @@ extension JSRealm {
 
     /// [f this newTarget args] -> a direct eval (frame pushed: true) or a
     /// plain call.
-    func directEval(_ argc: Int, strict: Bool) throws(JSThrow) -> Bool {
+    func directEval(_ argc: Int, strict: Bool, inParams: Bool = false) throws(JSThrow) -> Bool {
         let fpos = sp - argc - 3
         let f = stack[fpos]
         if f == intrinsic(.eval) && f.isObject {
@@ -794,6 +823,9 @@ extension JSRealm {
             stack[fpos + 1] = thisV
             sp = fpos + 2
             heap.popRoots(to: depth)
+            if inParams && !strict, let c = codeFor(function: closure), c.declaresArguments {
+                throw throwSyntaxError("eval in a parameter list cannot declare 'arguments'")
+            }
             let home = frames.isEmpty ? JSValue.undefined : frames[frames.count - 1].home
             try enterFunction(closure, argc: 0, mode: JSFrameMode.normal, newTarget: nt, this: thisV)
             frames[frames.count - 1].home = home
@@ -866,6 +898,15 @@ extension JSRealm {
         }
         setConstant(code, i, ca)
         return ca
+    }
+}
+
+extension JSRealm {
+    /// The VM's continuation when heap.getProperty answers .exotic(e)
+    /// (9E): [[Get]] on e with the original receiver.
+    func exoticGet(_ e: JSValue, _ k: JSPropertyKey, receiver: JSValue) throws(JSThrow) -> JSValue {
+        if heap.kind(e) == .proxy { return try proxyGet(e, k, receiver) }
+        return try objGet(e, k, receiver: receiver)
     }
 }
 

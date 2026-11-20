@@ -7,6 +7,7 @@
 //                       stops a running script, Ctrl-D exits)
 //   --budget MS         wall-clock budget per task (default 5000 for files,
 //                       none in the REPL; 0 turns it off)
+//   --module            run the file as an ES module (also for *.mjs)
 //   --heap MIB          heap cap (default 64)
 //
 // Exit status: 0, 1 for an uncaught exception, 2 when the script was
@@ -17,6 +18,7 @@ var jsFile: String? = nil
 var jsEval: String? = nil
 var jsBudget = -1
 var jsHeap = 64
+var jsModule = false
 
 func jsUsage() -> Never {
     File.stderr.write("usage: js [--budget ms] [--heap MiB] [file.js | -e code]\n")
@@ -40,6 +42,8 @@ while jsIndex < jsArgs.count {
     if a == "--budget" {
         if jsIndex >= jsArgs.count { jsUsage() }
         jsBudget = jsNumberArg(jsArgs[jsIndex]); jsIndex += 1
+    } else if a == "--module" {
+        jsModule = true
     } else if a == "--heap" {
         if jsIndex >= jsArgs.count { jsUsage() }
         jsHeap = max(1, min(jsNumberArg(jsArgs[jsIndex]), 400)); jsIndex += 1
@@ -83,9 +87,12 @@ if let code = jsEval {
         Process.exit(64)
     }
 }
-jsShell.run(jsSource, name: jsName)
+if jsModule || jsName.hasSuffix(".mjs") {
+    jsShell.runModule(jsSource, name: jsName)
+} else {
+    jsShell.run(jsSource, name: jsName)
+}
 if !jsShell.failed {
-    jsShell.loop.performMicrotaskCheckpoint()
     jsShell.loop.runUntilIdle(sleep: { ms in jsShell.flush(); Time.sleep(ms) },
                               shouldStop: { jsShell.terminated })
 }

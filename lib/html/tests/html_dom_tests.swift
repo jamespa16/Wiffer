@@ -24,6 +24,10 @@ func htmlTreeConsistent(_ root: HTMLNode) -> Bool {
             if t.templateElement !== n || t.parent != nil { ok = false }
             stack.append(t)
         }
+        if let s = n.attachedShadowRoot {
+            if s.host !== n || s.parent != nil { ok = false }
+            stack.append(s)
+        }
     }
     return ok
 }

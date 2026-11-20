@@ -417,8 +417,12 @@ final class JSInspector {
             if kind == .stringWrapper { keys = keys.filter { !$0.isIndex && !($0.isString && heap.swiftString(heap.keyValue($0)) == "length") } }
         case .promise:
             prefixOverride = prefix("Promise")
-        case .map: prefixOverride = prefix("Map")
-        case .set: prefixOverride = prefix("Set")
+        case .map, .set:
+            var n = 0
+            let stride = kind == .map ? 2 : 1
+            var i = 0
+            while i < heap.slotCount(o) { if !heap.slot(o, i).isHole { n += 1 }; i += stride }
+            prefixOverride = prefix(kind == .map ? "Map" : "Set", n)
         case .weakMap: prefixOverride = prefix("WeakMap")
         case .weakSet: prefixOverride = prefix("WeakSet")
         case .arguments:
@@ -455,6 +459,7 @@ final class JSInspector {
         seen.append(o.handle)
         currentDepth = level
         var output: [String] = []
+        var shownBefore = 0
         if isArray {
             let total = kind == .array ? Int(heap.arrayLength(o)) : indexed.count
             var pos = 0
@@ -488,8 +493,37 @@ final class JSInspector {
         for (k, p) in shown where !(isArray && k.isString && heap.swiftString(heap.keyValue(k)) == "length") {
             output.append(formatProperty(o, k, p, level))
         }
-        // Map/Set/Promise contents: added with the 9E collections.
         let extra = ""
+        if kind == .map || kind == .set {
+            let stride = kind == .map ? 2 : 1
+            var i = 0
+            while i < heap.slotCount(o) {
+                let k = heap.slot(o, i)
+                if !k.isHole {
+                    indentation += 2
+                    var e = formatValue(k, level + 1)
+                    if kind == .map { e += " => " + formatValue(heap.slot(o, i + 1), level + 1) }
+                    indentation -= 2
+                    output.insert(e, at: min(output.count, shownBefore))
+                    shownBefore += 1
+                }
+                i += stride
+            }
+        } else if kind == .promise {
+            var e: String
+            switch realm.promiseState(o) {
+            case .pending: e = "<pending>"
+            case .fulfilled:
+                indentation += 2
+                e = formatValue(realm.promiseResult(o), level + 1)
+                indentation -= 2
+            case .rejected:
+                indentation += 2
+                e = "<rejected> " + formatValue(realm.promiseResult(o), level + 1)
+                indentation -= 2
+            }
+            output.insert(e, at: 0)
+        }
         seen.removeLast()
 
         var start = prefixOverride ?? ""

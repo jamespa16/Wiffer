@@ -46,6 +46,7 @@ struct JSStringCell {
 struct JSSymbolCell {
     var description: JSValue = .undefined   // string or undefined
     var registryKey = false                  // created by Symbol.for
+    var isPrivate = false                    // a private name (Phase 9E): never listed by ownKeys
 }
 
 /// Builds a JS string unit by unit, staying Latin-1 until a wide unit.
