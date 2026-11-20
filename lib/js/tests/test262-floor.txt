@@ -1,7 +1,7 @@
 # test262 pass-count floors (Phase 9D): <directory> <full run> <sample run>.
 # The run fails if a directory's pass count drops below its floor. 0 = untracked.
 # Raise them as phases land: see the header of jstest262_run.swift and ROADMAP Phase 9D.
-TOTAL 15602 985
+TOTAL 19500 1450
 annexB/built-ins/Array 0 0
 annexB/built-ins/Date 17 1
 annexB/built-ins/Function 6 1
@@ -9,8 +9,8 @@ annexB/built-ins/Object 0 0
 annexB/built-ins/RegExp 27 1
 annexB/built-ins/String 56 5
 annexB/built-ins/TypedArrayConstructors 0 0
-annexB/built-ins/escape 0 0
-annexB/built-ins/unescape 0 0
+annexB/built-ins/escape 14 0
+annexB/built-ins/unescape 17 0
 annexB/language/comments 8 1
 annexB/language/eval-code 143 11
 annexB/language/expressions 5 0
@@ -20,9 +20,9 @@ annexB/language/literals 8 1
 annexB/language/statements 13 0
 built-ins/AbstractModuleSource 0 0
 built-ins/AggregateError 0 0
-built-ins/Array 279 16
+built-ins/Array 2740 168
 built-ins/ArrayBuffer 0 0
-built-ins/ArrayIteratorPrototype 13 1
+built-ins/ArrayIteratorPrototype 16 1
 built-ins/AsyncDisposableStack 0 0
 built-ins/AsyncFromSyncIteratorPrototype 0 0
 built-ins/AsyncFunction 5 1
@@ -31,7 +31,7 @@ built-ins/AsyncGeneratorPrototype 0 0
 built-ins/AsyncIteratorPrototype 0 0
 built-ins/Atomics 0 0
 built-ins/BigInt 0 0
-built-ins/Boolean 41 3
+built-ins/Boolean 45 3
 built-ins/DataView 0 0
 built-ins/Date 439 34
 built-ins/DisposableStack 0 0
@@ -42,14 +42,14 @@ built-ins/GeneratorFunction 1 0
 built-ins/GeneratorPrototype 6 0
 built-ins/Infinity 3 0
 built-ins/Iterator 2 0
-built-ins/JSON 0 0
+built-ins/JSON 115 7
 built-ins/Map 0 0
 built-ins/MapIteratorPrototype 0 0
-built-ins/Math 0 0
+built-ins/Math 306 20
 built-ins/NaN 4 0
 built-ins/NativeErrors 38 3
-built-ins/Number 173 12
-built-ins/Object 1000 65
+built-ins/Number 327 21
+built-ins/Object 3029 186
 built-ins/Promise 0 0
 built-ins/Proxy 0 0
 built-ins/Reflect 0 0
@@ -71,16 +71,16 @@ built-ins/Uint8Array 0 0
 built-ins/WeakMap 0 0
 built-ins/WeakRef 0 0
 built-ins/WeakSet 0 0
-built-ins/decodeURI 1 1
-built-ins/decodeURIComponent 1 1
-built-ins/encodeURI 1 0
-built-ins/encodeURIComponent 1 0
+built-ins/decodeURI 41 1
+built-ins/decodeURIComponent 42 1
+built-ins/encodeURI 19 0
+built-ins/encodeURIComponent 19 0
 built-ins/eval 7 1
-built-ins/global 21 2
-built-ins/isFinite 0 0
-built-ins/isNaN 0 0
-built-ins/parseFloat 1 0
-built-ins/parseInt 1 0
+built-ins/global 24 2
+built-ins/isFinite 14 0
+built-ins/isNaN 14 0
+built-ins/parseFloat 52 3
+built-ins/parseInt 53 3
 built-ins/undefined 6 0
 language/arguments-object 73 5
 language/asi 102 7

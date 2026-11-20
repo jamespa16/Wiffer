@@ -96,7 +96,7 @@ let jsBuiltins2Cases: [(String, String)] = [
     ("var d = new Date(0); d.setUTCDate(0); d.setUTCHours(25, 61, 61, 1001); d.toISOString()", "1970-01-01T02:02:02.001Z"),
     ("var d = new Date(NaN); var r = d.setFullYear(2000); r + ',' + d.toISOString() + ',' + new Date(NaN).setMonth(1)", "946684800000,2000-01-01T00:00:00.000Z,NaN"),
     ("var d = new Date(8.64e15); d.setUTCMilliseconds(1); d.getTime() + ',' + new Date(8.64e15 + 1).getTime() + ',' + new Date(-8.64e15).getUTCFullYear()", "NaN,NaN,-271821"),
-    ("var d = new Date(Date.UTC(2020, 5, 15, 12, 30, 45, 123)); [d.getUTCDay(), d.getDay(), d.getUTCHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds(), d.getTimezoneOffset(), d.getYear()].join ? 0 : J([d.getUTCDay(), d.getDay(), d.getUTCHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds(), d.getTimezoneOffset(), d.getYear()])", "1|1|12|30|45|123|0|120"),
+    ("var d = new Date(Date.UTC(2020, 5, 15, 12, 30, 45, 123)); J([d.getUTCDay(), d.getDay(), d.getUTCHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds(), d.getTimezoneOffset(), d.getYear()])", "1|1|12|30|45|123|0|120"),
     ("var d = new Date(0); d.setYear(99); d.getFullYear() + ',' + d.setYear(NaN) + ',' + Date.prototype.toGMTString === Date.prototype.toUTCString", "false"),
     ("new Date(0).toString() + '|' + new Date(0).toUTCString() + '|' + new Date(0).toDateString() + '|' + new Date(0).toLocaleString()", "Thu Jan 01 1970 00:00:00 GMT+0000 (Coordinated Universal Time)|Thu, 01 Jan 1970 00:00:00 GMT|Thu Jan 01 1970|1/1/1970, 12:00:00 AM"),
     ("Date.parse('2026-11-19T10:00:00Z') + ',' + Date.parse('Thu, 01 Jan 1970 00:00:01 GMT') + ',' + Date.parse('nope')", "1795082400000,1000,NaN"),
