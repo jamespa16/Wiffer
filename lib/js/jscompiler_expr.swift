@@ -20,6 +20,8 @@ enum JSRefTarget {
     case index
     case superMember(Int)
     case superIndex
+    /// obj.#x: [obj record] on the stack.
+    case privateMember
     case invalid
 }
 
@@ -125,17 +127,20 @@ extension JSCompiler {
             try emit(.dup, 1)
             try emitArgs(n, node.b, node.c, op: .construct)
         case .privateMember:
-            try notSupported("private class members")
-            try adjust(1)
+            try emitChain(n, forCall: false)
         case .yieldExpr:
-            try notSupported("generators")
-            try adjust(1)
+            try emitYield(n)
         case .awaitExpr:
-            try notSupported("async functions")
-            try adjust(1)
-        case .importCall, .importMeta:
-            try notSupported("modules")
-            try adjust(1)
+            try emitExpr(node.a)
+            setPos(n)
+            try emitAwait()
+        case .importMeta:
+            let r = sa.ref(n)
+            if r >= 0 { try emitGetBinding(r, checked: false) } else { try emit(.pushUndefined, 1) }
+        case .importCall:
+            try emitExpr(node.a)
+            setPos(n)
+            try emit(.dynamicImport, 0)
         default:
             throw fail("unexpected expression", n)
         }
@@ -160,15 +165,21 @@ extension JSCompiler {
             spine.append(x)
             x = ast[x].a
         }
-        if ast.kind(x) == .privateName {
-            try notSupported("private class members")
-            try adjust(1)
+        let privateIn = ast.kind(x) == .privateName
+        if privateIn {
+            try emitPrivateRecord(x)   // `#x in o`
         } else {
             try emitExpr(x)
         }
-        for node in spine.reversed() {
+        for (si, node) in spine.reversed().enumerated() {
             let b = ast[node]
             let op = JSBinaryOp(rawValue: b.op) ?? .add
+            if si == 0 && privateIn {
+                try emitExpr(b.b)
+                setPos(node)
+                try emit(.hasPrivate, -1)
+                continue
+            }
             switch op {
             case .logicalAnd, .logicalOr, .nullish:
                 let l = newLabel()
@@ -320,8 +331,9 @@ extension JSCompiler {
             try emitExpr(tn.b)
             return .index
         case .privateMember:
-            try notSupported("private class members")
-            return .invalid
+            try emitExpr(tn.a)
+            try emitPrivateRecord(t)
+            return .privateMember
         default:
             // Annex B: f() = 1 evaluates f() then throws.
             try emitExpr(t)
@@ -339,9 +351,8 @@ extension JSCompiler {
         case .member(let k): try emit(.dup, 1); try emitU32(.getField, k, 0)
         case .index: try emit(.dup2, 2); try emit(.getElem, -1)
         case .superMember(let k): try emit(.dup2, 2); try emitU32(.getSuperField, k, -1)
-        case .superIndex:
-            try notSupported("compound assignment to super[...]")
-            try adjust(1)
+        case .superIndex: try emit(.dup3, 3); try emit(.getSuperElem, -2)
+        case .privateMember: try emit(.dup2, 2); try emit(.getPrivate, -1)
         case .invalid:
             try emit(.pushUndefined, 1)
         }
@@ -368,6 +379,7 @@ extension JSCompiler {
         case .index: try emit(.putElem, -2)
         case .superMember(let k): try emitU32(.putSuperField, k, -2)
         case .superIndex: try emit(.putSuperElem, -3)
+        case .privateMember: try emit(.putPrivate, -2)
         case .invalid:
             try throwError(.referenceError, "Invalid left-hand side in assignment")
         }
@@ -433,7 +445,7 @@ extension JSCompiler {
     func refParts(_ r: JSRefTarget) -> Int {
         switch r {
         case .member: return 1
-        case .index, .superMember: return 2
+        case .index, .superMember, .privateMember: return 2
         case .superIndex: return 3
         default: return 0
         }
@@ -453,9 +465,19 @@ extension JSCompiler {
         }
         try emit(.toNumeric, 0)
         let parts = refParts(r)
+        if parts == 3 {
+            // [this home key old]: keep the old value in a temp.
+            let tmp = tempLocal()
+            try emitU32(.setLocal, tmp, 0)
+            try emit(inc ? .inc : .dec, 0)
+            try storeRefKeep(r)
+            try emit(.pop, -1)
+            try emitU32(.getLocal, tmp, 1)
+            freeTemp(tmp)
+            return
+        }
         try emit(.dup, 1)
         if parts == 1 { try emit(.rot3, 0) } else if parts == 2 { try emit(.rot4, 0) }
-        else if parts == 3 { try notSupported("postfix update of super[...]") }
         try emit(inc ? .inc : .dec, 0)
         try storeRefKeep(r)
         try emit(.pop, -1)
@@ -467,6 +489,7 @@ extension JSCompiler {
         let n = ast[x]
         switch n.kind {
         case .member, .index: return ast.kind(n.a) != .superExpr
+        case .privateMember: return true
         case .call:
             let c = ast[n.a]
             if c.kind == .superExpr { return false }
@@ -507,6 +530,18 @@ extension JSCompiler {
                 try emitExpr(nd.b)
                 setPos(node)
                 try emit(wantThis ? .getElemForCall : .getElem, wantThis ? 0 : -1)
+            case .privateMember:
+                if optional { try jumpIfNullish(try optLabel(), pos: 0, pop: 1) }
+                setPos(node)
+                if wantThis {
+                    try emit(.dup, 1)
+                    try emitPrivateRecord(node)
+                    try emit(.getPrivate, -1)
+                    try emit(.swap, 0)
+                } else {
+                    try emitPrivateRecord(node)
+                    try emit(.getPrivate, -1)
+                }
             default: // call: [f this] on the stack
                 if optional { try jumpIfNullish(try optLabel(), pos: 1, pop: 2) }
                 try emitArgs(node, nd.b, nd.c, op: .call)
@@ -540,12 +575,19 @@ extension JSCompiler {
         case .index where ast.kind(n.a) == .superExpr:
             try emitSuperGet(x)
             try emitSuperThis(n.a)
-        case .member, .index, .call:
+        case .member, .index, .call, .privateMember:
             try emitChain(x, forCall: true)
         default:
             try emitExpr(x)
             try emit(.pushUndefined, 1)
         }
+    }
+
+    /// Push the private record a `#x` reference resolves to.
+    func emitPrivateRecord(_ n: Int32) throws(JSCompileError) {
+        let r = sa.ref(n)
+        guard r >= 0 else { throw fail("undeclared private name", n) }
+        try emitGetBinding(r, checked: false)
     }
 
     /// Arguments and the call instruction. The stack holds [f this] (call,
@@ -573,6 +615,11 @@ extension JSCompiler {
         for a in args { try emitExpr(a) }
         setPos(callNode)
         let extra = op == .directEval ? 2 : 1
+        if op == .directEval {
+            guard args.count < 0x8000 else { throw fail("too many arguments") }
+            try emitU16(op, args.count | (fs.inParams ? 0x8000 : 0), -(args.count + extra))
+            return
+        }
         try emitU16(op, args.count, -(args.count + extra))
     }
 
@@ -583,9 +630,22 @@ extension JSCompiler {
         if t >= 0 { try emitGetBinding(t) } else { try emit(.loadGlobalThis, 1) }
         let nt = sa.superRef(n, 3)
         if nt >= 0 { try emitGetBinding(nt, checked: false) } else { try emit(.pushUndefined, 1) }
-        for a in ast.list(node.b, node.c) where ast.kind(a) == .spread {
-            try notSupported("spread arguments to eval")
-            break
+        var spread = false
+        for a in ast.list(node.b, node.c) where ast.kind(a) == .spread { spread = true; break }
+        if spread {
+            try emitU32(.newArray, 0, 1)
+            for a in ast.list(node.b, node.c) {
+                if ast.kind(a) == .spread {
+                    try emitExpr(ast[a].a)
+                    try emit(.appendSpread, -1)
+                } else {
+                    try emitExpr(a)
+                    try emit(.appendElem, -1)
+                }
+            }
+            setPos(n)
+            try emitU16(.directEvalArray, 0, -3)
+            return
         }
         try emitArgs(n, node.b, node.c, op: .directEval)
     }
@@ -842,7 +902,7 @@ extension JSCompiler {
             try emitObjectPattern(t, mode: mode)
         case .arrayPattern:
             try emitArrayPattern(t, mode: mode)
-        case .member, .index:
+        case .member, .index, .privateMember:
             let tmp = tempLocal()
             try emitU32(.putLocal, tmp, -1)
             let r = try prepareRef(t)
@@ -861,11 +921,29 @@ extension JSCompiler {
         setPos(t)
         try emit(.checkObjectCoercible, 0)
         var excluded: [JSValue] = []
-        var computedSeen = false
+        var hasRest = false, hasComputed = false
+        for p in ast.list(tn.a, tn.b) {
+            if ast.kind(p) == .rest { hasRest = true }
+            if ast.kind(p) == .property && ast[p].flags & JSNodeFlags.computed != 0 { hasComputed = true }
+        }
+        // With computed keys and a rest element, the excluded keys are
+        // collected at run time in an array.
+        var keysTmp = -1
+        if hasRest && hasComputed {
+            keysTmp = tempLocal()
+            try emitU32(.newArray, 0, 1)
+            try emitU32(.putLocal, keysTmp, -1)
+        }
         for p in ast.list(tn.a, tn.b) {
             let pn = ast[p]
+            if pn.kind == .rest && keysTmp >= 0 {
+                try emit(.dup, 1)
+                try emitU32(.getLocal, keysTmp, 1)
+                try emit(.objectRestDynamic, -1)
+                try emitBindingInit(pn.a, mode: mode)
+                continue
+            }
             if pn.kind == .rest {
-                if computedSeen { try notSupported("rest after computed keys in an object pattern") }
                 let d = heap.newObject(proto: .null, kind: .internalObject, flags: [])
                 _ = heap.root(d)
                 heap.setSlots(d, excluded)
@@ -877,9 +955,15 @@ extension JSCompiler {
             guard pn.kind == .property else { continue }
             try emit(.dup, 1)
             if pn.flags & JSNodeFlags.computed != 0 {
-                computedSeen = true
                 try emitExpr(pn.a)
                 try emit(.toPropertyKey, 0)
+                if keysTmp >= 0 {
+                    try emit(.dup, 1)
+                    try emitU32(.getLocal, keysTmp, 1)
+                    try emit(.swap, 0)
+                    try emit(.appendElem, -1)
+                    try emit(.pop, -1)
+                }
                 try emit(.getElem, -1)
             } else {
                 guard let k = try staticKey(pn.a) else { throw fail("bad pattern key", p) }
@@ -887,18 +971,29 @@ extension JSCompiler {
                 let kv = heap.keyValue(kk)
                 _ = heap.root(kv)
                 excluded.append(kv)
+                if keysTmp >= 0 {
+                    try emitU32(.getLocal, keysTmp, 1)
+                    try emitU32(.pushConst, addConst(kv), 1)
+                    try emit(.appendElem, -1)
+                    try emit(.pop, -1)
+                }
                 try emitU32(.getField, k, 0)
             }
             guard pn.b >= 0 else { throw internalError("pattern property target") }
             try emitBindingInit(pn.b, mode: mode)
         }
         try emit(.pop, -1)
+        if keysTmp >= 0 { freeTemp(keysTmp) }
     }
 
     func emitArrayPattern(_ t: Int32, mode: JSBindMode) throws(JSCompileError) {
         let tn = ast[t]
         setPos(t)
         try emit(.getIterator, 1)
+        // An exception while binding the elements closes the iterator
+        // (unless the iterator itself threw: its record is null then).
+        let pdepth = fs.depth
+        let start = fs.code.bytes.count
         for e in ast.list(tn.a, tn.b) {
             switch ast.kind(e) {
             case .hole:
@@ -912,7 +1007,21 @@ extension JSCompiler {
                 try emitBindingInit(e, mode: mode)
             }
         }
+        let end = fs.code.bytes.count
         try emit(.iterClose, -2)
+        if end > start {
+            let after = newLabel(), landing = newLabel()
+            try emitJump(.jump, after)
+            fs.depth = pdepth
+            try place(landing, dead: true)
+            fs.labels[landing].depth = pdepth
+            fs.code.handlers.append(JSHandler(start: UInt32(start), end: UInt32(end),
+                                              target: UInt32(fs.labels[landing].pc), depth: UInt32(pdepth)))
+            try adjust(1)
+            try emit(.iterCloseThrow, -3)
+            fs.depth = pdepth - 2
+            try place(after, dead: true)
+        }
     }
 
     // MARK: Classes
@@ -929,16 +1038,6 @@ extension JSCompiler {
         for m in members {
             let mn = ast[m]
             guard mn.kind == .property else { continue }
-            if mn.flags & JSNodeFlags.privateKey != 0 || ast.kind(mn.a) == .privateName {
-                try notSupported("private class members")
-                try adjust(1)
-                return
-            }
-            if mn.op == JSPropertyKind.field.rawValue && mn.flags & JSNodeFlags.computed != 0 {
-                try notSupported("computed class field names")
-                try adjust(1)
-                return
-            }
             if ast.kind(mn.a) == .bigint {
                 try notSupported("BigInt property keys")
                 try adjust(1)
@@ -946,6 +1045,21 @@ extension JSCompiler {
             }
         }
         try enterScope(cs)
+        // Private names: one fresh record per class evaluation.
+        var privDone: Set<Int32> = []
+        for m in members {
+            let mn = ast[m]
+            guard mn.kind == .property, ast.kind(mn.a) == .privateName else { continue }
+            let id = ast[mn.a].a
+            if !privDone.insert(id).inserted { continue }
+            guard let b = sa.scopes[Int(cs)].names[JSPseudoName.privateName(id)] else { throw internalError("private name binding") }
+            let pk = JSPropertyKind(rawValue: mn.op) ?? .method
+            let kind: UInt8 = pk == .field ? 0 : pk == .method ? 1 : 2
+            try emit(.newPrivateName, 1)
+            put32(addConst(atomValue("#" + ast.text(id))))
+            fs.code.bytes.append(kind)
+            try emitPutBinding(b, initialize: true)
+        }
         let derived = node.b >= 0
         if derived { try emitExpr(node.b) }
         var ctorFn: Int32 = -1
@@ -959,6 +1073,7 @@ extension JSCompiler {
                 if mn.flags & JSNodeFlags.isStatic != 0 { hasStatic = true } else { hasInstanceFields = true }
                 continue
             }
+            if ast.kind(mn.a) == .privateName && mn.flags & JSNodeFlags.isStatic == 0 { hasInstanceFields = true }
             if mn.b >= 0 {
                 let fk = ast[mn.b].op
                 if fk == JSFunctionKind.classConstructor.rawValue || fk == JSFunctionKind.derivedConstructor.rawValue {
@@ -979,11 +1094,43 @@ extension JSCompiler {
         put32(addConst(ctorCode.codeObject))
         fs.code.bytes.append(derived ? 1 : 0)
         // [ctor proto]
+        var staticPrivate: [Int32] = []
         for m in members {
             let mn = ast[m]
-            guard mn.kind == .property, mn.op != JSPropertyKind.field.rawValue, mn.b != ctorFn else { continue }
+            guard mn.kind == .property, mn.b != ctorFn else { continue }
             let isStatic = mn.flags & JSNodeFlags.isStatic != 0
+            if mn.op == JSPropertyKind.field.rawValue {
+                // A computed field key is evaluated here, in member order.
+                if mn.flags & JSNodeFlags.computed != 0 && ast.kind(mn.a) != .privateName {
+                    guard let b = sa.scopes[Int(cs)].names[JSPseudoName.computedField(m)] else { throw internalError("field key binding") }
+                    setPos(m)
+                    try emitExpr(mn.a)
+                    try emit(.toPropertyKey, 0)
+                    try emitPutBinding(b, initialize: true)
+                }
+                continue
+            }
             let pkind = JSPropertyKind(rawValue: mn.op) ?? .method
+            if ast.kind(mn.a) == .privateName {
+                // [ctor proto] -> the function goes into the private record.
+                let id = ast[mn.a].a
+                guard let b = sa.scopes[Int(cs)].names[JSPseudoName.privateName(id)], mn.b >= 0 else { throw internalError("private method") }
+                setPos(m)
+                let prefix = pkind == .getter ? "get " : pkind == .setter ? "set " : ""
+                if isStatic { try emit(.swap, 0) }
+                let code = try compileFunction(mn.b, name: atomValue(prefix + "#" + ast.text(id)))
+                try emitU32(.closure, addConst(code.codeObject), 1)
+                try emit(.over, 1)
+                try emit(.setHomeObject, -1)
+                try emitGetBinding(b, checked: false)
+                try emit(.swap, 0)
+                try emitU8(.setPrivateMethod, pkind == .getter ? 1 : pkind == .setter ? 2 : 0, -2)
+                if isStatic {
+                    try emit(.swap, 0)
+                    if !staticPrivate.contains(id) { staticPrivate.append(id) }
+                }
+                continue
+            }
             var flags: UInt8 = JSMethodFlags.home
             var prefix = ""
             if pkind == .getter { flags |= JSMethodFlags.getter; prefix = "get " }
@@ -999,7 +1146,19 @@ extension JSCompiler {
             try emit(.setFieldInit, -1)
         }
         try emit(.pop, -1)
-        // [ctor]
+        // [ctor]: static private methods, then static fields and blocks.
+        for id in staticPrivate {
+            guard let b = sa.scopes[Int(cs)].names[JSPseudoName.privateName(id)] else { throw internalError("private name") }
+            try emit(.dup, 1)
+            try emitGetBinding(b, checked: false)
+            try emit(.addPrivateBrand, -1)
+            try emit(.pop, -1)
+        }
+        // The inner name is bound before static fields and blocks run.
+        if node.a >= 0, let inner = sa.scopes[Int(cs)].names[ast[node.a].a] {
+            try emit(.dup, 1)
+            try emitPutBinding(inner, initialize: true)
+        }
         if hasStatic {
             let si = try compileFieldInit(n, isStatic: true)
             try emitU32(.closure, addConst(si.codeObject), 1)
@@ -1008,10 +1167,6 @@ extension JSCompiler {
             try emit(.over, 1)
             try emitU16(.call, 0, -1)
             try emit(.pop, -1)
-        }
-        if node.a >= 0, let inner = sa.scopes[Int(cs)].names[ast[node.a].a] {
-            try emit(.dup, 1)
-            try emitPutBinding(inner, initialize: true)
         }
         try exitScope(cs)
     }
@@ -1066,6 +1221,24 @@ extension JSCompiler {
         computeBlockEnvs(s)
         try enterScope(s)
         try emitPseudoPrologue(s)
+        // Instance private methods and accessors come before the fields.
+        if !isStatic {
+            var done: Set<Int32> = []
+            for m in ast.list(node.c, node.d) {
+                let mn = ast[m]
+                guard mn.kind == .property, mn.op != JSPropertyKind.field.rawValue, ast.kind(mn.a) == .privateName,
+                      mn.flags & JSNodeFlags.isStatic == 0 else { continue }
+                let id = ast[mn.a].a
+                if !done.insert(id).inserted { continue }
+                let b = pseudoBinding(JSPseudoName.privateName(id))
+                if b < 0 { throw internalError("private brand") }
+                setPos(m)
+                try emitThis()
+                try emitGetBinding(b, checked: false)
+                try emit(.addPrivateBrand, -1)
+                try emit(.pop, -1)
+            }
+        }
         for m in ast.list(node.c, node.d) {
             let mn = ast[m]
             setPos(m)
@@ -1082,6 +1255,26 @@ extension JSCompiler {
             }
             guard mn.kind == .property, mn.op == JSPropertyKind.field.rawValue,
                   (mn.flags & JSNodeFlags.isStatic != 0) == isStatic else { continue }
+            if ast.kind(mn.a) == .privateName {
+                let id = ast[mn.a].a
+                let b = pseudoBinding(JSPseudoName.privateName(id))
+                if b < 0 { throw internalError("private field") }
+                try emitThis()
+                try emitGetBinding(b, checked: false)
+                if mn.b >= 0 { try emitExpr(mn.b, nameHint: atomValue("#" + ast.text(id))) } else { try emit(.pushUndefined, 1) }
+                try emit(.definePrivate, -3)
+                continue
+            }
+            if mn.flags & JSNodeFlags.computed != 0 {
+                let b = pseudoBinding(JSPseudoName.computedField(m))
+                if b < 0 { throw internalError("computed field") }
+                try emitThis()
+                try emitGetBinding(b, checked: false)
+                if mn.b >= 0 { try emitExpr(mn.b) } else { try emit(.pushUndefined, 1) }
+                try emit(.defineElem, -2)
+                try emit(.pop, -1)
+                continue
+            }
             guard let k = try staticKey(mn.a) else { throw internalError("field key") }
             try emitThis()
             if mn.b >= 0 { try emitExpr(mn.b, nameHint: keyName(mn.a)) } else { try emit(.pushUndefined, 1) }

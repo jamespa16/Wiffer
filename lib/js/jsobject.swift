@@ -748,7 +748,8 @@ extension JSHeap {
         while s < sparseKeys.count { out.append(.index(sparseKeys[s])); s += 1 }
         if objects[i].kind == .array || objects[i].kind == .stringWrapper { out.append(names.length) }
         for p in objects[i].props where p.key.isString { out.append(p.key) }
-        for p in objects[i].props where p.key.isSymbol { out.append(p.key) }
+        // Private names (Phase 9E, jsvm_private.swift) are own slots but never keys.
+        for p in objects[i].props where p.key.isSymbol && !isPrivateSymbol(p.key.handle) { out.append(p.key) }
         return out
     }
 

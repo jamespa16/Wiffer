@@ -40,7 +40,7 @@
 
 /// HOOK (Phase 9E, Promise and microtasks): run the realm's job queue to
 /// completion. nil = async tests are skipped.
-nonisolated(unsafe) var jsTest262DrainJobs: ((JSRealm) -> Void)? = nil
+nonisolated(unsafe) var jsTest262DrainJobs: ((JSRealm) -> Void)? = { (realm: JSRealm) in _ = realm.runJobs() }
 
 final class JSTest262Budget {
     var deadline = 0
@@ -89,7 +89,6 @@ final class JSTest262Runner {
 
     func skipReason(_ meta: JSTest262Meta, _ src: [UInt8]) -> String? {
         for f in meta.features where jsTest262RunSkipFeatures.contains(f) { return "feature " + f }
-        if meta.module { return "module" }
         if meta.async && jsTest262DrainJobs == nil { return "async" }
         let text = String(decoding: src, as: UTF8.self)
         for entry in jsTest262RunSkipSource where jsTestHas(text, entry.needle) { return entry.reason }
@@ -99,7 +98,7 @@ final class JSTest262Runner {
     /// One variant (sloppy or strict) in a fresh realm.
     func runVariant(_ meta: JSTest262Meta, _ src: [UInt8], strict: Bool, path: String) -> JSTest262Result {
         var text: [UInt8] = []
-        if strict { text += Array("\"use strict\";\n".utf8) }
+        if strict && !meta.module { text += Array("\"use strict\";\n".utf8) }
         if !meta.raw {
             var files = ["assert.js", "sta.js"]
             if meta.async { files.append("doneprintHandle.js") }
@@ -110,7 +109,7 @@ final class JSTest262Runner {
                 text.append(0x0A)
             }
         }
-        text += src
+        if !meta.module { text += src }
         budget.calls = 0
         budget.hit = false
         budget.deadline = hostMillis() + (gcStress ? timeoutMs * 20 : timeoutMs)
@@ -119,8 +118,30 @@ final class JSTest262Runner {
         var printed: [String] = []
         realm.printHandler = { (s: String) in printed.append(s) }
         installHost(realm)
-        let completion = realm.evaluate(source: text, name: path)
-        if meta.async, let drain = jsTest262DrainJobs {
+        var completion = realm.evaluate(source: text, name: path)
+        if meta.module, case .normal = completion {
+            // Phase 9E: the test is the root module; imports resolve
+            // relative to its directory.
+            realm.moduleLoader = { (r: JSRealm, spec: String, ref: String) -> JSModuleLoadResult in
+                let url = jsTest262ResolveModule(spec, ref)
+                guard let b = hostReadFile(url) else { return .error("Cannot find module '" + spec + "'") }
+                return .source(url: url, bytes: b)
+            }
+            completion = realm.evaluateModule(source: src, name: path)
+            if case .normal(let p) = completion {
+                let keep = realm.heap.retain(p)
+                if let drain = jsTest262DrainJobs { drain(realm) }
+                let pv = realm.heap.persistent[keep.slot]
+                if realm.promiseState(pv) == .rejected {
+                    realm.heap.release(keep)
+                    _ = realm.throwValue(realm.promiseResult(pv))
+                    let u = realm.uncaught()
+                    completion = .exception(u)
+                } else {
+                    realm.heap.release(keep)
+                }
+            }
+        } else if meta.async, let drain = jsTest262DrainJobs {
             drain(realm)
         }
         switch completion {
@@ -182,7 +203,7 @@ final class JSTest262Runner {
     func run(path: String, src: [UInt8], meta: JSTest262Meta) -> JSTest262Result {
         if let why = skipReason(meta, src) { return JSTest262Result(status: .skip, message: why) }
         var variants: [Bool] = []
-        if meta.onlyStrict { variants = [true] } else if meta.noStrict { variants = [false] } else { variants = [false, true] }
+        if meta.onlyStrict || meta.module { variants = [true] } else if meta.noStrict { variants = [false] } else { variants = [false, true] }
         for strict in variants {
             let r = runVariant(meta, src, strict: strict, path: path)
             if r.status != .pass {
@@ -191,6 +212,18 @@ final class JSTest262Runner {
         }
         return JSTest262Result(status: .pass, message: "")
     }
+}
+
+/// A module specifier relative to the importing file (./x.js, ../x.js).
+func jsTest262ResolveModule(_ spec: String, _ referrer: String) -> String {
+    var parts = referrer.split(separator: "/", omittingEmptySubsequences: false).map { String($0) }
+    if !parts.isEmpty { parts.removeLast() }
+    for c in spec.split(separator: "/", omittingEmptySubsequences: false) {
+        if c == "." { continue }
+        if c == ".." { if !parts.isEmpty { parts.removeLast() }; continue }
+        parts.append(String(c))
+    }
+    return parts.joined(separator: "/")
 }
 
 func jsTest262DirKey(_ path: String) -> String {

@@ -800,7 +800,7 @@ extension JSRealm {
 
     /// [f this newTarget args] -> a direct eval (frame pushed: true) or a
     /// plain call.
-    func directEval(_ argc: Int, strict: Bool) throws(JSThrow) -> Bool {
+    func directEval(_ argc: Int, strict: Bool, inParams: Bool = false) throws(JSThrow) -> Bool {
         let fpos = sp - argc - 3
         let f = stack[fpos]
         if f == intrinsic(.eval) && f.isObject {
@@ -823,6 +823,9 @@ extension JSRealm {
             stack[fpos + 1] = thisV
             sp = fpos + 2
             heap.popRoots(to: depth)
+            if inParams && !strict, let c = codeFor(function: closure), c.declaresArguments {
+                throw throwSyntaxError("eval in a parameter list cannot declare 'arguments'")
+            }
             let home = frames.isEmpty ? JSValue.undefined : frames[frames.count - 1].home
             try enterFunction(closure, argc: 0, mode: JSFrameMode.normal, newTarget: nt, this: thisV)
             frames[frames.count - 1].home = home

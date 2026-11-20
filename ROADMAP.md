@@ -4307,7 +4307,7 @@ vendored, in build/test262).
   RegExp literals not wired in this snapshot. Only a sample is run under
   `gcEveryAllocation`, not the whole set.
 
-## Phase 9E: ES2015+ runtime (`lib/js`)
+## Phase 9E: ES2015+ runtime (`lib/js`) (VM parts done)
 
 In the order real sites need them:
 
@@ -4334,6 +4334,92 @@ In the order real sites need them:
 6. Stretch: `BigInt`, `Intl` (a minimal `en-US` `NumberFormat` and
    `DateTimeFormat`, because libraries call them unguarded),
    `WeakRef`/`FinalizationRegistry`, `structuredClone`.
+
+**Status: the VM-level parts (items 1, 3 and 5 and the 9B gaps) are
+done**; item 2 and 4 built-ins are the sibling agents' (9C, collections/
+Proxy/typed arrays). `./run.sh --hosttest js` (`jsVM2Tests` in
+`tests/jsvm2_tests.swift`: 103 scripts (generators, async ordering, Promise, private members, proxies) and 16 module graphs, each run
+again under `gcEveryAllocation`, job-queue API checks, a 10 000-mutant
+script fuzz and a 3 000-mutant module fuzz that never trap). API
+contracts are at the top of each new file:
+
+- **`jsgenerator.swift`:** suspendable frames. A generator, async
+  function, async generator or module body saves its frame (the region
+  `[callee, this, locals, operands]`, pc, env register) into a state
+  object when it suspends and copies it back onto the VM stack when it
+  resumes; nothing recurses in Swift. `Generator.prototype.next/return/
+  throw` called from JS resume in the same VM loop (dispatchCall knows
+  their native indices), so recursive `yield*` (200 deep in the tests) is
+  plain frames. Resumption pushes `[value, mode]` and the compiler's
+  `checkResume` throws or routes a `return` through `finally` blocks.
+  Async generators keep the spec's request queue (next/throw/return
+  promises, awaiting-return, drain). `yield*` (sync and async, with
+  return/throw forwarding and the missing-`throw` close), `for await`
+  (with AsyncIteratorClose on break/return/throw) and
+  %AsyncFromSyncIteratorPrototype%. %GeneratorFunction%,
+  %AsyncFunction%, %AsyncGeneratorFunction% and their prototypes.
+- **`jspromise.swift`:** Promise (constructor, then/catch/finally,
+  resolve/reject/all/allSettled/any/race/withResolvers/try, @@species,
+  subclassing through NewPromiseCapability), AggregateError, and the job
+  queue: `realm.runJobs() -> JSCompletion` (drains FIFO, including jobs
+  queued meanwhile; a terminated drain drops the queue),
+  `hasPendingJobs`, `pendingJobCount`, `enqueueJob(fn, args:)`,
+  `enqueueHostJob { realm in ... }`, `jobErrorHandler`,
+  `promiseRejectionTracker` (HostPromiseRejectionTracker: .reject /
+  .handle) and `unhandledRejectionHandler` (called after a drain for
+  promises still rejected without a handler). `await` is the modern
+  one-tick PerformPromiseThen(PromiseResolve(v)); the classic ordering
+  puzzles (async1/async2/promise1, returning a promise from an async
+  function = 3 ticks, thenables) match V8.
+- **`jsvm_private.swift`:** private names. Each class evaluation makes a
+  private record per `#name` (a fresh symbol flagged isPrivate, plus the
+  method or getter/setter) kept in a hidden class-scope binding; elements
+  are own slots reached only by raw slot helpers (no prototype walk, no
+  extensibility check, no Proxy trap), and `heap.ownKeys` never lists a
+  private symbol, so reflection, spread, freeze and JSON can't see them.
+  Fields, methods, accessors, static ones, `#x in o`, brand checks with
+  the spec's TypeErrors. Computed field names are evaluated in member
+  order into hidden bindings.
+- **`jsmodule.swift`:** modules. The host sets `realm.moduleLoader =
+  { (realm, specifier, referrer) -> JSModuleLoadResult in .source(url:
+  bytes:) or .error(msg) }` (synchronous; the url is the module's
+  identity, each loaded once; `realm.moduleRequests(source:)` lists a
+  source's imports so a browser can pre-fetch), then
+  `realm.evaluateModule(source:name:)` or `importModule(_:referrer:)`
+  -> `.normal(evaluationPromise)` or `.exception` (parse, resolution and
+  synchronous evaluation errors). A module compiles to an `init` closure
+  (hoisted functions, run at link time so cycles work) and a `body`
+  closure over the module environment; imports are import records in
+  env slots dereferenced by `getModuleBinding` (live bindings, TDZ).
+  Linking resolves named, default, namespace and star exports
+  (ambiguity errors). Evaluation is the spec's InnerModuleEvaluation with
+  top-level await (async parents, pending-dependency counts, execution
+  order). Namespace objects (sorted, `@@toStringTag` "Module", live
+  getters), `import()` (load/link/evaluate in a job, resolves to the
+  namespace), `import.meta` (`url`, plus `realm.importMetaHook`).
+- **9B gaps fixed:** method-call getters (`o.m()` where `m` is an
+  accessor) and private getters/setters run as VM frames; compound
+  assignment and postfix update on `super[x]`; spread arguments to direct
+  eval; object rest after computed keys (excluded keys collected at run
+  time); array destructuring closes the iterator when a target or
+  default throws (not when the iterator's own next() throws); the class
+  inner name is bound before static elements run; a direct eval in
+  parameters may not declare `arguments`.
+- **test262:** the runner drains jobs for async tests and runs module
+  tests (imports resolved relative to the test file); `promise-try`,
+  `dynamic-import`, `top-level-await`, `module-code` and
+  `export-star-as-namespace-from-module` are no longer skipped. Floors
+  in `test262-floor.txt` raised: the full run passes 37 299 tests (was
+  26 280 at the merged master before 9E's VM parts), the sample 2 352.
+  Promise 632 / 742 pass, language/module-code 556, GeneratorPrototype
+  and AsyncGeneratorPrototype all pass.
+- **Known gaps:** mapped (aliased) `arguments` in sloppy functions is
+  still unmapped (it needs exotic hooks in the object property path,
+  which the Proxy work is changing). Getters reached through primitives,
+  `super`, `with` or globals and ToPrimitive still nest. The module
+  loader is synchronous. BigInt is still a placeholder (the stretch item
+  was not started). A sync generator frame resumed from Swift (for-of
+  over a generator) is one nested loop per step.
 
 **Status: library half done** (items 2's collections, 4, and 6's
 WeakRef/FinalizationRegistry; Promise/generators/async/modules are the

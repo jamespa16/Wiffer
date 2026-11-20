@@ -139,9 +139,20 @@ extension JSRealm {
                     if steps > 10_000 { throw throwRangeError("Maximum call stack size exceeded") }
                     continue
                 }
+                let gb = es.genResumeBase
+                if idx >= gb && idx < gb + 3 && gb >= 0 {
+                    // Generator.prototype.next/throw/return: resume the
+                    // generator's frame in this loop (jsgenerator.swift).
+                    let g = stack[sp - argc - 1]
+                    let v = argc > 0 ? stack[sp - argc] : JSValue.undefined
+                    let m = idx - gb
+                    let pushed = try resumeGenerator(g, v, mode: m == 0 ? 0 : m == 1 ? 1 : 2, callMode: mode,
+                                                     drop: argc + 2)
+                    return pushed
+                }
                 let r = try callNative(f, argc: argc, this: stack[sp - argc - 1], newTarget: .undefined)
                 sp -= argc + 2
-                if mode != JSFrameMode.discard { push(r) }
+                pushResult(r, mode)
                 return false
             case .boundFunction:
                 argc = try unbind(f, argc: argc, construct: false)
@@ -463,7 +474,7 @@ extension JSRealm {
                                 frames[t].pc = pc
                                 if try dispatchCall(0, mode: JSFrameMode.normal) {
                                     t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr)
-                                    pc = 0; base = frames[t].base
+                                    pc = frames[t].pc; base = frames[t].base
                                 }
                             case .exotic(let e):
                                 // 9E: Proxy / host exotic on the chain (jsexotic.swift).
@@ -479,7 +490,7 @@ extension JSRealm {
                         frames[t].pc = pc
                         if try putProperty(stack[sp - 2], k, strict: code.strict) {
                             t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr)
-                            pc = 0; base = frames[t].base
+                            pc = frames[t].pc; base = frames[t].base
                         }
                     case .getElem:
                         pc += 1
@@ -501,7 +512,7 @@ extension JSRealm {
                                 frames[t].pc = pc
                                 if try dispatchCall(0, mode: JSFrameMode.normal) {
                                     t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr)
-                                    pc = 0; base = frames[t].base
+                                    pc = frames[t].pc; base = frames[t].base
                                 }
                             case .exotic(let e):
                                 // 9E: Proxy / host exotic on the chain (jsexotic.swift).
@@ -528,12 +539,24 @@ extension JSRealm {
                         frames[t].pc = pc
                         if try putProperty(stack[sp - 2], k, strict: code.strict) {
                             t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr)
-                            pc = 0; base = frames[t].base
+                            pc = frames[t].pc; base = frames[t].base
                         }
                     case .getFieldForCall:
                         let o = stack[sp - 1]
-                        stack[sp - 1] = try getV(o, keys[jsReadU32(bc, pc + 1)])
-                        push(o); pc += 5
+                        let k = keys[jsReadU32(bc, pc + 1)]
+                        pc += 5
+                        if o.isObject, case .getter(let g) = heap.getProperty(o, k) {
+                            // A getter for a method call runs as a frame: [o g o] -> [result o].
+                            try ensureStack(3)
+                            push(g); push(o)
+                            frames[t].pc = pc
+                            if try dispatchCall(0, mode: JSFrameMode.getterForCall) {
+                                t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr); pc = frames[t].pc; base = frames[t].base
+                            }
+                            break
+                        }
+                        stack[sp - 1] = try getV(o, k)
+                        push(o)
                     case .getElemForCall:
                         let o = stack[sp - 2]
                         let k = try toPropertyKey(stack[sp - 1])
@@ -801,7 +824,7 @@ extension JSRealm {
                         let pushed = op == .call ? try dispatchCall(argc, mode: JSFrameMode.normal) : try dispatchConstruct(argc)
                         if pushed {
                             t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr)
-                            pc = 0; base = frames[t].base
+                            pc = frames[t].pc; base = frames[t].base
                         }
                     case .callArray, .constructArray, .superCallArray:
                         pc += 1
@@ -816,7 +839,7 @@ extension JSRealm {
                         }
                         if pushed {
                             t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr)
-                            pc = 0; base = frames[t].base
+                            pc = frames[t].pc; base = frames[t].base
                         }
                     case .superCall:
                         let argc = jsReadU16(bc, pc + 1)
@@ -825,15 +848,16 @@ extension JSRealm {
                         try prepareSuperCall(argc)
                         if try dispatchConstruct(argc) {
                             t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr)
-                            pc = 0; base = frames[t].base
+                            pc = frames[t].pc; base = frames[t].base
                         }
                     case .directEval:
-                        let argc = jsReadU16(bc, pc + 1)
+                        // Bit 15 of the count: the call is in a parameter list.
+                        let raw = jsReadU16(bc, pc + 1)
                         pc += 3
                         frames[t].pc = pc
-                        if try directEval(argc, strict: code.strict) {
+                        if try directEval(raw & 0x7FFF, strict: code.strict, inParams: raw & 0x8000 != 0) {
                             t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr)
-                            pc = 0; base = frames[t].base
+                            pc = frames[t].pc; base = frames[t].base
                         }
                     case .ret, .retUndefined, .retDerived:
                         var r: JSValue = .undefined
@@ -846,14 +870,14 @@ extension JSRealm {
                             else if th.isHole { throw throwReferenceError("Must call super constructor in derived class before accessing 'this' or returning from derived constructor") }
                             else { r = th }
                         }
+                        if frames[t].gen.isObject { r = try genReturned(frames[t].gen, r) }
                         let f = frames.removeLast()
                         sp = f.base - 2
                         env = f.callerEnv
                         if f.mode == JSFrameMode.construct && !r.isObject { r = f.this }
                         if f.entry { return r }
-                        if f.mode != JSFrameMode.discard { push(r) }
-                        t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr)
-                        pc = frames[t].pc; base = frames[t].base
+                        pushResult(r, f.mode)
+                        t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr); pc = frames[t].pc; base = frames[t].base
                     case .throwOp:
                         exception = pop()
                         throw JSThrow()
@@ -883,21 +907,31 @@ extension JSRealm {
                         if stack[sp - 1].isNull {
                             push(.undefined)
                         } else {
-                            let (done, v) = try iteratorStep(stack[sp - 2], stack[sp - 1])
-                            if done { stack[sp - 1] = .null; push(.undefined) } else { push(v) }
+                            // The record is done (null) while next() runs: if
+                            // it throws, the iterator is not closed.
+                            let next = stack[sp - 1]
+                            let nr = heap.root(next)
+                            stack[sp - 1] = .null
+                            let (done, v) = try iteratorStep(stack[sp - 2], next)
+                            heap.popRoots(to: nr.slot)
+                            if !done { stack[sp - 1] = next }
+                            push(done ? .undefined : v)
                         }
                         pc += 1
                     case .iterRest:
                         let a = heap.newArray(proto: arrayPrototype)
                         push(a)
                         if !stack[sp - 2].isNull {
+                            let next = stack[sp - 2]
+                            let nr = heap.root(next)
+                            stack[sp - 2] = .null
                             while true {
-                                let (done, v) = try iteratorStep(stack[sp - 3], stack[sp - 2])
+                                let (done, v) = try iteratorStep(stack[sp - 3], next)
                                 if done { break }
                                 _ = heap.createDataProperty(a, .index(heap.arrayLength(a)), v)
                                 if heap.termination != nil { throw JSThrow() }
                             }
-                            stack[sp - 2] = .null
+                            heap.popRoots(to: nr.slot)
                         }
                         pc += 1
                     case .iterClose:
@@ -938,7 +972,7 @@ extension JSRealm {
                             frames[t].pc = pc
                             if try dispatchCall(0, mode: JSFrameMode.discard) {
                                 t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr)
-                                pc = 0; base = frames[t].base
+                                pc = frames[t].pc; base = frames[t].base
                             }
                         } else {
                             sp -= 2
@@ -968,6 +1002,267 @@ extension JSRealm {
                         let v = stack[sp - 1]
                         if v.isNullish { throw throwTypeError("Cannot destructure '" + safeToString(v) + "' as it is " + (v.isNull ? "null." : "undefined.")) }
                         pc += 1
+                    // Phase 9E: generators and async functions (jsgenerator.swift).
+                    case .generatorStart:
+                        pc += 1
+                        let kind = code.genKind
+                        if kind == JSGenKind.asyncFunction || kind == JSGenKind.module {
+                            if !frames[t].gen.isObject {
+                                let g = newGenObject(kind: kind, proto: .null)
+                                frames[t].gen = g
+                                let p = newPromise()
+                                heap.setSlot(g, 3, p)
+                            }
+                            break
+                        }
+                        var proto = try getV(frames[t].callee, heap.names.prototype)
+                        if !proto.isObject {
+                            proto = intrinsic(kind == JSGenKind.asyncGenerator ? .asyncGeneratorPrototype : .generatorPrototype)
+                        }
+                        let g = newGenObject(kind: kind, proto: proto)
+                        frames[t].gen = g
+                        if kind == JSGenKind.asyncGenerator {
+                            let q = heap.newObject(proto: .null, kind: .internalObject)
+                            heap.setSlot(g, 3, q)
+                        }
+                        saveFrame(g, frames[t], pc: pc)
+                        setGenState(g, JSGenState.suspendedStart)
+                        let f = frames.removeLast()
+                        sp = f.base - 2
+                        env = f.callerEnv
+                        if f.entry { return g }
+                        pushResult(g, f.mode)
+                        t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr); pc = frames[t].pc; base = frames[t].base
+                    case .yield_, .yieldRaw:
+                        pc += 1
+                        if op == .yield_ { stack[sp - 1] = try iterResult(stack[sp - 1], done: false) }
+                        let r = pop()
+                        let g = frames[t].gen
+                        guard g.isObject else { throw throwSyntaxError("yield outside a generator") }
+                        saveFrame(g, frames[t], pc: pc)
+                        setGenState(g, JSGenState.suspendedYield)
+                        let f = frames.removeLast()
+                        sp = f.base - 2
+                        env = f.callerEnv
+                        if f.entry { return r }
+                        pushResult(r, f.mode)
+                        t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr); pc = frames[t].pc; base = frames[t].base
+                    case .asyncGenYield:
+                        pc += 1
+                        let g = frames[t].gen
+                        guard g.isObject else { throw throwSyntaxError("yield outside a generator") }
+                        try asyncGenCompleteStep(g, ok: true, stack[sp - 1], done: false)
+                        let q = asyncGenQueue(g)
+                        if heap.slotCount(q) >= 3 {
+                            // A queued request resumes at once.
+                            stack[sp - 1] = heap.slot(q, 1)
+                            push(heap.slot(q, 0))
+                            break
+                        }
+                        sp -= 1
+                        saveFrame(g, frames[t], pc: pc)
+                        setGenState(g, JSGenState.suspendedYield)
+                        let f = frames.removeLast()
+                        sp = f.base - 2
+                        env = f.callerEnv
+                        if f.entry { return JSValue.undefined }
+                        pushResult(JSValue.undefined, f.mode)
+                        t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr); pc = frames[t].pc; base = frames[t].base
+                    case .await_:
+                        pc += 1
+                        let g = frames[t].gen
+                        guard g.isObject else { throw throwSyntaxError("await is only valid in async functions") }
+                        let p = try promiseResolve(stack[sp - 1])
+                        stack[sp - 1] = p
+                        performPromiseThen(p, g, .undefined, JSCapability(promise: .undefined, resolve: .undefined, reject: .undefined), type: 1)
+                        sp -= 1
+                        saveFrame(g, frames[t], pc: pc)
+                        let r: JSValue = genKind(g) == JSGenKind.asyncGenerator ? .undefined : heap.slot(g, 3)
+                        let f = frames.removeLast()
+                        sp = f.base - 2
+                        env = f.callerEnv
+                        if f.entry { return r }
+                        pushResult(r, f.mode)
+                        t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr); pc = frames[t].pc; base = frames[t].base
+                    case .checkResume:
+                        let off = jsReadI32(bc, pc + 1)
+                        pc += 5
+                        let m = stack[sp - 1]
+                        sp -= 1
+                        if m == .int32(1) { exception = pop(); throw JSThrow() }
+                        if m == .int32(2) { pc += off }
+                    case .resumeIsReturn:
+                        let off = jsReadI32(bc, pc + 1)
+                        pc += 5
+                        if stack[sp - 1] == .int32(2) { sp -= 1; pc += off }
+                    case .yieldStarCall:
+                        // [it next received mode] -> [it next mode result]
+                        let off = jsReadI32(bc, pc + 1)
+                        pc += 5
+                        let mv = stack[sp - 1]
+                        let m: Int32 = mv.isInt32 ? mv.asInt32 : 0
+                        let it = stack[sp - 4], next = stack[sp - 3]
+                        if m == 0 && next.isHole {
+                            let (d, v) = try iteratorStep(it, next)
+                            sp -= 2
+                            push(.int32(0))
+                            push(try iterResult(v, done: d))
+                            break
+                        }
+                        var fn = next
+                        if m != 0 {
+                            fn = try getV(it, heap.key(m == 1 ? "throw" : "return"))
+                            if fn.isNullish {
+                                if m == 2 { sp -= 1; pc += off; break }
+                                try iteratorClose(stack[sp - 4], stack[sp - 3])
+                                throw throwTypeError("The iterator does not provide a 'throw' method")
+                            }
+                        }
+                        let recv = stack[sp - 2]
+                        sp -= 2
+                        try ensureStack(6)
+                        push(.int32(m)); push(fn); push(stack[sp - 4]); push(recv)
+                        frames[t].pc = pc
+                        if try dispatchCall(1, mode: JSFrameMode.normal) {
+                            t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr); pc = frames[t].pc; base = frames[t].base
+                        }
+                    case .yieldStarResult:
+                        // [it next mode result] -> [it next result] or, when
+                        // done, [it next value] at the done / return target.
+                        let offDone = jsReadI32(bc, pc + 1), offRet = jsReadI32(bc, pc + 5)
+                        pc += 9
+                        let res = stack[sp - 1]
+                        guard res.isObject else { throw throwTypeError("Iterator result " + describeForError(res) + " is not an object") }
+                        if heap.toBoolean(try getV(res, heap.names.done)) {
+                            let v = try getV(stack[sp - 1], heap.names.value)
+                            let wasReturn = stack[sp - 2] == .int32(2)
+                            sp -= 2
+                            push(v)
+                            pc += wasReturn ? offRet : offDone
+                        } else {
+                            stack[sp - 2] = stack[sp - 1]
+                            sp -= 1
+                        }
+                    case .getAsyncIterator:
+                        let (it, next) = try getAsyncIterator(stack[sp - 1])
+                        stack[sp - 1] = it
+                        push(next); pc += 1
+                    case .asyncIterResult:
+                        let off = jsReadI32(bc, pc + 1)
+                        pc += 5
+                        let res = stack[sp - 1]
+                        guard res.isObject else { throw throwTypeError("Iterator result " + describeForError(res) + " is not an object") }
+                        if heap.toBoolean(try getV(res, heap.names.done)) {
+                            sp -= 1
+                            pc += off
+                        } else {
+                            stack[sp - 1] = try getV(stack[sp - 1], heap.names.value)
+                        }
+                    case .asyncReturnCall:
+                        // [it next] -> [result of it.return(), or hole]
+                        let ignore = bc[pc + 1] != 0
+                        pc += 2
+                        var r: JSValue = .hole
+                        do throws(JSThrow) {
+                            let f = try getV(stack[sp - 2], heap.key("return"))
+                            if !f.isNullish { r = try call(f, this: stack[sp - 2], args: []) }
+                        } catch {
+                            if !ignore || heap.termination != nil { throw error }
+                            _ = takeException()
+                            r = .hole
+                        }
+                        sp -= 2
+                        push(r)
+                    case .checkObject:
+                        if !stack[sp - 1].isObject { throw throwTypeError("Iterator result " + describeForError(stack[sp - 1]) + " is not an object") }
+                        pc += 1
+                    case .dup3:
+                        let a = stack[sp - 3], b = stack[sp - 2], c = stack[sp - 1]
+                        push(a); push(b); push(c); pc += 1
+                    case .getterThisSwap:
+                        pc += 1
+                    // Phase 9E: private names (jsvm_private.swift).
+                    case .newPrivateName:
+                        let d = consts[jsReadU32(bc, pc + 1)]
+                        let kind = Int64(bc[pc + 5])
+                        pc += 6
+                        push(newPrivateRecord(d, kind: kind))
+                    case .getPrivate:
+                        // [obj rec] -> [value]; a getter runs as a frame.
+                        pc += 1
+                        switch try privateGet(stack[sp - 2], stack[sp - 1]) {
+                        case .value(let v):
+                            sp -= 1; stack[sp - 1] = v
+                        case .getter(let g):
+                            let o = stack[sp - 2]
+                            stack[sp - 2] = g; stack[sp - 1] = o
+                            frames[t].pc = pc
+                            if try dispatchCall(0, mode: JSFrameMode.normal) {
+                                t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr); pc = frames[t].pc; base = frames[t].base
+                            }
+                        case .exotic:
+                            // Private elements are raw own slots: never exotic.
+                            throw throwTypeError("invalid private access")
+                        }
+                    case .putPrivate:
+                        // [obj rec v] -> [v]; a setter runs as a frame.
+                        pc += 1
+                        if let st = try privateSet(stack[sp - 3], stack[sp - 2], stack[sp - 1]) {
+                            let o = stack[sp - 3], v = stack[sp - 1]
+                            try ensureStack(2)
+                            stack[sp - 3] = v; stack[sp - 2] = st; stack[sp - 1] = o
+                            push(v)
+                            frames[t].pc = pc
+                            if try dispatchCall(1, mode: JSFrameMode.discard) {
+                                t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr); pc = frames[t].pc; base = frames[t].base
+                            }
+                        } else {
+                            stack[sp - 3] = stack[sp - 1]
+                            sp -= 2
+                        }
+                    case .definePrivate:
+                        try privateDefine(stack[sp - 3], stack[sp - 2], stack[sp - 1])
+                        sp -= 3; pc += 1
+                    case .hasPrivate:
+                        let r = try privateHas(stack[sp - 1], stack[sp - 2])
+                        sp -= 1; stack[sp - 1] = .bool(r); pc += 1
+                    case .addPrivateBrand:
+                        try privateAddBrand(stack[sp - 2], stack[sp - 1])
+                        sp -= 1; pc += 1
+                    case .setPrivateMethod:
+                        let w = bc[pc + 1]
+                        heap.setSlot(stack[sp - 2], w == 2 ? 2 : 1, stack[sp - 1])
+                        sp -= 2; pc += 2
+                    case .objectRestDynamic:
+                        // [src excludedKeysArray] -> [rest]
+                        pc += 1
+                        let o = heap.newObject(proto: objectPrototype)
+                        push(o)
+                        try copyDataPropertiesExcludingArray(into: o, from: stack[sp - 3], keys: stack[sp - 2])
+                        sp -= 2; stack[sp - 1] = o
+                    case .directEvalArray:
+                        pc += 3
+                        frames[t].pc = pc
+                        let argc = try spreadArgs()
+                        if try directEval(argc, strict: code.strict) {
+                            t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr); pc = frames[t].pc; base = frames[t].base
+                        }
+                    // Phase 9E: modules (jsmodule.swift).
+                    case .getModuleBinding:
+                        let v = stack[sp - 1]
+                        if v.isObject && heap.kind(v) == .internalObject && heap.flags(v).contains(.user2) {
+                            let x = heap.slot(heap.slot(v, 0), Int(heap.internalInt(v)))
+                            if x.isHole { throw tdzError(code, jsReadU32(bc, pc + 1)) }
+                            stack[sp - 1] = x
+                        } else if v.isHole {
+                            throw tdzError(code, jsReadU32(bc, pc + 1))
+                        }
+                        pc += 5
+                    case .dynamicImport:
+                        pc += 1
+                        stack[sp - 1] = try dynamicImport(stack[sp - 1], referrer: code.source?.name ?? "")
+                    case .importMeta:
+                        throw throwSyntaxError("import.meta outside a module")
                     }
                 }
             } catch {
@@ -994,6 +1289,13 @@ extension JSRealm {
                     frames.removeLast()
                     sp = f.base - 2
                     env = f.callerEnv
+                    if f.gen.isObject && heap.termination == nil, let r = try genThrewOut(f.gen) {
+                        // An async frame: the exception rejected its promise.
+                        if f.entry { return r }
+                        pushResult(r, f.mode)
+                        t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr); pc = frames[t].pc; base = frames[t].base
+                        break
+                    }
                     if f.entry { throw JSThrow() }
                     p = max(0, frames[frames.count - 1].pc - 1)
                 }

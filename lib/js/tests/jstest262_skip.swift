@@ -12,7 +12,7 @@ let jsTest262RunSkipFeatures: [String] = [
     "host-gc-required", "Intl", "Intl.Locale", "Intl-enumeration", "intl-normative-optional",
     "legacy-regexp", "uint8array-base64", "upsert", "joint-iteration", "iterator-sequencing",
     "Math.sumPrecise", "canonical-tz", "immutable-arraybuffer",
-    "RegExp.escape", "Error.isError", "Array.fromAsync", "promise-try",
+    "RegExp.escape", "Error.isError", "Array.fromAsync",
     "import-attributes", "import-assertions", "json-modules", "source-phase-imports",
     "source-phase-imports-module-source", "import-defer", "import-text", "import-bytes",
     "explicit-resource-management", "regexp-modifiers", "regexp-duplicate-named-groups",
@@ -20,8 +20,6 @@ let jsTest262RunSkipFeatures: [String] = [
     "await-dictionary", "nonextensible-applies-to-private", "Symbol.dispose", "Symbol.asyncDispose",
     // Not implemented yet: delete the tag when the phase lands.
     "BigInt",                       // placeholder cell only (9E stretch)
-    "dynamic-import",               // 9E modules
-    "top-level-await", "module-code", "export-star-as-namespace-from-module",
 ]
 
 /// Source substrings that need a `$262` feature the embedding API cannot
