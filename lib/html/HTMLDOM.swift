@@ -57,10 +57,11 @@ extension HTMLNode {
     /// "host" for host-including ancestry). nil otherwise.
     public var templateElement: HTMLNode? { templateHost }
 
-    /// True if the node is in a document tree (its root is a document).
-    public var isConnected: Bool { rootNode.kind == .document }
+    /// True if the node's shadow-including root is a document.
+    public var isConnected: Bool { rootNode(composed: true).kind == .document }
 
-    /// The root of the node's tree (does not cross a template boundary).
+    /// The root of the node's tree (does not cross a template or shadow root
+    /// boundary; see rootNode(composed:)).
     public var rootNode: HTMLNode {
         var n = self
         while let p = n.parent { n = p }
@@ -75,12 +76,12 @@ extension HTMLNode {
     }
 
     /// Host-including inclusive ancestor (crosses from a template's contents
-    /// to its template element).
+    /// to its template element, and from a shadow root to its host).
     func isHostIncludingInclusiveAncestor(of other: HTMLNode) -> Bool {
         var n: HTMLNode? = other
         while let x = n {
             if x === self { return true }
-            n = x.parent ?? (x.kind == .documentFragment ? x.templateHost : nil)
+            n = x.parent ?? (x.kind == .documentFragment ? (x.templateHost ?? x.host) : nil)
         }
         return false
     }
@@ -132,7 +133,7 @@ extension HTMLNode {
 
     /// `document.importNode`: a clone owned by this document.
     public func importNode(_ node: HTMLNode, deep: Bool = false) throws(HTMLDOMError) -> HTMLNode {
-        if node.kind == .document { throw .notSupported }
+        if node.kind == .document || node.isShadowRoot { throw .notSupported }
         return node.cloneNode(deep: deep, into: documentForCreation)
     }
 
@@ -141,6 +142,7 @@ extension HTMLNode {
     @discardableResult
     public func adoptNode(_ node: HTMLNode) throws(HTMLDOMError) -> HTMLNode {
         if node.kind == .document { throw .notSupported }
+        if node.isShadowRoot { throw .hierarchyRequest }
         if node.kind == .documentFragment && node.templateHost != nil { return node }
         if let p = node.parent { p.removeNode(node, suppress: false) }
         documentForCreation.adoptSubtree(node)
@@ -160,13 +162,18 @@ extension HTMLNode {
             d.takeNode(n)
             for c in n.children { stack.append((c, d)) }
             if let t = n.templateStorage { stack.append((t, d.templateContentsOwner)) }
+            if let s = n.rare?.shadowRoot { stack.append((s, d)); d.docState?.hasShadowTrees = true }
         }
     }
 
     // ---------------------------------------------------------- cloneNode
 
     /// `cloneNode(deep)`. A deep clone of a template also clones its
-    /// contents. Cloning a document makes a new document.
+    /// contents. Cloning a document makes a new document. A shadow host
+    /// whose shadow root is clonable gets a copy of the root (with its whole
+    /// subtree, even when not deep). The DOM throws NotSupportedError for
+    /// cloning a ShadowRoot itself: callers check `isShadowRoot` first (here
+    /// it clones as a plain fragment).
     public func cloneNode(deep: Bool = false) -> HTMLNode {
         cloneNode(deep: deep, into: kind == .document ? nil : documentForCreation)
     }
@@ -174,21 +181,36 @@ extension HTMLNode {
     /// Clone into `doc` (nil: self is a document; make a new one).
     func cloneNode(deep: Bool, into doc: HTMLNode?) -> HTMLNode {
         let root = cloneOne(into: doc)
-        guard deep else { return root }
-        var stack: [(HTMLNode, HTMLNode)] = [(self, root)]
-        while let (src, dst) = stack.popLast() {
+        var shadows: [HTMLNode] = []
+        // (source, copy, copy the children too)
+        var stack: [(HTMLNode, HTMLNode, Bool)] = [(self, root, deep)]
+        while let (src, dst, kids) = stack.popLast() {
+            if src.kind == .element, let s = src.rare?.shadowRoot, let info = s.rare?.shadow, info.clonable {
+                let copy = HTMLNode(kind: .documentFragment)
+                (dst.nodeDocument ?? dst).registerNode(copy)
+                let cr = copy.ensureRare()
+                cr.host = dst
+                cr.shadow = info
+                cr.shadow?.availableToElementInternals = false
+                dst.ensureRare().shadowRoot = copy
+                dst.nodeDocument?.docState?.hasShadowTrees = true
+                shadows.append(copy)
+                stack.append((s, copy, true))
+            }
+            if !kids { continue }
             let dd = dst.nodeDocument ?? dst
             for c in src.children {
                 let cc = c.cloneOne(into: dd)
                 cc.parent = dst
                 cc.index = dst.children.count
                 dst.children.append(cc)
-                if !c.children.isEmpty || c.templateStorage != nil { stack.append((c, cc)) }
+                if !c.children.isEmpty || c.templateStorage != nil || c.rare?.shadowRoot != nil { stack.append((c, cc, true)) }
             }
             if let t = src.templateStorage, !t.children.isEmpty, let tc = dst.templateContents {
-                stack.append((t, tc))
+                stack.append((t, tc, true))
             }
         }
+        for s in shadows { s.assignSlottablesForTree(s) }
         return root
     }
 
@@ -279,6 +301,7 @@ extension HTMLNode {
         if let n = node, n.kind != .documentFragment, let p = n.parent { p.removeNode(n, suppress: false) }
         for c in removed { c.parent = nil; c.index = 0 }
         children = []
+        if documentHasShadowTrees { for c in removed { slotStepsAfterRemove(c) } }
         if let n = node { insertNode(n, before: nil, suppress: true) }
         if observed && (!added.isEmpty || !removed.isEmpty) {
             notify(HTMLMutation(kind: .childList, target: self, addedNodes: added, removedNodes: removed))
@@ -374,6 +397,7 @@ extension HTMLNode {
             if nodes.isEmpty { return }
             for c in nodes { c.parent = nil; c.index = 0 }
             node.children = []
+            if node.documentHasShadowTrees { for c in nodes { node.slotStepsAfterRemove(c) } }
             if node.observed {
                 node.notify(HTMLMutation(kind: .childList, target: node, removedNodes: nodes))
             }
@@ -390,6 +414,7 @@ extension HTMLNode {
         for n in nodes { n.parent = self }
         children.insert(contentsOf: nodes, at: at)
         reindex(from: at)
+        slotStepsAfterInsert(nodes)
         if !suppress && observed {
             let prev: HTMLNode? = at > 0 ? children[at - 1] : nil
             let endIdx = at + nodes.count
@@ -412,6 +437,7 @@ extension HTMLNode {
         child.parent = nil
         child.index = 0
         reindex(from: i)
+        slotStepsAfterRemove(child)
         if !suppress && observed {
             notify(HTMLMutation(kind: .childList, target: self, removedNodes: [child],
                                 previousSibling: prev, nextSibling: next))
@@ -456,6 +482,7 @@ extension HTMLNode {
         if observed {
             notify(HTMLMutation(kind: .attributes, target: self, attributeName: name, oldValue: old))
         }
+        slotStepsAfterAttributeChange(name, old: old, new: value)
     }
 
     /// `removeAttribute` (lowercased for HTML elements). Returns whether it
@@ -472,6 +499,7 @@ extension HTMLNode {
                 if observed {
                     notify(HTMLMutation(kind: .attributes, target: self, attributeName: n, oldValue: old))
                 }
+                slotStepsAfterAttributeChange(n, old: old, new: nil)
                 return true
             }
             i += 1
@@ -545,9 +573,30 @@ extension HTMLNode {
     /// Elements only (and fragments, which parse as if in `<body>`).
     public func setInnerHTML(_ markup: String, limits: HTMLParseLimits = HTMLParseLimits()) {
         guard kind == .element || kind == .documentFragment else { return }
-        let context = kind == .element ? self : makeElement("body", .html)
+        let context = kind == .element ? self : (host ?? makeElement("body", .html))
         let frag = htmlParseFragment(Array(markup.utf8), context: context, limits: limits)
         (templateContents ?? self).replaceAllUnchecked(frag)
+    }
+
+    /// `setHTMLUnsafe(html)` on an element or shadow root: like the innerHTML
+    /// setter, but declarative shadow roots (`<template shadowrootmode>`) are
+    /// attached, including one for the element itself.
+    public func setHTMLUnsafe(_ markup: String, limits: HTMLParseLimits = HTMLParseLimits()) {
+        guard kind == .element || kind == .documentFragment else { return }
+        let context = kind == .element ? self : (host ?? makeElement("body", .html))
+        let frag = htmlParseFragment(Array(markup.utf8), context: context, limits: limits, declarativeShadowRoots: true)
+        (templateContents ?? self).replaceAllUnchecked(frag)
+    }
+
+    /// `getHTML({serializableShadowRoots, shadowRoots})`: innerHTML that also
+    /// writes shadow roots as declarative `<template shadowrootmode>`
+    /// elements: serializable ones when `serializableShadowRoots`, and any in
+    /// `shadowRoots`.
+    public func getHTML(serializableShadowRoots: Bool = false, shadowRoots: [HTMLNode] = []) -> String {
+        var out: [UInt8] = []
+        htmlSerializeInto(&out, self, includeSelf: false,
+                          shadows: HTMLSerializeShadows(serializable: serializableShadowRoots, roots: shadowRoots))
+        return String(decoding: out, as: UTF8.self)
     }
 
     /// `outerHTML` setter: replace self with the parsed markup (context: the

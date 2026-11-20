@@ -4,9 +4,16 @@
 /// Parse an HTML document from UTF-8 bytes. Never traps; malformed input
 /// produces the tree a browser would build. `limits` bounds memory and
 /// depth (see HTMLParseLimits); `document.truncated` reports a cut-short parse.
-public func htmlParse(_ bytes: [UInt8], limits: HTMLParseLimits = HTMLParseLimits()) -> HTMLNode {
+///
+/// Declarative shadow DOM (`<template shadowrootmode>`) is on by default,
+/// as for a navigated document; `declarativeShadowRoots: false` parses
+/// those templates as plain templates (DOMParser).
+public func htmlParse(_ bytes: [UInt8], limits: HTMLParseLimits = HTMLParseLimits(),
+                      declarativeShadowRoots: Bool = true) -> HTMLNode {
     let (scalars, cut) = htmlDecodeInput(bytes, maxBytes: limits.maxInputBytes)
     let tb = HTMLTreeBuilder(input: scalars, limits: limits)
+    tb.allowDeclarativeShadowRoots = declarativeShadowRoots
+    tb.doc.docState?.allowDeclarativeShadowRoots = declarativeShadowRoots
     tb.run()
     tb.tokenizer.tb = nil
     let doc = tb.doc
@@ -14,6 +21,7 @@ public func htmlParse(_ bytes: [UInt8], limits: HTMLParseLimits = HTMLParseLimit
     doc.docState?.quirks = tb.quirks
     doc.templateContentsOwner.docState?.quirks = tb.quirks
     doc.assignIndices()
+    for s in tb.shadowRoots { s.assignSlottablesForTree(s) }
     return doc
 }
 
@@ -22,11 +30,19 @@ public func htmlParse(_ bytes: [UInt8], limits: HTMLParseLimits = HTMLParseLimit
 /// and return the result as a DocumentFragment owned by the context's
 /// document. Nothing is inserted anywhere; no observers are notified.
 /// `fragment.truncated` reports a cut-short parse.
+///
+/// `declarativeShadowRoots` (setHTMLUnsafe, parseHTMLUnsafe; never for
+/// innerHTML) lets `<template shadowrootmode>` attach shadow roots, to
+/// elements in the fragment or, for a top-level one, to the context
+/// element itself.
 public func htmlParseFragment(_ bytes: [UInt8], context: HTMLNode,
-                              limits: HTMLParseLimits = HTMLParseLimits()) -> HTMLNode {
+                              limits: HTMLParseLimits = HTMLParseLimits(),
+                              declarativeShadowRoots: Bool = false) -> HTMLNode {
     let owner = context.documentForCreation
     let (scalars, cut) = htmlDecodeInput(bytes, maxBytes: limits.maxInputBytes)
     let tb = HTMLTreeBuilder(input: scalars, limits: limits)
+    tb.allowDeclarativeShadowRoots = declarativeShadowRoots
+    tb.doc.docState?.allowDeclarativeShadowRoots = declarativeShadowRoots
     tb.quirks = owner.quirksMode
     tb.doc.docState?.quirks = tb.quirks
     tb.context = context
@@ -61,16 +77,23 @@ public func htmlParseFragment(_ bytes: [UInt8], context: HTMLNode,
     for c in kids { frag.parserAppend(c) }   // adopts into the owner document
     frag.truncated = tb.doc.truncated || cut
     frag.assignIndices()
+    for s in tb.shadowRoots {
+        if s.host === context { s.assignIndices() }
+        s.assignSlottablesForTree(s)
+    }
     return frag
 }
 
 public func htmlParseFragment(_ string: String, context: HTMLNode,
-                              limits: HTMLParseLimits = HTMLParseLimits()) -> HTMLNode {
-    htmlParseFragment(Array(string.utf8), context: context, limits: limits)
+                              limits: HTMLParseLimits = HTMLParseLimits(),
+                              declarativeShadowRoots: Bool = false) -> HTMLNode {
+    htmlParseFragment(Array(string.utf8), context: context, limits: limits,
+                      declarativeShadowRoots: declarativeShadowRoots)
 }
 
-public func htmlParse(_ string: String, limits: HTMLParseLimits = HTMLParseLimits()) -> HTMLNode {
-    htmlParse(Array(string.utf8), limits: limits)
+public func htmlParse(_ string: String, limits: HTMLParseLimits = HTMLParseLimits(),
+                      declarativeShadowRoots: Bool = true) -> HTMLNode {
+    htmlParse(Array(string.utf8), limits: limits, declarativeShadowRoots: declarativeShadowRoots)
 }
 
 /// The html5lib "tree dump" format (one node per line, `| ` prefix,
@@ -90,7 +113,9 @@ public func htmlTreeDump(_ doc: HTMLNode) -> String {
         while d < depth { put("  "); d += 1 }
         switch n.kind {
         case .document: break
-        case .documentFragment: put("content")
+        case .documentFragment:
+            if let m = n.shadowRootMode { put(m == .open ? "#shadow-root (open)" : "#shadow-root (closed)") }
+            else { put("content") }
         case .doctype:
             put("<!DOCTYPE ")
             put(n.name)
@@ -148,6 +173,7 @@ public func htmlTreeDump(_ doc: HTMLNode) -> String {
         if n.kind == .element, let t = n.templateContents { stack.append((t, depth + 1)) }
         var k = n.children.count - 1
         while k >= 0 { stack.append((n.children[k], depth + 1)); k -= 1 }
+        if let s = n.attachedShadowRoot { stack.append((s, depth + 1)) }
     }
     return String(decoding: out, as: UTF8.self)
 }

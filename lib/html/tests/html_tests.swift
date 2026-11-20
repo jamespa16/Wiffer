@@ -89,6 +89,7 @@ func libTests(_ t: Tests) {
 
     html5libTests(t)
     htmlDOMTests(t)
+    htmlShadowTests(t)
 
     t.section("fuzz")
     var seeds: [[UInt8]] = [

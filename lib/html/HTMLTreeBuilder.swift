@@ -73,6 +73,12 @@ final class HTMLTreeBuilder {
     var context: HTMLNode? = nil
     /// The stack of template insertion modes.
     var templateModes: [HTMLMode] = []
+    /// The document's "allow declarative shadow roots" (htmlParse: true;
+    /// fragment parsing only for the setHTMLUnsafe-style entry points).
+    var allowDeclarativeShadowRoots = false
+    /// Shadow roots attached by declarative shadow DOM (slots are assigned
+    /// once the parse is done).
+    var shadowRoots: [HTMLNode] = []
 
     init(input: [UInt32], limits: HTMLParseLimits) {
         self.limits = limits
@@ -166,6 +172,52 @@ final class HTMLTreeBuilder {
             return (content, nil)
         }
         return (parent, before)
+    }
+
+    /// A start tag "template" in the "in head" rules, with declarative
+    /// shadow DOM: `<template shadowrootmode=open|closed>` attaches a shadow
+    /// root to the adjusted current node and parses its contents into it
+    /// (the template element itself never enters the tree).
+    func templateStartTag(_ t: HTMLStartToken) {
+        var modeAttr: HTMLShadowRootMode? = nil
+        var clonable = false, serializable = false, delegates = false
+        for a in t.attrs {
+            switch a.name {
+            case "shadowrootmode":
+                let v = htmlLowerASCII(a.value)
+                if v == "open" { modeAttr = .open } else if v == "closed" { modeAttr = .closed }
+            case "shadowrootclonable": clonable = true
+            case "shadowrootserializable": serializable = true
+            case "shadowrootdelegatesfocus": delegates = true
+            default: break
+            }
+        }
+        let hostCandidate = adjustedCurrent
+        guard let mode = modeAttr, allowDeclarativeShadowRoots, let host = hostCandidate, host !== open.first else {
+            insertHTML(t)
+            pushMarker()
+            framesetOK = false
+            self.mode = .inTemplate
+            templateModes.append(.inTemplate)
+            return
+        }
+        pushMarker()
+        framesetOK = false
+        self.mode = .inTemplate
+        templateModes.append(.inTemplate)
+        makeRoom()
+        let template = newNode(.element, name: t.name, tag: t.tag, attrs: t.attrs)
+        if !host.isShadowHost, let shadow = try? host.attachShadow(mode: mode, delegatesFocus: delegates,
+                                                                  clonable: clonable, serializable: serializable) {
+            shadow.rare?.shadow?.declarative = true
+            shadow.rare?.shadow?.availableToElementInternals = true
+            template.templateStorage = shadow
+            shadowRoots.append(shadow)
+        } else {
+            let (parent, before) = appropriatePlace()
+            parent.parserInsert(template, before: before)
+        }
+        open.append(template)
     }
 
     func makeRoom() {
