@@ -1,0 +1,49 @@
+// HTML: HTMLElement and the mixins it shares with SVGElement.
+[Kind=node]
+interface HTMLElement : Element {
+  [CEReactions, Reflect] attribute DOMString title;
+  [CEReactions, Reflect] attribute DOMString lang;
+  [CEReactions, Reflect] attribute boolean translate;
+  [CEReactions, Reflect] attribute DOMString dir;
+  [CEReactions, Reflect] attribute boolean hidden;
+  [CEReactions, Reflect] attribute boolean inert;
+  undefined click();
+  [CEReactions, Reflect] attribute DOMString accessKey;
+  [CEReactions, Reflect] attribute boolean draggable;
+  [CEReactions, Reflect] attribute boolean spellcheck;
+  [CEReactions, Reflect] attribute DOMString autocapitalize;
+  [CEReactions, LegacyNullToEmptyString] attribute DOMString innerText;
+  [CEReactions, LegacyNullToEmptyString, Impl=HTMLElement_innerText] attribute DOMString outerText;
+  [CEReactions, Reflect=contenteditable] attribute DOMString contentEditable;
+  readonly attribute boolean isContentEditable;
+  [CEReactions, Reflect=inputmode] attribute DOMString inputMode;
+  [CEReactions, Reflect=enterkeyhint] attribute DOMString enterKeyHint;
+  [CEReactions, Reflect] attribute DOMString? popover;
+
+  // CSSOM View.
+  readonly attribute Element? offsetParent;
+  readonly attribute long offsetTop;
+  readonly attribute long offsetLeft;
+  readonly attribute long offsetWidth;
+  readonly attribute long offsetHeight;
+};
+HTMLElement includes GlobalEventHandlers;
+HTMLElement includes ElementCSSInlineStyle;
+HTMLElement includes HTMLOrSVGElement;
+
+interface mixin HTMLOrSVGElement {
+  [SameObject] readonly attribute DOMStringMap dataset;
+  [Reflect] attribute DOMString nonce;
+  [CEReactions, Reflect] attribute boolean autofocus;
+  [CEReactions] attribute long tabIndex;
+  undefined focus(optional any options);
+  undefined blur();
+};
+
+interface mixin ElementCSSInlineStyle {
+  [SameObject, PutForwards=cssText] readonly attribute CSSStyleDeclaration style;
+};
+
+[Kind=node, Tags=applet|bgsound|blink|isindex|multicol|nextid|spacer]
+interface HTMLUnknownElement : HTMLElement {
+};

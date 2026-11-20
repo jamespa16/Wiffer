@@ -1,0 +1,517 @@
+// HTML: element interfaces with behavior of their own (forms, links,
+// images, templates, scripts) and the plain ones scripts test with
+// instanceof. Everything else is HTMLElement (or HTMLUnknownElement).
+
+[Tags=a]
+interface HTMLAnchorElement : HTMLElement {
+  [CEReactions, Reflect] attribute DOMString target;
+  [CEReactions, Reflect] attribute DOMString download;
+  [CEReactions, Reflect] attribute USVString ping;
+  [CEReactions, Reflect] attribute DOMString rel;
+  [SameObject, PutForwards=value] readonly attribute DOMTokenList relList;
+  [CEReactions, Reflect] attribute DOMString hreflang;
+  [CEReactions, Reflect] attribute DOMString type;
+  [CEReactions] attribute DOMString text;
+  [CEReactions, Reflect=referrerpolicy] attribute DOMString referrerPolicy;
+  [CEReactions, Reflect] attribute DOMString name;
+};
+HTMLAnchorElement includes HTMLHyperlinkElementUtils;
+
+[Tags=area]
+interface HTMLAreaElement : HTMLElement {
+  [CEReactions, Reflect] attribute DOMString alt;
+  [CEReactions, Reflect] attribute DOMString coords;
+  [CEReactions, Reflect] attribute DOMString shape;
+  [CEReactions, Reflect] attribute DOMString target;
+  [CEReactions, Reflect] attribute DOMString rel;
+};
+HTMLAreaElement includes HTMLHyperlinkElementUtils;
+
+interface mixin HTMLHyperlinkElementUtils {
+  [CEReactions] stringifier attribute USVString href;
+  readonly attribute USVString origin;
+  [CEReactions] attribute USVString protocol;
+  [CEReactions] attribute USVString username;
+  [CEReactions] attribute USVString password;
+  [CEReactions] attribute USVString host;
+  [CEReactions] attribute USVString hostname;
+  [CEReactions] attribute USVString port;
+  [CEReactions] attribute USVString pathname;
+  [CEReactions] attribute USVString search;
+  [CEReactions] attribute USVString hash;
+};
+
+[Tags=form]
+interface HTMLFormElement : HTMLElement {
+  [CEReactions, Reflect=accept-charset] attribute DOMString acceptCharset;
+  [CEReactions] attribute USVString action;
+  [CEReactions, Reflect] attribute DOMString autocomplete;
+  [CEReactions] attribute DOMString enctype;
+  [CEReactions, Impl=HTMLFormElement_enctype] attribute DOMString encoding;
+  [CEReactions] attribute DOMString method;
+  [CEReactions, Reflect] attribute DOMString name;
+  [CEReactions, Reflect=novalidate] attribute boolean noValidate;
+  [CEReactions, Reflect] attribute DOMString target;
+  [CEReactions, Reflect] attribute DOMString rel;
+  [SameObject] readonly attribute HTMLCollection elements;
+  readonly attribute unsigned long length;
+  [Throws] undefined submit();
+  [Throws] undefined requestSubmit(optional HTMLElement? submitter = null);
+  [CEReactions] undefined reset();
+  boolean checkValidity();
+  boolean reportValidity();
+};
+
+[Tags=input]
+interface HTMLInputElement : HTMLElement {
+  [CEReactions, Reflect] attribute DOMString accept;
+  [CEReactions, Reflect] attribute DOMString alt;
+  [CEReactions, Reflect] attribute DOMString autocomplete;
+  [CEReactions, Reflect=checked] attribute boolean defaultChecked;
+  attribute boolean checked;
+  [CEReactions, Reflect] attribute DOMString dirName;
+  [CEReactions, Reflect] attribute boolean disabled;
+  readonly attribute HTMLFormElement? form;
+  readonly attribute any files;
+  [CEReactions, Reflect=formaction, URL] attribute USVString formAction;
+  [CEReactions, Reflect=formmethod] attribute DOMString formMethod;
+  [CEReactions, Reflect=formnovalidate] attribute boolean formNoValidate;
+  [CEReactions, Reflect=formtarget] attribute DOMString formTarget;
+  [CEReactions, Reflect] attribute unsigned long height;
+  attribute boolean indeterminate;
+  [CEReactions, Reflect] attribute DOMString max;
+  [CEReactions, Reflect=maxlength, Default=-1] attribute long maxLength;
+  [CEReactions, Reflect] attribute DOMString min;
+  [CEReactions, Reflect=minlength, Default=-1] attribute long minLength;
+  [CEReactions, Reflect] attribute boolean multiple;
+  [CEReactions, Reflect] attribute DOMString name;
+  [CEReactions, Reflect] attribute DOMString pattern;
+  [CEReactions, Reflect] attribute DOMString placeholder;
+  [CEReactions, Reflect=readonly] attribute boolean readOnly;
+  [CEReactions, Reflect] attribute boolean required;
+  [CEReactions, Reflect, Default=20] attribute unsigned long size;
+  [CEReactions, Reflect, URL] attribute USVString src;
+  [CEReactions, Reflect] attribute DOMString step;
+  [CEReactions] attribute DOMString type;
+  [CEReactions, Reflect=value] attribute DOMString defaultValue;
+  [CEReactions, LegacyNullToEmptyString, Throws] attribute DOMString value;
+  attribute unrestricted double valueAsNumber;
+  [Reflect] attribute unsigned long width;
+  readonly attribute boolean willValidate;
+  readonly attribute any validity;
+  readonly attribute DOMString validationMessage;
+  boolean checkValidity();
+  boolean reportValidity();
+  undefined setCustomValidity(DOMString error);
+  readonly attribute NodeList labels;
+  undefined select();
+  attribute unsigned long? selectionStart;
+  attribute unsigned long? selectionEnd;
+  attribute DOMString? selectionDirection;
+  undefined setSelectionRange(unsigned long start, unsigned long end, optional DOMString direction);
+  undefined stepUp(optional long n = 1);
+  undefined stepDown(optional long n = 1);
+  undefined showPicker();
+};
+
+[Tags=button]
+interface HTMLButtonElement : HTMLElement {
+  [CEReactions, Reflect] attribute boolean disabled;
+  readonly attribute HTMLFormElement? form;
+  [CEReactions, Reflect=formaction, URL] attribute USVString formAction;
+  [CEReactions, Reflect=formnovalidate] attribute boolean formNoValidate;
+  [CEReactions, Reflect=formtarget] attribute DOMString formTarget;
+  [CEReactions, Reflect] attribute DOMString name;
+  [CEReactions] attribute DOMString type;
+  [CEReactions, Reflect] attribute DOMString value;
+  readonly attribute boolean willValidate;
+  readonly attribute any validity;
+  readonly attribute DOMString validationMessage;
+  [Impl=HTMLInputElement_checkValidity] boolean checkValidity();
+  [Impl=HTMLInputElement_reportValidity] boolean reportValidity();
+  [Impl=HTMLInputElement_setCustomValidity] undefined setCustomValidity(DOMString error);
+  [Impl=HTMLInputElement_labels] readonly attribute NodeList labels;
+};
+
+[Tags=select]
+interface HTMLSelectElement : HTMLElement {
+  [CEReactions, Reflect] attribute DOMString autocomplete;
+  [CEReactions, Reflect] attribute boolean disabled;
+  [Impl=HTMLButtonElement_form] readonly attribute HTMLFormElement? form;
+  [CEReactions, Reflect] attribute boolean multiple;
+  [CEReactions, Reflect] attribute DOMString name;
+  [CEReactions, Reflect] attribute boolean required;
+  [CEReactions, Reflect] attribute unsigned long size;
+  readonly attribute DOMString type;
+  [SameObject] readonly attribute HTMLCollection options;
+  [CEReactions, Throws] attribute unsigned long length;
+  Element? item(unsigned long index);
+  any namedItem(DOMString name);
+  [CEReactions, Throws] undefined add(any element, optional any before = null);
+  [CEReactions] undefined remove(optional any index);
+  [SameObject] readonly attribute HTMLCollection selectedOptions;
+  attribute long selectedIndex;
+  attribute DOMString value;
+  [Impl=HTMLInputElement_willValidate] readonly attribute boolean willValidate;
+  [Impl=HTMLInputElement_checkValidity] boolean checkValidity();
+  [Impl=HTMLInputElement_reportValidity] boolean reportValidity();
+  [Impl=HTMLInputElement_setCustomValidity] undefined setCustomValidity(DOMString error);
+  [Impl=HTMLInputElement_labels] readonly attribute NodeList labels;
+};
+
+[Tags=option, LegacyFactoryFunction=Option]
+interface HTMLOptionElement : HTMLElement {
+  [CEReactions, Reflect] attribute boolean disabled;
+  readonly attribute HTMLFormElement? form;
+  [CEReactions] attribute DOMString label;
+  [CEReactions, Reflect=selected] attribute boolean defaultSelected;
+  attribute boolean selected;
+  [CEReactions] attribute DOMString value;
+  [CEReactions] attribute DOMString text;
+  readonly attribute long index;
+};
+
+[Tags=optgroup]
+interface HTMLOptGroupElement : HTMLElement {
+  [CEReactions, Reflect] attribute boolean disabled;
+  [CEReactions, Reflect] attribute DOMString label;
+};
+
+[Tags=textarea]
+interface HTMLTextAreaElement : HTMLElement {
+  [CEReactions, Reflect] attribute DOMString autocomplete;
+  [CEReactions, Reflect] attribute unsigned long cols;
+  [CEReactions, Reflect] attribute boolean disabled;
+  [Impl=HTMLButtonElement_form] readonly attribute HTMLFormElement? form;
+  [CEReactions, Reflect=maxlength, Default=-1] attribute long maxLength;
+  [CEReactions, Reflect=minlength, Default=-1] attribute long minLength;
+  [CEReactions, Reflect] attribute DOMString name;
+  [CEReactions, Reflect] attribute DOMString placeholder;
+  [CEReactions, Reflect=readonly] attribute boolean readOnly;
+  [CEReactions, Reflect] attribute boolean required;
+  [CEReactions, Reflect] attribute unsigned long rows;
+  [CEReactions, Reflect] attribute DOMString wrap;
+  readonly attribute DOMString type;
+  [CEReactions] attribute DOMString defaultValue;
+  [LegacyNullToEmptyString] attribute DOMString value;
+  readonly attribute unsigned long textLength;
+  [Impl=HTMLInputElement_willValidate] readonly attribute boolean willValidate;
+  [Impl=HTMLInputElement_checkValidity] boolean checkValidity();
+  [Impl=HTMLInputElement_reportValidity] boolean reportValidity();
+  [Impl=HTMLInputElement_setCustomValidity] undefined setCustomValidity(DOMString error);
+  [Impl=HTMLInputElement_labels] readonly attribute NodeList labels;
+  [Impl=HTMLInputElement_select] undefined select();
+  [Impl=HTMLInputElement_selectionStart] attribute unsigned long? selectionStart;
+  [Impl=HTMLInputElement_selectionEnd] attribute unsigned long? selectionEnd;
+  [Impl=HTMLInputElement_setSelectionRange] undefined setSelectionRange(unsigned long start, unsigned long end, optional DOMString direction);
+};
+
+[Tags=label]
+interface HTMLLabelElement : HTMLElement {
+  readonly attribute HTMLFormElement? form;
+  [CEReactions, Reflect=for] attribute DOMString htmlFor;
+  readonly attribute HTMLElement? control;
+};
+
+[Tags=fieldset]
+interface HTMLFieldSetElement : HTMLElement {
+  [CEReactions, Reflect] attribute boolean disabled;
+  [CEReactions, Reflect] attribute DOMString name;
+  [SameObject] readonly attribute HTMLCollection elements;
+};
+
+[Tags=img, LegacyFactoryFunction=Image]
+interface HTMLImageElement : HTMLElement {
+  [CEReactions, Reflect] attribute DOMString alt;
+  [CEReactions, Reflect, URL] attribute USVString src;
+  [CEReactions, Reflect] attribute USVString srcset;
+  [CEReactions, Reflect] attribute DOMString sizes;
+  [CEReactions, Reflect=crossorigin] attribute DOMString? crossOrigin;
+  [CEReactions, Reflect=usemap] attribute DOMString useMap;
+  [CEReactions, Reflect=ismap] attribute boolean isMap;
+  [CEReactions] attribute unsigned long width;
+  [CEReactions] attribute unsigned long height;
+  readonly attribute unsigned long naturalWidth;
+  readonly attribute unsigned long naturalHeight;
+  readonly attribute boolean complete;
+  readonly attribute USVString currentSrc;
+  [CEReactions, Reflect] attribute DOMString decoding;
+  [CEReactions, Reflect] attribute DOMString loading;
+  [CEReactions, Reflect=fetchpriority] attribute DOMString fetchPriority;
+  [Throws] any decode();
+};
+
+[Tags=template]
+interface HTMLTemplateElement : HTMLElement {
+  readonly attribute DocumentFragment content;
+  [CEReactions, Reflect=shadowrootmode] attribute DOMString shadowRootMode;
+};
+
+[Tags=slot]
+interface HTMLSlotElement : HTMLElement {
+  [CEReactions, Reflect] attribute DOMString name;
+  any assignedNodes(optional any options);
+  any assignedElements(optional any options);
+  undefined assign((Element or Text)... nodes);
+};
+
+[Tags=script]
+interface HTMLScriptElement : HTMLElement {
+  [CEReactions, Reflect, URL] attribute USVString src;
+  [CEReactions, Reflect] attribute DOMString type;
+  [CEReactions, Reflect=nomodule] attribute boolean noModule;
+  [CEReactions, Reflect] attribute boolean async;
+  [CEReactions, Reflect] attribute boolean defer;
+  [CEReactions, Reflect=crossorigin] attribute DOMString? crossOrigin;
+  [CEReactions] attribute DOMString text;
+  [CEReactions, Reflect] attribute DOMString integrity;
+  [CEReactions, Reflect=referrerpolicy] attribute DOMString referrerPolicy;
+  [CEReactions, Reflect] attribute DOMString charset;
+  [CEReactions, Reflect] attribute DOMString event;
+  [CEReactions, Reflect=for] attribute DOMString htmlFor;
+};
+
+[Tags=style]
+interface HTMLStyleElement : HTMLElement {
+  [Reflect] attribute boolean disabled;
+  [CEReactions, Reflect] attribute DOMString media;
+  [CEReactions, Reflect] attribute DOMString type;
+  readonly attribute any sheet;
+};
+
+[Tags=link]
+interface HTMLLinkElement : HTMLElement {
+  [CEReactions, Reflect, URL] attribute USVString href;
+  [CEReactions, Reflect=crossorigin] attribute DOMString? crossOrigin;
+  [CEReactions, Reflect] attribute DOMString rel;
+  [CEReactions, Reflect] attribute DOMString as;
+  [SameObject, PutForwards=value, Impl=HTMLAnchorElement_relList] readonly attribute DOMTokenList relList;
+  [CEReactions, Reflect] attribute DOMString media;
+  [CEReactions, Reflect] attribute DOMString integrity;
+  [CEReactions, Reflect] attribute DOMString hreflang;
+  [CEReactions, Reflect] attribute DOMString type;
+  [CEReactions, Reflect] attribute boolean disabled;
+  [Impl=HTMLStyleElement_sheet] readonly attribute any sheet;
+};
+
+[Tags=meta]
+interface HTMLMetaElement : HTMLElement {
+  [CEReactions, Reflect] attribute DOMString name;
+  [CEReactions, Reflect=http-equiv] attribute DOMString httpEquiv;
+  [CEReactions, Reflect] attribute DOMString content;
+  [CEReactions, Reflect] attribute DOMString media;
+};
+
+[Tags=base]
+interface HTMLBaseElement : HTMLElement {
+  [CEReactions, Reflect, URL] attribute USVString href;
+  [CEReactions, Reflect] attribute DOMString target;
+};
+
+[Tags=iframe]
+interface HTMLIFrameElement : HTMLElement {
+  [CEReactions, Reflect, URL] attribute USVString src;
+  [CEReactions, Reflect] attribute DOMString srcdoc;
+  [CEReactions, Reflect] attribute DOMString name;
+  [CEReactions, Reflect] attribute DOMString allow;
+  [CEReactions, Reflect] attribute DOMString width;
+  [CEReactions, Reflect] attribute DOMString height;
+  [CEReactions, Reflect] attribute DOMString loading;
+  readonly attribute any contentDocument;
+  readonly attribute any contentWindow;
+};
+
+[Tags=canvas]
+interface HTMLCanvasElement : HTMLElement {
+  [CEReactions, Reflect, Default=300] attribute unsigned long width;
+  [CEReactions, Reflect, Default=150] attribute unsigned long height;
+  any getContext(DOMString contextId, any... arguments);
+  [Throws] USVString toDataURL(optional DOMString type = "image/png", optional any quality);
+};
+
+[Tags=video|audio]
+interface HTMLMediaElement : HTMLElement {
+  [CEReactions, Reflect, URL] attribute USVString src;
+  [CEReactions, Reflect] attribute boolean autoplay;
+  [CEReactions, Reflect] attribute boolean loop;
+  [CEReactions, Reflect] attribute boolean controls;
+  [CEReactions, Reflect=muted] attribute boolean defaultMuted;
+  [CEReactions, Reflect] attribute DOMString preload;
+  readonly attribute boolean paused;
+  any play();
+  undefined pause();
+  undefined load();
+  DOMString canPlayType(DOMString type);
+};
+
+[Tags=details]
+interface HTMLDetailsElement : HTMLElement {
+  [CEReactions, Reflect] attribute boolean open;
+  [CEReactions, Reflect] attribute DOMString name;
+};
+
+[Tags=dialog]
+interface HTMLDialogElement : HTMLElement {
+  [CEReactions, Reflect] attribute boolean open;
+  attribute DOMString returnValue;
+  [CEReactions, Throws] undefined show();
+  [CEReactions, Throws] undefined showModal();
+  [CEReactions] undefined close(optional DOMString returnValue);
+};
+
+[Tags=body]
+interface HTMLBodyElement : HTMLElement {
+  [CEReactions, LegacyNullToEmptyString, Reflect] attribute DOMString text;
+  [CEReactions, LegacyNullToEmptyString, Reflect] attribute DOMString link;
+  [CEReactions, LegacyNullToEmptyString, Reflect=vlink] attribute DOMString vLink;
+  [CEReactions, LegacyNullToEmptyString, Reflect=alink] attribute DOMString aLink;
+  [CEReactions, LegacyNullToEmptyString, Reflect=bgcolor] attribute DOMString bgColor;
+  [CEReactions, Reflect] attribute DOMString background;
+};
+[ForwardToWindow] HTMLBodyElement includes WindowEventHandlers;
+
+[Tags=table]
+interface HTMLTableElement : HTMLElement {
+  [SameObject] readonly attribute HTMLCollection rows;
+  [SameObject] readonly attribute HTMLCollection tBodies;
+  readonly attribute HTMLElement? tHead;
+  readonly attribute HTMLElement? tFoot;
+  readonly attribute HTMLElement? caption;
+  [CEReactions, Throws] HTMLElement insertRow(optional long index = -1);
+  [CEReactions, Throws] undefined deleteRow(long index);
+  [CEReactions, Reflect] attribute DOMString border;
+  [CEReactions, Reflect] attribute DOMString width;
+};
+
+[Tags=tbody|thead|tfoot]
+interface HTMLTableSectionElement : HTMLElement {
+  [SameObject, Impl=HTMLTableElement_rows] readonly attribute HTMLCollection rows;
+  [CEReactions, Throws, Impl=HTMLTableElement_insertRow] HTMLElement insertRow(optional long index = -1);
+  [CEReactions, Throws, Impl=HTMLTableElement_deleteRow] undefined deleteRow(long index);
+};
+
+[Tags=tr]
+interface HTMLTableRowElement : HTMLElement {
+  readonly attribute long rowIndex;
+  readonly attribute long sectionRowIndex;
+  [SameObject] readonly attribute HTMLCollection cells;
+  [CEReactions, Throws] HTMLElement insertCell(optional long index = -1);
+  [CEReactions, Throws] undefined deleteCell(long index);
+};
+
+[Tags=td|th]
+interface HTMLTableCellElement : HTMLElement {
+  [CEReactions, Reflect, Default=1] attribute unsigned long colSpan;
+  [CEReactions, Reflect, Default=1] attribute unsigned long rowSpan;
+  readonly attribute long cellIndex;
+  [CEReactions, Reflect] attribute DOMString headers;
+  [CEReactions, Reflect] attribute DOMString scope;
+  [CEReactions, Reflect] attribute DOMString abbr;
+};
+
+[Tags=li]
+interface HTMLLIElement : HTMLElement {
+  [CEReactions, Reflect] attribute long value;
+  [CEReactions, Reflect] attribute DOMString type;
+};
+
+[Tags=ol]
+interface HTMLOListElement : HTMLElement {
+  [CEReactions, Reflect] attribute boolean reversed;
+  [CEReactions, Reflect, Default=1] attribute long start;
+  [CEReactions, Reflect] attribute DOMString type;
+};
+
+[Tags=progress]
+interface HTMLProgressElement : HTMLElement {
+  attribute double value;
+  attribute double max;
+};
+
+[Tags=output]
+interface HTMLOutputElement : HTMLElement {
+  [CEReactions, Reflect] attribute DOMString name;
+  [CEReactions] attribute DOMString value;
+};
+
+[Tags=div]
+interface HTMLDivElement : HTMLElement {
+  [CEReactions, Reflect] attribute DOMString align;
+};
+[Tags=span]
+interface HTMLSpanElement : HTMLElement {};
+[Tags=p]
+interface HTMLParagraphElement : HTMLElement {
+  [CEReactions, Reflect] attribute DOMString align;
+};
+[Tags=h1|h2|h3|h4|h5|h6]
+interface HTMLHeadingElement : HTMLElement {
+  [CEReactions, Reflect] attribute DOMString align;
+};
+[Tags=ul]
+interface HTMLUListElement : HTMLElement {};
+[Tags=dl]
+interface HTMLDListElement : HTMLElement {};
+[Tags=pre|listing|xmp]
+interface HTMLPreElement : HTMLElement {};
+[Tags=br]
+interface HTMLBRElement : HTMLElement {};
+[Tags=hr]
+interface HTMLHRElement : HTMLElement {};
+[Tags=head]
+interface HTMLHeadElement : HTMLElement {};
+[Tags=html]
+interface HTMLHtmlElement : HTMLElement {
+  [CEReactions, Reflect] attribute DOMString version;
+};
+[Tags=title]
+interface HTMLTitleElement : HTMLElement {
+  [CEReactions, Impl=Node_textContent] attribute DOMString? text;
+};
+[Tags=q|blockquote]
+interface HTMLQuoteElement : HTMLElement {
+  [CEReactions, Reflect, URL] attribute USVString cite;
+};
+[Tags=ins|del]
+interface HTMLModElement : HTMLElement {};
+[Tags=caption]
+interface HTMLTableCaptionElement : HTMLElement {};
+[Tags=col|colgroup]
+interface HTMLTableColElement : HTMLElement {};
+[Tags=picture]
+interface HTMLPictureElement : HTMLElement {};
+[Tags=source]
+interface HTMLSourceElement : HTMLElement {
+  [CEReactions, Reflect, URL] attribute USVString src;
+  [CEReactions, Reflect] attribute DOMString type;
+  [CEReactions, Reflect] attribute USVString srcset;
+  [CEReactions, Reflect] attribute DOMString media;
+};
+[Tags=embed]
+interface HTMLEmbedElement : HTMLElement {};
+[Tags=object]
+interface HTMLObjectElement : HTMLElement {};
+[Tags=time]
+interface HTMLTimeElement : HTMLElement {
+  [CEReactions, Reflect=datetime] attribute DOMString dateTime;
+};
+[Tags=data]
+interface HTMLDataElement : HTMLElement {
+  [CEReactions, Reflect] attribute DOMString value;
+};
+[Tags=menu]
+interface HTMLMenuElement : HTMLElement {};
+[Tags=legend]
+interface HTMLLegendElement : HTMLElement {};
+[Tags=map]
+interface HTMLMapElement : HTMLElement {
+  [CEReactions, Reflect] attribute DOMString name;
+};
+[Tags=frameset]
+interface HTMLFrameSetElement : HTMLElement {};
+[Tags=font]
+interface HTMLFontElement : HTMLElement {
+  [CEReactions, LegacyNullToEmptyString, Reflect] attribute DOMString color;
+  [CEReactions, Reflect] attribute DOMString face;
+  [CEReactions, Reflect] attribute DOMString size;
+};

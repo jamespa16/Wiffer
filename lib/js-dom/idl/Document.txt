@@ -1,0 +1,116 @@
+// DOM Standard: Document, DOMImplementation; HTML's Document extensions.
+dictionary ElementCreationOptions {
+  DOMString is;
+};
+
+[Kind=node]
+interface Document : Node {
+  [Throws] constructor();
+
+  [SameObject] readonly attribute DOMImplementation implementation;
+  readonly attribute USVString URL;
+  [Impl=Document_URL] readonly attribute USVString documentURI;
+  readonly attribute DOMString compatMode;
+  readonly attribute DOMString characterSet;
+  [Impl=Document_characterSet] readonly attribute DOMString charset;
+  [Impl=Document_characterSet] readonly attribute DOMString inputEncoding;
+  readonly attribute DOMString contentType;
+
+  readonly attribute DocumentType? doctype;
+  readonly attribute Element? documentElement;
+  HTMLCollection getElementsByTagName(DOMString qualifiedName);
+  HTMLCollection getElementsByTagNameNS(DOMString? namespace, DOMString localName);
+  HTMLCollection getElementsByClassName(DOMString classNames);
+
+  [CEReactions, Throws] Element createElement(DOMString localName, optional any options);
+  [CEReactions, Throws] Element createElementNS(DOMString? namespace, DOMString qualifiedName, optional any options);
+  [Throws] DocumentFragment createDocumentFragment();
+  [Throws] Text createTextNode(DOMString data);
+  [Throws] Text createCDATASection(DOMString data);
+  [Throws] Comment createComment(DOMString data);
+  [Throws] any createProcessingInstruction(DOMString target, DOMString data);
+
+  [CEReactions, Throws] Node importNode(Node node, optional any options);
+  [CEReactions, Throws] Node adoptNode(Node node);
+
+  [Throws] any createAttribute(DOMString localName);
+  [Throws] any createAttributeNS(DOMString? namespace, DOMString qualifiedName);
+
+  [Throws] Event createEvent(DOMString interface);
+  [Throws] any createRange();
+  [Throws] any createTreeWalker(Node root, optional unsigned long whatToShow = 0xFFFFFFFF, optional any filter = null);
+  [Throws] any createNodeIterator(Node root, optional unsigned long whatToShow = 0xFFFFFFFF, optional any filter = null);
+
+  // HTML: resource metadata management.
+  readonly attribute any location;
+  attribute USVString domain;
+  readonly attribute USVString referrer;
+  [Throws] attribute USVString cookie;
+  readonly attribute DOMString lastModified;
+  readonly attribute DOMString readyState;
+
+  // HTML: DOM tree accessors.
+  [CEReactions] attribute DOMString title;
+  [CEReactions] attribute DOMString dir;
+  [CEReactions, Throws] attribute HTMLElement? body;
+  readonly attribute HTMLHeadElement? head;
+  [SameObject] readonly attribute HTMLCollection images;
+  [SameObject] readonly attribute HTMLCollection embeds;
+  [SameObject] readonly attribute HTMLCollection plugins;
+  [SameObject] readonly attribute HTMLCollection links;
+  [SameObject] readonly attribute HTMLCollection forms;
+  [SameObject] readonly attribute HTMLCollection scripts;
+  [SameObject] readonly attribute HTMLCollection anchors;
+  NodeList getElementsByName(DOMString elementName);
+  readonly attribute HTMLScriptElement? currentScript;
+
+  // HTML: dynamic markup insertion (approximations, see jsdom_document.swift).
+  [CEReactions, Throws] undefined write(DOMString... text);
+  [CEReactions, Throws] undefined writeln(DOMString... text);
+  [CEReactions] any open(optional any a, optional any b);
+  [CEReactions] undefined close();
+
+  // HTML: user interaction.
+  readonly attribute any defaultView;
+  boolean hasFocus();
+  [CEReactions] attribute DOMString designMode;
+  boolean execCommand(DOMString commandId, optional boolean showUI = false, optional DOMString value = "");
+  boolean queryCommandSupported(DOMString commandId);
+
+  readonly attribute boolean hidden;
+  readonly attribute DOMString visibilityState;
+
+  any getSelection();
+  any elementFromPoint(double x, double y);
+  any elementsFromPoint(double x, double y);
+
+  readonly attribute Element? scrollingElement;
+  [Throws, Impl=Document_body] readonly attribute HTMLElement? fullscreenElement;
+
+  attribute EventHandler onreadystatechange;
+  attribute EventHandler onvisibilitychange;
+};
+Document includes NonElementParentNode;
+Document includes DocumentOrShadowRoot;
+Document includes ParentNode;
+Document includes GlobalEventHandlers;
+
+[Kind=object, Swift=JSDOMImplementation]
+interface DOMImplementation {
+  [Throws] DocumentType createDocumentType(DOMString name, DOMString publicId, DOMString systemId);
+  [Throws] Document createDocument(DOMString? namespace, [LegacyNullToEmptyString] DOMString qualifiedName, optional DocumentType? doctype = null);
+  [Throws] Document createHTMLDocument(optional DOMString title);
+  boolean hasFeature();
+};
+
+[Kind=object, Swift=JSDOMParser]
+interface DOMParser {
+  constructor();
+  [Throws] Document parseFromString(DOMString string, DOMString type);
+};
+
+[Kind=object, Swift=JSDOMXMLSerializer]
+interface XMLSerializer {
+  constructor();
+  DOMString serializeToString(Node root);
+};

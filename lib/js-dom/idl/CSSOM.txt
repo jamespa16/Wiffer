@@ -1,0 +1,22 @@
+// CSSOM: CSSStyleDeclaration (element.style over the style attribute, and
+// getComputedStyle's read-only one) and the CSS namespace. The camelCase
+// and dashed property accessors (style.backgroundColor) are defined by the
+// implementation from lib/css's property list (jsdom_style.swift).
+
+[Kind=object, Swift=JSDOMStyleDeclaration, Exotic]
+interface CSSStyleDeclaration {
+  [CEReactions, Throws] attribute DOMString cssText;
+  readonly attribute unsigned long length;
+  getter DOMString item(unsigned long index);
+  DOMString getPropertyValue(DOMString property);
+  DOMString getPropertyPriority(DOMString property);
+  [CEReactions, Throws] undefined setProperty(DOMString property, [LegacyNullToEmptyString] DOMString value, [LegacyNullToEmptyString] optional DOMString priority = "");
+  [CEReactions, Throws] DOMString removeProperty(DOMString property);
+  readonly attribute any parentRule;
+  [CEReactions, LegacyNullToEmptyString, Throws] attribute DOMString cssFloat;
+};
+
+namespace CSS {
+  boolean supports(DOMString property, optional DOMString value);
+  DOMString escape(DOMString ident);
+};

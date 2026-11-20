@@ -1,0 +1,143 @@
+// UI Events: UIEvent, MouseEvent, PointerEvent, WheelEvent, KeyboardEvent,
+// InputEvent, FocusEvent. One Swift class (JSDOMEvent) carries every field.
+dictionary UIEventInit : EventInit {
+  any view = null;
+  long detail = 0;
+  unsigned long which = 0;
+};
+
+dictionary EventModifierInit : UIEventInit {
+  boolean ctrlKey = false;
+  boolean shiftKey = false;
+  boolean altKey = false;
+  boolean metaKey = false;
+};
+
+dictionary MouseEventInit : EventModifierInit {
+  long screenX = 0;
+  long screenY = 0;
+  long clientX = 0;
+  long clientY = 0;
+  short button = 0;
+  unsigned short buttons = 0;
+  EventTarget? relatedTarget = null;
+};
+
+dictionary PointerEventInit : MouseEventInit {
+  long pointerId = 0;
+  double width = 1;
+  double height = 1;
+  double pressure = 0;
+  DOMString pointerType = "";
+  boolean isPrimary = false;
+};
+
+dictionary WheelEventInit : MouseEventInit {
+  double deltaX = 0;
+  double deltaY = 0;
+  double deltaZ = 0;
+  unsigned long deltaMode = 0;
+};
+
+dictionary KeyboardEventInit : EventModifierInit {
+  DOMString key = "";
+  DOMString code = "";
+  unsigned long location = 0;
+  boolean repeat = false;
+  boolean isComposing = false;
+  unsigned long charCode = 0;
+  unsigned long keyCode = 0;
+};
+
+dictionary InputEventInit : UIEventInit {
+  DOMString? data = null;
+  boolean isComposing = false;
+  DOMString inputType = "";
+};
+
+dictionary FocusEventInit : UIEventInit {
+  EventTarget? relatedTarget = null;
+};
+
+interface UIEvent : Event {
+  constructor(DOMString type, optional UIEventInit eventInitDict = {});
+  readonly attribute any view;
+  readonly attribute long detail;
+  readonly attribute unsigned long which;
+  undefined initUIEvent(DOMString typeArg, optional boolean bubblesArg = false, optional boolean cancelableArg = false, optional any viewArg, optional long detailArg = 0);
+};
+
+interface MouseEvent : UIEvent {
+  constructor(DOMString type, optional MouseEventInit eventInitDict = {});
+  readonly attribute double screenX;
+  readonly attribute double screenY;
+  readonly attribute double clientX;
+  readonly attribute double clientY;
+  readonly attribute double pageX;
+  readonly attribute double pageY;
+  readonly attribute double offsetX;
+  readonly attribute double offsetY;
+  readonly attribute double x;
+  readonly attribute double y;
+  readonly attribute boolean ctrlKey;
+  readonly attribute boolean shiftKey;
+  readonly attribute boolean altKey;
+  readonly attribute boolean metaKey;
+  readonly attribute short button;
+  readonly attribute unsigned short buttons;
+  readonly attribute EventTarget? relatedTarget;
+  boolean getModifierState(DOMString keyArg);
+};
+
+interface PointerEvent : MouseEvent {
+  constructor(DOMString type, optional PointerEventInit eventInitDict = {});
+  readonly attribute long pointerId;
+  readonly attribute double width;
+  readonly attribute double height;
+  readonly attribute double pressure;
+  readonly attribute DOMString pointerType;
+  readonly attribute boolean isPrimary;
+};
+
+interface WheelEvent : MouseEvent {
+  constructor(DOMString type, optional WheelEventInit eventInitDict = {});
+  const unsigned long DOM_DELTA_PIXEL = 0;
+  const unsigned long DOM_DELTA_LINE = 1;
+  const unsigned long DOM_DELTA_PAGE = 2;
+  readonly attribute double deltaX;
+  readonly attribute double deltaY;
+  readonly attribute double deltaZ;
+  readonly attribute unsigned long deltaMode;
+};
+
+interface KeyboardEvent : UIEvent {
+  constructor(DOMString type, optional KeyboardEventInit eventInitDict = {});
+  const unsigned long DOM_KEY_LOCATION_STANDARD = 0;
+  const unsigned long DOM_KEY_LOCATION_LEFT = 1;
+  const unsigned long DOM_KEY_LOCATION_RIGHT = 2;
+  const unsigned long DOM_KEY_LOCATION_NUMPAD = 3;
+  readonly attribute DOMString key;
+  readonly attribute DOMString code;
+  readonly attribute unsigned long location;
+  [Impl=MouseEvent_ctrlKey] readonly attribute boolean ctrlKey;
+  [Impl=MouseEvent_shiftKey] readonly attribute boolean shiftKey;
+  [Impl=MouseEvent_altKey] readonly attribute boolean altKey;
+  [Impl=MouseEvent_metaKey] readonly attribute boolean metaKey;
+  readonly attribute boolean repeat;
+  readonly attribute boolean isComposing;
+  readonly attribute unsigned long charCode;
+  readonly attribute unsigned long keyCode;
+  [Impl=MouseEvent_getModifierState] boolean getModifierState(DOMString keyArg);
+};
+
+interface InputEvent : UIEvent {
+  constructor(DOMString type, optional InputEventInit eventInitDict = {});
+  readonly attribute DOMString? data;
+  [Impl=KeyboardEvent_isComposing] readonly attribute boolean isComposing;
+  readonly attribute DOMString inputType;
+};
+
+interface FocusEvent : UIEvent {
+  constructor(DOMString type, optional FocusEventInit eventInitDict = {});
+  [Impl=MouseEvent_relatedTarget] readonly attribute EventTarget? relatedTarget;
+};

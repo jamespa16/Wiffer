@@ -1,0 +1,35 @@
+// SVG 2: the few members sites use. SVG elements are nodes; getBBox comes
+// from the layout box (lib/layout lays out inline <svg> through lib/svg).
+[Kind=node]
+interface SVGElement : Element {
+  readonly attribute any ownerSVGElement;
+  readonly attribute any viewportElement;
+};
+SVGElement includes GlobalEventHandlers;
+SVGElement includes ElementCSSInlineStyle;
+SVGElement includes HTMLOrSVGElement;
+
+interface SVGGraphicsElement : SVGElement {
+  any getBBox(optional any options);
+  any getCTM();
+  any getScreenCTM();
+};
+
+[SVGTags=svg]
+interface SVGSVGElement : SVGGraphicsElement {
+  [SameObject] readonly attribute any viewBox;
+  [SameObject] readonly attribute any width;
+  [SameObject] readonly attribute any height;
+  any createSVGPoint();
+};
+
+[SVGTags=g|path|rect|circle|ellipse|line|polyline|polygon|text|tspan|use|image|foreignObject|a|switch]
+interface SVGGeometryElement : SVGGraphicsElement {
+  double getTotalLength();
+};
+
+[Kind=object, Swift=JSDOMAnimatedRect]
+interface SVGAnimatedRect {
+  readonly attribute any baseVal;
+  readonly attribute any animVal;
+};

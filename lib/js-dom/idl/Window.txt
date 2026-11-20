@@ -1,0 +1,202 @@
+// HTML: Window (the global object of a page realm) and the objects hanging
+// off it. Browser-specific behavior goes through JSDOMHost (jsdom_page.swift).
+dictionary ScrollToOptions {
+  unrestricted double left;
+  unrestricted double top;
+  DOMString behavior = "auto";
+};
+
+callback FrameRequestCallback = undefined (double time);
+callback VoidFunction = undefined ();
+
+[Kind=window, Global]
+interface Window : EventTarget {
+  [Replaceable] readonly attribute any window;
+  [Replaceable] readonly attribute any self;
+  [Replaceable] readonly attribute any frames;
+  [Replaceable] readonly attribute any globalThis;
+  readonly attribute any document;
+  attribute DOMString name;
+  [PutForwards=href] readonly attribute any location;
+  readonly attribute any history;
+  readonly attribute any navigator;
+  [Replaceable] readonly attribute any screen;
+  [Replaceable] readonly attribute any performance;
+  [Replaceable] readonly attribute any parent;
+  [Replaceable] readonly attribute any top;
+  readonly attribute any opener;
+  readonly attribute any frameElement;
+  [Replaceable] readonly attribute unsigned long length;
+  readonly attribute boolean closed;
+  [Replaceable] readonly attribute any event;
+  readonly attribute any localStorage;
+  readonly attribute any sessionStorage;
+  readonly attribute any customElements;
+  readonly attribute boolean isSecureContext;
+  readonly attribute USVString origin;
+
+  undefined close();
+  undefined stop();
+  undefined focus();
+  undefined blur();
+  any open(optional USVString url = "", optional DOMString target = "_blank", optional DOMString features = "");
+
+  undefined alert(optional any message);
+  boolean confirm(optional DOMString message = "");
+  DOMString? prompt(optional DOMString message = "", optional DOMString default = "");
+  undefined print();
+  undefined postMessage(any message, optional any targetOrigin, optional any transfer);
+
+  // CSSOM View.
+  [Throws] any matchMedia(DOMString query);
+  [Replaceable] readonly attribute long innerWidth;
+  [Replaceable] readonly attribute long innerHeight;
+  [Replaceable] readonly attribute long outerWidth;
+  [Replaceable] readonly attribute long outerHeight;
+  [Replaceable] readonly attribute double scrollX;
+  [Replaceable, Impl=Window_scrollX] readonly attribute double pageXOffset;
+  [Replaceable] readonly attribute double scrollY;
+  [Replaceable, Impl=Window_scrollY] readonly attribute double pageYOffset;
+  [Replaceable] readonly attribute long screenX;
+  [Replaceable, Impl=Window_screenX] readonly attribute long screenLeft;
+  [Replaceable] readonly attribute long screenY;
+  [Replaceable, Impl=Window_screenY] readonly attribute long screenTop;
+  [Replaceable] readonly attribute double devicePixelRatio;
+  undefined scroll(optional any x, optional any y);
+  [Impl=Window_scroll] undefined scrollTo(optional any x, optional any y);
+  undefined scrollBy(optional any x, optional any y);
+  undefined moveTo(long x, long y);
+  undefined resizeTo(long width, long height);
+
+  [Throws] any getComputedStyle(Element elt, optional DOMString? pseudoElt);
+  any getSelection();
+
+  [Throws] unsigned long requestAnimationFrame(FrameRequestCallback callback);
+  undefined cancelAnimationFrame(unsigned long handle);
+  [Throws] unsigned long requestIdleCallback(VoidFunction callback, optional any options);
+  undefined cancelIdleCallback(unsigned long handle);
+
+  [Throws] DOMString atob(DOMString data);
+  [Throws] DOMString btoa(DOMString data);
+  undefined reportError(any e);
+  [Throws] any structuredClone(any value, optional any options);
+};
+Window includes GlobalEventHandlers;
+Window includes WindowEventHandlers;
+
+[Kind=object, Swift=JSDOMLocation]
+interface Location {
+  [Throws] stringifier attribute USVString href;
+  readonly attribute USVString origin;
+  [Throws] attribute USVString protocol;
+  [Throws] attribute USVString host;
+  [Throws] attribute USVString hostname;
+  [Throws] attribute USVString port;
+  [Throws] attribute USVString pathname;
+  [Throws] attribute USVString search;
+  [Throws] attribute USVString hash;
+  [Throws] undefined assign(USVString url);
+  [Throws] undefined replace(USVString url);
+  undefined reload();
+  [SameObject] readonly attribute any ancestorOrigins;
+};
+
+[Kind=object, Swift=JSDOMHistory]
+interface History {
+  readonly attribute unsigned long length;
+  attribute DOMString scrollRestoration;
+  readonly attribute any state;
+  undefined go(optional long delta = 0);
+  undefined back();
+  undefined forward();
+  [Throws] undefined pushState(any data, DOMString unused, optional USVString? url = null);
+  [Throws] undefined replaceState(any data, DOMString unused, optional USVString? url = null);
+};
+
+[Kind=object, Swift=JSDOMNavigator]
+interface Navigator {
+  readonly attribute DOMString userAgent;
+  readonly attribute DOMString appCodeName;
+  readonly attribute DOMString appName;
+  readonly attribute DOMString appVersion;
+  readonly attribute DOMString platform;
+  readonly attribute DOMString product;
+  readonly attribute DOMString productSub;
+  readonly attribute DOMString vendor;
+  readonly attribute DOMString vendorSub;
+  readonly attribute DOMString language;
+  readonly attribute any languages;
+  readonly attribute boolean onLine;
+  readonly attribute boolean cookieEnabled;
+  readonly attribute boolean webdriver;
+  readonly attribute boolean pdfViewerEnabled;
+  readonly attribute unsigned long hardwareConcurrency;
+  readonly attribute unsigned long maxTouchPoints;
+  readonly attribute DOMString doNotTrack;
+  boolean javaEnabled();
+  boolean sendBeacon(USVString url, optional any data);
+  readonly attribute any clipboard;
+  readonly attribute any serviceWorker;
+};
+
+[Kind=object, Swift=JSDOMScreen]
+interface Screen {
+  readonly attribute long availWidth;
+  readonly attribute long availHeight;
+  readonly attribute long width;
+  readonly attribute long height;
+  readonly attribute unsigned long colorDepth;
+  readonly attribute unsigned long pixelDepth;
+  readonly attribute any orientation;
+};
+
+[Kind=target]
+interface MediaQueryList : EventTarget {
+  readonly attribute DOMString media;
+  readonly attribute boolean matches;
+  [Throws] undefined addListener(EventListener? callback);
+  [Throws] undefined removeListener(EventListener? callback);
+  attribute EventHandler onchange;
+};
+
+[Kind=object, Swift=JSDOMSelection]
+interface Selection {
+  readonly attribute any anchorNode;
+  readonly attribute unsigned long anchorOffset;
+  readonly attribute any focusNode;
+  readonly attribute unsigned long focusOffset;
+  readonly attribute boolean isCollapsed;
+  readonly attribute unsigned long rangeCount;
+  readonly attribute DOMString type;
+  any getRangeAt(unsigned long index);
+  undefined addRange(any range);
+  undefined removeAllRanges();
+  [Impl=Selection_removeAllRanges] undefined empty();
+  undefined collapse(optional any node, optional unsigned long offset = 0);
+  undefined selectAllChildren(any node);
+  stringifier DOMString toString();
+};
+
+[Kind=object, Swift=JSDOMPerformance]
+interface Performance {
+  double now();
+  readonly attribute double timeOrigin;
+  any getEntriesByType(DOMString type);
+  any getEntriesByName(DOMString name, optional DOMString type);
+  any getEntries();
+  undefined mark(DOMString name, optional any options);
+  undefined measure(DOMString name, optional any a, optional any b);
+  undefined clearMarks(optional DOMString name);
+  undefined clearMeasures(optional DOMString name);
+  any toJSON();
+};
+
+[Kind=object, Swift=JSDOMStorage, Exotic]
+interface Storage {
+  readonly attribute unsigned long length;
+  DOMString? key(unsigned long index);
+  getter DOMString? getItem(DOMString key);
+  [Throws] undefined setItem(DOMString key, DOMString value);
+  undefined removeItem(DOMString key);
+  undefined clear();
+};
