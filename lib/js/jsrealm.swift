@@ -112,6 +112,7 @@ public enum JSIntrinsic: Int {
     case regExpConstructor, dateConstructor
     case eval, arrayValues, stringIterator, throwTypeError
     case symbolRegistry, regExpExecFn, regExpStringIteratorPrototype
+    case arrayJoinStack, mathObject
     case count
 }
 
@@ -224,6 +225,7 @@ public final class JSRealm {
     /// The built-in installers, in order. Later phases add one line each.
     func installBuiltins() {
         jsInstallBaseBuiltins(self)
+        jsInstallBuiltins1(self)
         jsInstallString(self)
         jsInstallRegExp(self)
         jsInstallSymbol(self)
