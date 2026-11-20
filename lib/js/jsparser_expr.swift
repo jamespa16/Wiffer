@@ -570,6 +570,10 @@ extension JSParser {
             try rescanRegExp()
             let t = tok
             try checkRegExpFlags(t.value2, t.start)
+            // Pattern early errors (Phase 9C's RegExp parser).
+            if let m = jsRegExpValidate(pattern: ast.str(t.value), flags: ast.str(t.value2)) {
+                throw error("invalid regular expression: " + m, t.start)
+            }
             try advance()
             return try node(.regexp, start, t.value, t.value2)
         case .lparen:

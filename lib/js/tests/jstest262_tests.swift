@@ -11,7 +11,7 @@
 // build/test262 the run is skipped (not failed).
 
 /// Raise by hand when the parser gets better (ROADMAP Phase 9A results).
-let jsTest262ParseFloor = 23_700
+let jsTest262ParseFloor = 23_785
 
 /// Post-ES2022 syntax, skipped.
 let jsTest262SkipFeatures: [String] = [
