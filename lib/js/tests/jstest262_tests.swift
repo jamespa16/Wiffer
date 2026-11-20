@@ -54,16 +54,25 @@ func jsTestHas<S: StringProtocol>(_ s: S, _ p: String) -> Bool {
 }
 
 struct JSTest262Meta {
+    /// negative: phase parse or early (parse-only run).
     var negativeParse = false
+    var negativePhase = ""
+    var negativeType = ""
     var onlyStrict = false
     var noStrict = false
     var module = false
+    var raw = false
+    var async = false
     var features: [String] = []
+    var includes: [String] = []
+    var flags: [String] = []
 }
 
+/// The frontmatter (/*--- ... ---*/) of a test262 file: flags, includes,
+/// features and negative phase/type. (Shared by the parse-only run and the
+/// execution runner, jstest262_run.swift.)
 func jsTest262Meta(_ src: [UInt8]) -> JSTest262Meta {
     var m = JSTest262Meta()
-    // Find the /*--- ... ---*/ block.
     func find(_ pat: String, from: Int) -> Int {
         let p = Array(pat.utf8)
         var i = from
@@ -89,36 +98,55 @@ func jsTest262Meta(_ src: [UInt8]) -> JSTest262Meta {
         lines.append(String(decoding: src[ls..<e], as: UTF8.self))
         ls = i + 1
     }
-    var inNegative = false
-    var inFeatures = false
+    func items(_ s: Substring) -> [String] {
+        var out: [String] = []
+        for f in s.split(separator: ",") {
+            let t = String(f.filter { $0 != " " && $0 != "[" && $0 != "]" && $0 != "\t" })
+            if !t.isEmpty { out.append(t) }
+        }
+        return out
+    }
+    var cur = ""
     for line in lines {
         let trimmed = line.drop(while: { $0 == " " })
         let indented = line.first == " "
-        if !indented { inNegative = false; inFeatures = false }
-        if trimmed.hasPrefix("negative:") { inNegative = true; continue }
-        if inNegative && trimmed.hasPrefix("phase:") {
-            if jsTestHas(trimmed, "parse") || jsTestHas(trimmed, "early") { m.negativeParse = true }
-        }
-        if trimmed.hasPrefix("flags:") {
-            if jsTestHas(trimmed, "onlyStrict") { m.onlyStrict = true }
-            if jsTestHas(trimmed, "noStrict") || jsTestHas(trimmed, "raw") { m.noStrict = true }
-            if jsTestHas(trimmed, "module") { m.module = true }
-        }
-        if trimmed.hasPrefix("features:") {
-            inFeatures = true
-            if let open = trimmed.firstIndex(of: "[") {
-                let inner = trimmed[trimmed.index(after: open)...].split(separator: "]").first ?? ""
-                for f in inner.split(separator: ",") {
-                    m.features.append(String(f.filter { $0 != " " }))
+        if !indented {
+            cur = ""
+            for key in ["negative", "features", "includes", "flags"] where trimmed.hasPrefix(key + ":") {
+                cur = key
+                let rest = trimmed.dropFirst(key.count + 1)
+                let list = items(rest)
+                switch key {
+                case "features": m.features += list
+                case "includes": m.includes += list
+                case "flags": m.flags += list
+                default: break
                 }
-                inFeatures = false
             }
             continue
         }
-        if inFeatures && trimmed.hasPrefix("- ") {
-            m.features.append(String(trimmed.dropFirst(2).filter { $0 != " " }))
+        if cur == "negative" {
+            if trimmed.hasPrefix("phase:") {
+                m.negativePhase = String(trimmed.dropFirst(6).filter { $0 != " " })
+                if m.negativePhase == "parse" || m.negativePhase == "early" { m.negativeParse = true }
+            } else if trimmed.hasPrefix("type:") {
+                m.negativeType = String(trimmed.dropFirst(5).filter { $0 != " " })
+            }
+        } else if trimmed.hasPrefix("- ") {
+            let item = String(trimmed.dropFirst(2).filter { $0 != " " })
+            switch cur {
+            case "features": m.features.append(item)
+            case "includes": m.includes.append(item)
+            case "flags": m.flags.append(item)
+            default: break
+            }
         }
     }
+    m.onlyStrict = m.flags.contains("onlyStrict")
+    m.noStrict = m.flags.contains("noStrict") || m.flags.contains("raw")
+    m.module = m.flags.contains("module")
+    m.raw = m.flags.contains("raw")
+    m.async = m.flags.contains("async")
     return m
 }
 
