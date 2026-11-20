@@ -35,4 +35,6 @@ let jsTest262RunSkipSource: [(needle: String, reason: String)] = [
     ("detachArrayBuffer", "$262.detachArrayBuffer"),
     ("$262.IsHTMLDDA", "IsHTMLDDA"),
     ("$262.AbstractModuleSource", "AbstractModuleSource"),
+    // Exhaustive code point sweeps (property escapes, character class escapes): seconds per test.
+    ("regExpUtils.js", "slow: code point sweep"),
 ]
