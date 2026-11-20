@@ -569,8 +569,8 @@ func jsInstallTypedArrays(_ realm: JSRealm) {
             let m = try realm.getV(args[1], realm.heap.key("maxByteLength"))
             if !m.isUndefined { max = try realm.toIndex(m, "array buffer max length") }
         }
-        let proto = try realm.prototype(forNewTarget: args.newTarget, default: .arrayBufferPrototype)
         if let mx = max, n > mx { throw realm.throwRangeError("Invalid array buffer max length") }
+        let proto = try realm.prototype(forNewTarget: args.newTarget, default: .arrayBufferPrototype)
         return try realm.allocateArrayBuffer(proto: proto, length: n, max: max)
     }
     _ = heap.root(abCtor)
@@ -719,12 +719,12 @@ func jsInstallTypedArrays(_ realm: JSRealm) {
     }
     realm.defineGetter(dvp, "byteLength") { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
         let v = try thisView(realm, args.this, "byteLength")
-        guard let (_, l) = realm.dataViewBounds(v) else { throw realm.throwTypeError("DataView is detached or out of bounds") }
+        guard let (_, l) = realm.dataViewBounds(v) else { return .int32(0) }
         return .number(l)
     }
     realm.defineGetter(dvp, "byteOffset") { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
         let v = try thisView(realm, args.this, "byteOffset")
-        guard let (o, _) = realm.dataViewBounds(v) else { throw realm.throwTypeError("DataView is detached or out of bounds") }
+        guard let (o, _) = realm.dataViewBounds(v) else { return .int32(0) }
         return .number(o)
     }
     _ = heap.defineOwnProperty(dvp, tagKey, .data(realm.string("DataView"), [.configurable]))

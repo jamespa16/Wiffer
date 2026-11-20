@@ -394,9 +394,8 @@ func jsInstallCollections(_ realm: JSRealm) {
     realm.defineGetter(mp, "size") { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
         .number(try realm.thisMap(args.this, "size").live)
     }
-    let forEach: JSNativeFunction = { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+    func forEach(_ isSet: Bool) -> JSNativeFunction { return { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
         let h = realm.heap
-        let isSet = h.kind(args.this) == .set
         let ix = isSet ? try realm.thisSet(args.this, "forEach") : try realm.thisMap(args.this, "forEach")
         let f = args[0]
         guard h.isCallable(f) else { throw realm.throwTypeError(realm.describeForError(f) + " is not a function") }
@@ -411,8 +410,8 @@ func jsInstallCollections(_ realm: JSRealm) {
             h.popRoots(to: rk.slot)
         }
         return .undefined
-    }
-    realm.defineMethod(mp, "forEach", length: 1, forEach)
+    } }
+    realm.defineMethod(mp, "forEach", length: 1, forEach(false))
     realm.defineMethod(mp, "keys", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
         realm.newCollectionIterator(args.this, try realm.thisMap(args.this, "keys"), keys: true, values: false)
     }
@@ -470,7 +469,7 @@ func jsInstallCollections(_ realm: JSRealm) {
     realm.defineGetter(stp, "size") { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
         .number(try realm.thisSet(args.this, "size").live)
     }
-    realm.defineMethod(stp, "forEach", length: 1, forEach)
+    realm.defineMethod(stp, "forEach", length: 1, forEach(true))
     let setValues = realm.defineMethod(stp, "values", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
         realm.newCollectionIterator(args.this, try realm.thisSet(args.this, "values"), keys: false, values: true)
     }

@@ -208,6 +208,13 @@ let jsBuiltins3Prelude = """
     """
 
 func jsBuiltins3Tests(_ t: Tests) {
+    // Debug aid: WIFFER_JS_EVAL=file runs one script (prelude first) and
+    // prints its completion.
+    if let path = jsTest262Env("WIFFER_JS_EVAL"), let src = hostReadFile(path) {
+        let realm = JSRuntime().makeRealm()
+        _ = realm.evaluate(source: jsBuiltins3Prelude, name: "prelude.js")
+        print("WIFFER_JS_EVAL: " + realm.evaluateToString(String(decoding: src, as: UTF8.self)))
+    }
     jsBuiltins3Scripts(t, stress: false)
     jsBuiltins3GC(t)
     jsBuiltins3Exotic(t)
