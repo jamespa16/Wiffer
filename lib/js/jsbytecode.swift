@@ -91,6 +91,14 @@ enum JSOp: UInt8 {
     case loadThis, loadGlobalThis, loadNewTarget, loadCallee, loadHomeObject, runFieldInit
     case finallyDispatch, debugger
     case checkThisInit, checkObjectCoercible
+    // Phase 9E: generators and async functions (jsgenerator.swift).
+    case generatorStart, yield_, yieldRaw, asyncGenYield, await_, checkResume, resumeIsReturn
+    case yieldStarCall, yieldStarResult, getAsyncIterator, asyncIterResult, asyncReturnCall, checkObject
+    // Phase 9E: private names, computed fields and other gaps.
+    case newPrivateName, getPrivate, putPrivate, definePrivate, hasPrivate, addPrivateBrand, setPrivateMethod
+    case dup3, objectRestDynamic, directEvalArray, getterThisSwap
+    // Phase 9E: modules (jsmodule.swift).
+    case importMeta, dynamicImport, getModuleBinding
 }
 
 /// Operand layouts.
@@ -109,6 +117,7 @@ enum JSOpFormat {
     case nullishJump   // i32 offset, u8 position from top, u8 values to pop
     case u32u32Const   // newRegExp: pattern, flags constants
     case table         // u16 n, then n i32 offsets (finallyDispatch)
+    case jump2         // two i32 offsets (yieldStarResult: done, return)
 }
 
 @inline(__always) func jsOpFormat(_ op: JSOp) -> JSOpFormat {
@@ -117,20 +126,22 @@ enum JSOpFormat {
          .getName, .getNameOrUndef, .putName, .getNameForCall, .deleteName,
          .getGlobal, .getGlobalOrUndef, .putGlobal, .getGlobalForCall, .declareVar, .declareFunc, .initLex,
          .getField, .putField, .getFieldForCall, .deleteField, .getSuperField, .putSuperField,
-         .defineField, .closure, .templateObject, .objectRest, .newArray:
+         .defineField, .closure, .templateObject, .objectRest, .newArray, .getModuleBinding:
         return .u32
     case .pushInt: return .i32
     case .getLocalChecked, .putLocalChecked: return .u32u32
     case .getEnv, .putEnv, .setEnv: return .env
     case .getEnvChecked, .putEnvChecked: return .envKey
-    case .declareLex, .defineMethod, .newClass: return .keyU8
-    case .defineMethodElem: return .u8
+    case .declareLex, .defineMethod, .newClass, .newPrivateName: return .keyU8
+    case .defineMethodElem, .asyncReturnCall, .setPrivateMethod: return .u8
     case .throwError: return .u8u32
     case .jump, .jumpIfTrue, .jumpIfFalse, .jumpIfTrueKeep, .jumpIfFalseKeep, .jumpIfNotNullishKeep,
-         .jumpIfUndefinedKeep, .forInNext, .iterNext:
+         .jumpIfUndefinedKeep, .forInNext, .iterNext, .checkResume, .resumeIsReturn, .yieldStarCall,
+         .asyncIterResult:
         return .jump
+    case .yieldStarResult: return .jump2
     case .jumpIfNullish: return .nullishJump
-    case .call, .construct, .directEval, .superCall: return .u16
+    case .call, .construct, .directEval, .superCall, .directEvalArray: return .u16
     case .newRegExp: return .u32u32Const
     case .finallyDispatch: return .table
     default: return .none
@@ -150,6 +161,7 @@ enum JSOpFormat {
     case .keyU8, .u8u32: return 6
     case .nullishJump: return 7
     case .table: return 3
+    case .jump2: return 9
     }
 }
 
@@ -229,6 +241,9 @@ final class JSCode {
     var name: JSValue = .string(0)
     /// Non-nil: calling this function throws "not supported yet: <stub>".
     var stub: String? = nil
+    /// JSGenKind: 0 an ordinary function, else generator / async /
+    /// async generator / module body (jsgenerator.swift).
+    var genKind: UInt8 = 0
     /// Make an own `prototype` object for closures (ordinary functions).
     var hasPrototype = false
     var isConstructor = false
@@ -464,6 +479,33 @@ func jsOpName(_ op: JSOp) -> String {
     case .debugger: return "debugger"
     case .checkThisInit: return "checkThisInit"
     case .checkObjectCoercible: return "checkObjectCoercible"
+    case .generatorStart: return "generatorStart"
+    case .yield_: return "yield"
+    case .yieldRaw: return "yieldRaw"
+    case .asyncGenYield: return "asyncGenYield"
+    case .await_: return "await"
+    case .checkResume: return "checkResume"
+    case .resumeIsReturn: return "resumeIsReturn"
+    case .yieldStarCall: return "yieldStarCall"
+    case .yieldStarResult: return "yieldStarResult"
+    case .getAsyncIterator: return "getAsyncIterator"
+    case .asyncIterResult: return "asyncIterResult"
+    case .asyncReturnCall: return "asyncReturnCall"
+    case .checkObject: return "checkObject"
+    case .newPrivateName: return "newPrivateName"
+    case .getPrivate: return "getPrivate"
+    case .putPrivate: return "putPrivate"
+    case .definePrivate: return "definePrivate"
+    case .hasPrivate: return "hasPrivate"
+    case .addPrivateBrand: return "addPrivateBrand"
+    case .setPrivateMethod: return "setPrivateMethod"
+    case .dup3: return "dup3"
+    case .objectRestDynamic: return "objectRestDynamic"
+    case .directEvalArray: return "directEvalArray"
+    case .getterThisSwap: return "getterThisSwap"
+    case .importMeta: return "importMeta"
+    case .dynamicImport: return "dynamicImport"
+    case .getModuleBinding: return "getModuleBinding"
     }
 }
 
@@ -525,13 +567,14 @@ func jsDisassemble(_ code: JSCode, heap: JSHeap, codes: (JSValue) -> JSCode?, de
             default: line += " \(v)"
             }
         case .jump: line += " -> \(pc + len + jsReadI32(p, pc + 1))"
+        case .jump2: line += " -> \(pc + len + jsReadI32(p, pc + 1)), \(pc + len + jsReadI32(p, pc + 5))"
         case .u32u32: line += " \(jsReadU32(p, pc + 1)) " + key(jsReadU32(p, pc + 5))
         case .u32u32Const: line += " " + const_(jsReadU32(p, pc + 1)) + " " + const_(jsReadU32(p, pc + 5))
         case .env: line += " \(jsReadU16(p, pc + 1)):\(jsReadU32(p, pc + 3))"
         case .envKey: line += " \(jsReadU16(p, pc + 1)):\(jsReadU32(p, pc + 3)) " + key(jsReadU32(p, pc + 7))
         case .keyU8:
             let a = jsReadU32(p, pc + 1)
-            line += " " + (op == .newClass ? const_(a) : key(a)) + " \(p[pc + 5])"
+            line += " " + (op == .newClass || op == .newPrivateName ? const_(a) : key(a)) + " \(p[pc + 5])"
         case .u8u32: line += " \(p[pc + 1]) " + const_(jsReadU32(p, pc + 2))
         case .nullishJump:
             line += " -> \(pc + len + jsReadI32(p, pc + 1)) at \(p[pc + 5]) pop \(p[pc + 6])"
