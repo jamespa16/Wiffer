@@ -134,9 +134,13 @@ extension JSCompiler {
             try emitExpr(node.a)
             setPos(n)
             try emitAwait()
-        case .importCall, .importMeta:
-            try notSupported("modules")
-            try adjust(1)
+        case .importMeta:
+            let r = sa.ref(n)
+            if r >= 0 { try emitGetBinding(r, checked: false) } else { try emit(.pushUndefined, 1) }
+        case .importCall:
+            try emitExpr(node.a)
+            setPos(n)
+            try emit(.dynamicImport, 0)
         default:
             throw fail("unexpected expression", n)
         }

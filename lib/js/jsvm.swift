@@ -1228,8 +1228,22 @@ extension JSRealm {
                         if try directEval(argc, strict: code.strict) {
                             t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr); pc = frames[t].pc; base = frames[t].base
                         }
-                    case .importMeta, .dynamicImport, .getModuleBinding:
-                        throw throwSyntaxError("not supported yet: modules")
+                    // Phase 9E: modules (jsmodule.swift).
+                    case .getModuleBinding:
+                        let v = stack[sp - 1]
+                        if v.isObject && heap.kind(v) == .internalObject && heap.flags(v).contains(.user2) {
+                            let x = heap.slot(heap.slot(v, 0), Int(heap.internalInt(v)))
+                            if x.isHole { throw tdzError(code, jsReadU32(bc, pc + 1)) }
+                            stack[sp - 1] = x
+                        } else if v.isHole {
+                            throw tdzError(code, jsReadU32(bc, pc + 1))
+                        }
+                        pc += 5
+                    case .dynamicImport:
+                        pc += 1
+                        stack[sp - 1] = try dynamicImport(stack[sp - 1], referrer: code.source?.name ?? "")
+                    case .importMeta:
+                        throw throwSyntaxError("import.meta outside a module")
                     }
                 }
             } catch {

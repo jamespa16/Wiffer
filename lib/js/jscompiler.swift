@@ -18,8 +18,10 @@
 // compile's entry), so deep input is a SyntaxError, never a crash.
 //
 // Syntax the runtime does not support yet compiles to code that throws
-// "not supported yet: ..." where it runs (generators and async functions
-// when called, private class members, BigInt literals, modules, ...).
+// "not supported yet: ..." where it runs (BigInt literals). Phase 9E:
+// generators and async functions (jsgenerator.swift documents the
+// suspension protocol), private names (jsvm_private.swift) and module
+// bodies (JSCompiler.compileModule in jsmodule.swift).
 
 struct JSCompileError: Error {
     var message: String
@@ -96,6 +98,8 @@ final class JSCompiler {
     var fsStack: [JSFuncState] = []
     var atoms: [Int32: JSValue] = [:]
     var scopeInfos: [Int32: JSValue] = [:]
+    /// A module body awaits at its top level (jsmodule.swift).
+    var moduleHasTLA = false
 
     init(ast: JSAST, analysis: JSScopeAnalysis, realm: JSRealm, source: JSScriptSource) {
         self.ast = ast
@@ -449,6 +453,8 @@ final class JSCompiler {
             try emit(check ? .getEnvChecked : .getEnv, 1)
             put16(h); put32(Int(bd.slot))
             if check { put32(bindingKeyName(b)) }
+            // An import: dereference the import record (live binding).
+            if bd.kind == .import_ { try emitU32(.getModuleBinding, bindingKeyName(b), 0) }
         } else {
             guard bd.slot >= 0 else { throw internalError("binding without slot") }
             if check {
@@ -901,6 +907,7 @@ final class JSCompiler {
 
     /// [v] -> [awaited v] (throws the rejection).
     func emitAwait() throws(JSCompileError) {
+        if fs.genKind == JSGenKind.module { moduleHasTLA = true }
         try emit(.await_, 1)
         try emit(.checkResume, -1)
         put32(0)
@@ -1078,7 +1085,7 @@ final class JSCompiler {
             try emit(.popEnv, 0)
             fs.scope = sa.scopes[Int(w)].parent
         case .importDecl, .exportNamed, .exportDefault, .exportAll:
-            try notSupported("modules")
+            try emitModuleStatement(n)
         default:
             // An expression in statement position (should not happen).
             try emitExpr(n)

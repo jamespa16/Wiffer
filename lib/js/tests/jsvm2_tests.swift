@@ -169,6 +169,8 @@ func jsVM2Tests(_ t: Tests) {
     jsVM2ScriptTests(t, stress: false)
     jsVM2ScriptTests(t, stress: true)
     jsVM2JobTests(t)
+    jsVM2ModuleTests(t, stress: false)
+    jsVM2ModuleTests(t, stress: true)
     jsVM2Fuzz(t)
 }
 
@@ -236,6 +238,97 @@ func jsVM2JobTests(_ t: Tests) {
     t.equal(r2.evaluateToString("1 + 1"), "2", "realm usable after a terminated drain")
 }
 
+/// Module graphs: [(url, source)], the first is the root; expected print
+/// lines joined by " | " (plus "Uncaught ..." for a failed load/link/run,
+/// "rejected ..." when the evaluation promise rejects later).
+let jsVM2ModuleCases: [([(String, String)], String)] = [
+    ([("main", "import { a, inc, default as d } from 'a'; import * as ns from 'b'; log('main', a, d(), ns.b, Object.keys(ns).join()); inc(); log('live', a)"),
+      ("a", "import { bval } from 'b'; export let a = 1; export function inc() { a++ } export default function () { return 'def' + bval() } log('a')"),
+      ("b", "export function bval() { return 'B' } export const b = 'bee'; export * from 'c'; log('b')"),
+      ("c", "export const cc = 4; export default 'not re-exported by *'")],
+     "b | a | main 1 defB bee b,bval,cc | live 2"),
+    // A cycle: hoisted functions work before evaluation, let is in TDZ.
+    ([("main", "import { even } from 'even'; log(even(10))"),
+      ("even", "import { odd } from 'odd'; export function even(n) { return n == 0 || odd(n - 1) } log('even')"),
+      ("odd", "import { even } from 'even'; export function odd(n) { return n != 0 && even(n - 1) } log('odd', typeof even)")],
+     "odd function | even | true"),
+    ([("main", "import { x } from 'a'; export let y = 1; log('main', x)"),
+      ("a", "import { y } from 'main'; try { y } catch (e) { log(e.name) } export let x = 'ax'")],
+     "ReferenceError | main ax"),
+    // Top-level await: siblings run in order; parents wait.
+    ([("main", "import 'slow'; import 'fast'; log('main')"),
+      ("slow", "log('slow start'); await Promise.resolve(); log('slow end')"),
+      ("fast", "log('fast')")],
+     "slow start | fast | slow end | main"),
+    ([("main", "import { v } from 'tla'; log('v', v)"),
+      ("tla", "export let v = 1; await null; v = 2")],
+     "v 2"),
+    ([("main", "const m = await import('dyn'); log(m.x, m.default, Object.prototype.toString.call(m)); import('missing').catch(e => log(e.name))"),
+      ("dyn", "export const x = 'dx'; export default 7")],
+     "dx 7 [object Module] | TypeError"),
+    ([("main", "import { nope } from 'a'"), ("a", "export const yes = 1")],
+     "Uncaught SyntaxError: The requested module 'a' does not provide an export named 'nope'"),
+    ([("main", "import { x } from 'a'"), ("a", "export * from 'b'; export * from 'c'"), ("b", "export const x = 1"), ("c", "export const x = 2")],
+     "Uncaught SyntaxError: The requested module 'a' contains conflicting star exports for name 'x'"),
+    ([("main", "import 'a'; log('not reached')"), ("a", "throw new Error('a failed')")],
+     "Uncaught Error: a failed"),
+    ([("main", "import 'a'"), ("a", "await null; throw new Error('late')")],
+     "rejected Error: late"),
+    ([("main", "import 'nowhere'")], "Uncaught TypeError: module not found: nowhere"),
+    ([("main", "import { a } from 'a'; a = 2")], "Uncaught TypeError: module not found: a"),
+    ([("main", "import { a } from 'a'; try { a = 2 } catch (e) { log(e.name) } log(this === undefined, import.meta.url)"), ("a", "export var a = 1")],
+     "TypeError | true main"),
+    ([("main", "import def, { b as c } from 'a'; import * as all from 'a'; log(def.name, c, all.default === def, 'b' in all)"),
+      ("a", "export default class {} ; let b = 'bb'; export { b }")],
+     "default bb true true"),
+    ([("main", "export { x as y } from 'a'; import { y } from 'main'; log(y)"), ("a", "export const x = 'reexported'")],
+     "reexported"),
+    ([("main", "for await (const v of [1, Promise.resolve(2)]) log(v); log('done')")], "1 | 2 | done"),
+]
+
+func jsVM2RunModules(_ realm: JSRealm, _ mods: [(String, String)]) -> String {
+    var lines: [String] = []
+    realm.printHandler = { (s: String) in lines.append(s) }
+    realm.moduleLoader = { (r: JSRealm, spec: String, ref: String) -> JSModuleLoadResult in
+        for (n, s) in mods where n == spec { return .source(url: n, bytes: Array((jsVM2Prelude + s).utf8)) }
+        return .error("module not found: " + spec)
+    }
+    switch realm.evaluateModule(source: jsVM2Prelude + mods[0].1, name: mods[0].0) {
+    case .normal(let p):
+        let r = realm.heap.retain(p)
+        _ = realm.runJobs()
+        let pv = realm.heap.persistent[r.slot]
+        if realm.promiseState(pv) == .rejected { lines.append("rejected " + realm.safeToString(realm.promiseResult(pv))) }
+        realm.heap.release(r)
+    case .exception(let e): lines.append("Uncaught " + e.message)
+    case .terminated: lines.append("terminated")
+    }
+    return lines.joined(separator: " | ")
+}
+
+func jsVM2ModuleTests(_ t: Tests, stress: Bool) {
+    t.section(stress ? "vm2 modules (gcEveryAllocation)" : "vm2 modules")
+    let rt = JSRuntime()
+    for (mods, want) in jsVM2ModuleCases {
+        let realm = rt.makeRealm()
+        realm.heap.gcEveryAllocation = stress
+        t.equal(jsVM2RunModules(realm, mods), want, mods[0].1)
+    }
+    // A module graph is loaded once per url; requests are visible statically.
+    let realm = rt.makeRealm()
+    var loads = 0
+    realm.moduleLoader = { (r: JSRealm, spec: String, ref: String) -> JSModuleLoadResult in
+        loads += 1
+        return .source(url: spec, bytes: Array("export let n = 1".utf8))
+    }
+    _ = realm.evaluateModule(source: "import { n } from 'x'; import { n as m } from 'x'; import 'y'", name: "root")
+    _ = realm.runJobs()
+    t.equal(loads, 2, "each url loaded once")
+    t.equal((realm.moduleRequests(source: Array("import a from 'p'; export * from 'q'; import 'p'".utf8)) ?? []).joined(separator: ","),
+            "p,q", "moduleRequests")
+    t.check(realm.moduleNamespace(url: "x") != nil, "moduleNamespace")
+}
+
 func jsVM2Fuzz(_ t: Tests) {
     t.section("vm2 fuzz")
     var seeds: [[UInt8]] = []
@@ -255,4 +348,25 @@ func jsVM2Fuzz(_ t: Tests) {
     }
     let fresh = rt.makeRealm()
     t.equal(fresh.evaluateToString("1 + 1"), "2", "after fuzz")
+    // Module fuzz: mutated module sources (every module of a graph is the
+    // mutant), in one realm with fresh urls.
+    var mseeds: [[UInt8]] = []
+    for (mods, _) in jsVM2ModuleCases { for (_, s) in mods { mseeds.append(Array(s.utf8)) } }
+    let mrealm = rt.makeRealm()
+    mrealm.printHandler = { _ in }
+    var current: [UInt8] = []
+    var gen = 0
+    mrealm.moduleLoader = { (r: JSRealm, spec: String, ref: String) -> JSModuleLoadResult in
+        if spec.utf8.count > 40 { return .error("bad") }
+        return .source(url: String(gen) + ":" + spec, bytes: current)
+    }
+    t.fuzz("vm2 modules", seeds: mseeds, iterations: 3000) { m in
+        budget = 0
+        gen += 1
+        current = m
+        if gen % 300 == 0 { mrealm.heap.collectGarbage() }
+        _ = mrealm.evaluateModule(source: m, name: String(gen) + ":root")
+        _ = mrealm.runJobs()
+    }
+    t.equal(mrealm.evaluateToString("1 + 1"), "2", "after module fuzz")
 }

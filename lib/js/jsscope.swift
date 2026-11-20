@@ -28,6 +28,9 @@
 
 enum JSScopeKind: UInt8 {
     case script, eval, function, block, catchClause, forLoop, switchBlock, classBody, with, fieldInit
+    /// A module body (Phase 9E): every top-level binding lives in the
+    /// module environment (jsmodule.swift).
+    case module
 }
 
 enum JSBindingKind: UInt8 {
@@ -37,6 +40,9 @@ enum JSBindingKind: UInt8 {
     /// (JSPseudoName.privateName) or a computed field key
     /// (JSPseudoName.computedField).
     case hidden
+    /// An imported binding (modules): its env slot holds an import record
+    /// (or a namespace object); reads go through getModuleBinding.
+    case import_
 }
 
 /// Pseudo names (never pool ids, which are >= 0).
@@ -47,6 +53,9 @@ enum JSPseudoName {
     static let funcObj: Int32 = -5
     /// `#x` (pool id of "x") in the class scope that declares it.
     static func privateName(_ id: Int32) -> Int32 { -0x4000_0000 - id }
+    /// Modules: the `*default*` export binding and the import.meta object.
+    static let moduleDefault: Int32 = -6
+    static let importMeta: Int32 = -7
     /// The key of the computed class field at property node n.
     static func computedField(_ n: Int32) -> Int32 { -0x2000_0000 - n }
 }
@@ -79,7 +88,7 @@ struct JSBinding {
     var isLexical: Bool {
         kind == .let_ || kind == .const_ || kind == .class_ || kind == .classInner
     }
-    var isConst: Bool { kind == .const_ || kind == .classInner }
+    var isConst: Bool { kind == .const_ || kind == .classInner || kind == .import_ }
 }
 
 struct JSScopeRec {
@@ -101,7 +110,7 @@ struct JSScopeRec {
     var usesArguments = false
     var funcKind: JSFunctionKind = .normal
 
-    var isFunctionLike: Bool { kind == .script || kind == .eval || kind == .function || kind == .fieldInit }
+    var isFunctionLike: Bool { kind == .script || kind == .eval || kind == .function || kind == .fieldInit || kind == .module }
 }
 
 final class JSScopeAnalysis {
@@ -133,7 +142,7 @@ final class JSScopeAnalysis {
         let id = Int32(scopes.count)
         let fn: Int32
         switch kind {
-        case .script, .eval, .function, .fieldInit: fn = id
+        case .script, .eval, .function, .fieldInit, .module: fn = id
         default: fn = parent >= 0 ? scopes[Int(parent)].fn : id
         }
         var s = JSScopeRec(kind: kind, parent: parent, fn: fn, node: node)
@@ -206,11 +215,16 @@ final class JSScopeAnalysis {
     // MARK: The walk
 
     /// Analyse a script (or eval body when `evalCode`).
-    func run(evalCode: Bool, strict: Bool) {
+    func run(evalCode: Bool, strict: Bool, module: Bool = false) {
         let root = ast.root
         let rn = ast[root]
-        let top = newScope(evalCode ? .eval : .script, parent: -1, node: root)
-        scopes[Int(top)].strict = strict || rn.flags & JSNodeFlags.strict != 0
+        let top = newScope(module ? .module : evalCode ? .eval : .script, parent: -1, node: root)
+        scopes[Int(top)].strict = module || strict || rn.flags & JSNodeFlags.strict != 0
+        if module {
+            declare(JSPseudoName.this_, .this_, in: top, end: 0)
+            declare(JSPseudoName.importMeta, .hidden, in: top, end: 0)
+            scopes[Int(top)].allHeap = true
+        }
         if evalCode {
             declare(JSPseudoName.this_, .this_, in: top, end: 0)
             declare(JSPseudoName.newTarget, .newTarget, in: top, end: 0)
@@ -242,6 +256,29 @@ final class JSScopeAnalysis {
                 stack.append((node.a, scope))
             case .privateName:
                 record(n, scope, JSPseudoName.privateName(node.a))
+            case .importMeta:
+                record(n, scope, JSPseudoName.importMeta)
+            case .importDecl:
+                for sp in ast.list(node.b, node.c) {
+                    let sn = ast[sp]
+                    let local = sn.kind == .importSpec ? sn.b : sn.a
+                    if local >= 0 && ast.kind(local) == .identifier { declare(ast[local].a, .import_, in: scope, end: 0) }
+                }
+            case .exportNamed:
+                if node.a >= 0 { stack.append((node.a, scope)) }
+            case .exportAll:
+                break
+            case .exportDefault:
+                let v = node.a
+                let isDecl = node.flags & JSNodeFlags.expression == 0
+                let vk = ast.kind(v)
+                if isDecl && (vk == .function || vk == .classNode) && ast[v].a >= 0 {
+                    stack.append((v, scope))
+                } else {
+                    let b = declare(JSPseudoName.moduleDefault, isDecl && vk == .function ? .function : .let_, in: scope, end: node.end)
+                    bindings[Int(b)].used = true
+                    stack.append((v, scope))
+                }
             case .superExpr:
                 recordSuper(n, scope, 0, JSPseudoName.home)
                 recordSuper(n, scope, 1, JSPseudoName.this_)

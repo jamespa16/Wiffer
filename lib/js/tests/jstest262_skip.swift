@@ -21,8 +21,6 @@ let jsTest262RunSkipFeatures: [String] = [
     "await-dictionary", "nonextensible-applies-to-private", "Symbol.dispose", "Symbol.asyncDispose",
     // Not implemented yet: delete the tag when the phase lands.
     "BigInt",                       // placeholder cell only (9E stretch)
-    "dynamic-import",               // 9E modules
-    "top-level-await", "module-code", "export-star-as-namespace-from-module",
 ]
 
 /// Source substrings that need a `$262` feature the embedding API cannot

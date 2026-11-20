@@ -74,7 +74,8 @@ public enum JSPromiseStateValue { case pending, fulfilled, rejected }
 
 struct JSJob {
     /// 0 fulfill reaction, 1 reject reaction, 2 resolve thenable, 3 JS
-    /// callback (b = arguments array), 4 host closure.
+    /// callback (b = arguments array), 4 host closure, 5 dynamic import
+    /// (a = promise, b = specifier, c = referrer).
     var kind: UInt8
     var a: JSValue = .undefined
     var b: JSValue = .undefined
@@ -101,6 +102,11 @@ final class JSESState {
     // Modules (jsmodule.swift).
     var modules: [JSValue] = []
     var moduleRecords: [JSModuleRecord] = []
+    var moduleMap: [String: Int] = [:]
+    var moduleLoader: JSModuleLoader? = nil
+    var importMetaHook: ((JSRealm, String, JSValue) -> Void)? = nil
+    var asyncOrder = 0
+    var namespaceGetterFn = -1
 
     func mark(_ h: JSHeap) {
         var i = jobHead
@@ -237,6 +243,8 @@ extension JSRealm {
                 if case .value(let v) = heap.getProperty(j.b, .index(UInt32(i))) { args.append(v) } else { args.append(.undefined) }
             }
             _ = try call(j.a, this: .undefined, args: args)
+        case 5:
+            try continueDynamicImport(j.a, j.b, j.c)
         default:
             if let h = j.host { try h(self) }
         }
