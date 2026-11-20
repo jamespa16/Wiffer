@@ -4062,6 +4062,46 @@ each file:
     are not parsed.
 - **Tests:** 9D's test262 subsets for these built-ins, with pass-count
   floors.
+- **Core built-ins results (Object, Array, Number, Boolean, Math, JSON,
+  global functions; done).** `jsbuiltins_object.swift` (Object statics and
+  prototype, `__proto__` and `__defineGetter__` family, groupBy, plus shared
+  helpers `jsForOf`, `jsFromDescriptor`, `jsDefineOwn`), `jsbuiltins_array.swift`
+  (all ES2023 methods generic over array-likes, species, stable merge sort
+  with re-entry safety, dense fast paths, join cycle detection through the
+  `.arrayJoinStack` intrinsic; loops tick the interrupt budget),
+  `jsbuiltins_number.swift` (Number statics/prototype, parseInt/parseFloat,
+  URI functions, escape/unescape), `jsbuiltins_math.swift` (no libm:
+  fdlibm-style sin/cos/tan/atan/log, double-double exp/expm1/log1p/log2/
+  log10/pow/cbrt/hypot, exact Payne-Hanek-style reduction for huge sin/cos
+  arguments, per-realm xorshift64* `Math.random`, seed with
+  `realm.seedRandom(_:)`), `jsbuiltins_json.swift` (parse with reviver and a
+  500-level depth cap, stringify with replacer/indent/toJSON, cycle TypeError,
+  well-formed lone surrogates). Installed by one line (`jsInstallBuiltins1`).
+  `jsPowNumber` (the `**` operator) now uses the same accurate pow
+  (`10 ** -2 === 0.01`, `1.1 ** 10`). Intrinsics added: `arrayJoinStack`,
+  `mathObject`.
+  - **Engine fixes found by test262 on the way:** `JSHeap.propertyKey`
+    returned an atom key for index-like atoms (`"0"` from a literal), so
+    `{"0": 1}` and `Object.defineProperty(a, "0", ...)` made properties that
+    `a[0]` never saw; the compiler's constant pool keyed `-0` and the empty
+    string identically (`[0].includes("")` was true after a `-0` literal).
+  - **Tests:** `tests/jsbuiltins1_tests.swift`: 207 script cases (edge cases:
+    holes, negative indices, NaN/-0, array-likes, getters that mutate during
+    iteration, throwing comparators, species, URIError cases, JSON error
+    messages, depth limits), run again under gcEveryAllocation, seeded
+    random, a 5000-element sort, an interruptible native loop, math identity
+    sweeps, and a 6000-mutant JSON.parse fuzz (never traps).
+  - **test262 (full run, pass/fail):** Array 2795/93, Object 3090/302, Number
+    333/4, Boolean 46/4, JSON 117/21, Math 312/0, parseInt 54/1, parseFloat
+    53/1, encodeURI(Component) 20/11, decodeURI(Component) 42/13, global
+    25/4, annexB escape 15/0, unescape 18/0. Whole run 19 754 passed
+    (from 13 118). Most remaining failures need other built-ins (String,
+    Reflect, Proxy, typed arrays, Date, RegExp) or `isConstructor` via
+    Reflect; the URI ones loop over `String.fromCharCode`. Floors raised in
+    `test262-floor.txt`.
+  - **Known gaps:** BigInt in `Number()`/JSON (9E), mapped `arguments`
+    aliasing after `defineProperty` (VM), `Math.sin/cos/tan` are within about
+    1 ulp, not correctly rounded; `toLocaleString` is fixed en-US.
 
 ## Phase 9D: test262 runner (`lib/js/tests`) (runner done; floors rise with 9C/9E)
 
