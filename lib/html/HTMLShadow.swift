@@ -396,8 +396,12 @@ extension HTMLNode {
         for n in found {
             let nr = n.ensureRare()
             if let prev = nr.assignedSlot, prev !== self, let pr = prev.rare {
+                // The node moves here from another slot: that slot changes too
+                // (it may not be reassigned in this pass, or would see no change).
                 var i = 0
-                while i < pr.assignedNodes.count { if pr.assignedNodes[i] === n { pr.assignedNodes.remove(at: i) } else { i += 1 } }
+                var took = false
+                while i < pr.assignedNodes.count { if pr.assignedNodes[i] === n { pr.assignedNodes.remove(at: i); took = true } else { i += 1 } }
+                if took { prev.signalSlotChange() }
             }
             nr.assignedSlot = self
         }

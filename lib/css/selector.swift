@@ -1,5 +1,24 @@
 // Selectors: parsing, specificity and matching. Matching is generic over
 // `CSSElement` (no existentials in Embedded Swift); the DOM conforms to it.
+//
+// Shadow DOM (CSS Scoping): every element is in a tree scope (the document,
+// or a shadow root). A selector from a scope's style sheets matches only
+// inside that scope, where the shadow host stands in for the shadow root as
+// the root's parent and is "featureless": only `:host` / `:host(<compound>)`
+// match it. `::slotted(<compound>)` reaches elements assigned (after
+// flattening) to the scope's slots, and `::part(<ident>+)` reaches elements
+// in the shadow trees of the scope's hosts by their `part` names (renamed
+// on the way out by `exportparts`). `:host-context()` never matches.
+
+/// Which tree an element is in: `id` 0 is the document (or any tree that is
+/// not a shadow tree); otherwise a stable id of the shadow root. `depth`
+/// counts shadow roots from the document (0 for the document tree), which
+/// orders the cascade's shadow-tree context step.
+struct CSSTreeScope: Equatable {
+    var id: Int
+    var depth: Int
+    init(id: Int = 0, depth: Int = 0) { self.id = id; self.depth = depth }
+}
 
 protocol CSSElement {
     /// Lowercase local name ("div"). Matched against type selectors.
@@ -28,6 +47,25 @@ protocol CSSElement {
     var cssSiblingIndex: Int { get }
     /// Number of element children of the parent (including this one).
     var cssSiblingCount: Int { get }
+
+    // Shadow DOM. All have defaults for trees without shadow roots.
+
+    /// The element's tree scope.
+    var cssTreeScope: CSSTreeScope { get }
+    /// The host of the shadow root at the top of the element's tree (nil
+    /// outside shadow trees). Selector combinators step from a top-level
+    /// element of a shadow tree to this host (featureless).
+    var cssShadowHost: Self? { get }
+    /// If the element is a shadow host: its shadow root's scope id.
+    var cssShadowRootScope: Int? { get }
+    /// The slot the element is assigned to (for `::slotted`).
+    var cssAssignedSlot: Self? { get }
+    /// The `part` attribute's names.
+    var cssPartNames: [String] { get }
+    /// A host's `exportparts` mapping (inner name, outer name).
+    var cssExportParts: [(String, String)] { get }
+    /// `:defined` (the custom element state is uncustomized or custom).
+    var cssIsDefined: Bool { get }
 }
 
 extension CSSElement {
@@ -49,6 +87,43 @@ extension CSSElement {
         while let p = cur { n += 1; cur = p.cssNextElementSibling }
         return n
     }
+    var cssTreeScope: CSSTreeScope { CSSTreeScope() }
+    var cssShadowHost: Self? { nil }
+    var cssShadowRootScope: Int? { nil }
+    var cssAssignedSlot: Self? { nil }
+    var cssPartNames: [String] { [] }
+    var cssExportParts: [(String, String)] { [] }
+    var cssIsDefined: Bool { true }
+}
+
+/// Parse an `exportparts` value: "a, b: c" -> [(a, a), (b, c)]. Invalid
+/// entries are skipped.
+func cssParseExportParts(_ s: String) -> [(String, String)] {
+    var out: [(String, String)] = []
+    var entry: [UInt8] = []
+    func flush() {
+        var names: [String] = []
+        var cur: [UInt8] = []
+        var colons = 0
+        for b in entry {
+            if b == 0x3a { if !cur.isEmpty { names.append(String(decoding: cur, as: UTF8.self)); cur = [] }; colons += 1; continue }
+            if b == 0x20 || b == 0x09 || b == 0x0a || b == 0x0d || b == 0x0c {
+                if !cur.isEmpty { names.append(String(decoding: cur, as: UTF8.self)); cur = [] }
+                continue
+            }
+            cur.append(b)
+        }
+        if !cur.isEmpty { names.append(String(decoding: cur, as: UTF8.self)) }
+        entry = []
+        if colons == 0 && names.count == 1 { out.append((names[0], names[0])) }
+        else if colons == 1 && names.count == 2 { out.append((names[0], names[1])) }
+    }
+    for b in s.utf8 {
+        if b == 0x2c { flush() } else { entry.append(b) }
+        if out.count > 256 { break }
+    }
+    flush()
+    return out
 }
 
 enum CSSAttrOp: UInt8 { case exists, equals, includes, dashMatch, prefix, suffix, substring }
@@ -63,7 +138,7 @@ struct CSSAttrSelector {
 enum CSSPseudoClass: UInt8 {
     case firstChild, lastChild, onlyChild, firstOfType, lastOfType, onlyOfType
     case link, visited, hover, root, empty, checked, disabled, enabled
-    case never, always
+    case never, always, defined
 }
 
 enum CSSNthKind: UInt8 { case child, lastChild, ofType, lastOfType }
@@ -91,6 +166,15 @@ struct CSSCompound {
     var nths: [CSSNthSelector] = []
     var negations: [CSSComplexSelector] = []     // :not(a, b) = none of these match
     var anyOf: [[CSSComplexSelector]] = []       // :is(...)/:where(...) lists
+    /// `:host` (empty) or `:host(<compound>)` (one element); nil if absent.
+    /// A compound with this matches only a featureless shadow host.
+    var hostArgs: [CSSCompound]? = nil
+
+    /// Only `:host` / `:host(...)`, nothing else (so it can match a featureless host).
+    var isHostOnly: Bool {
+        hostArgs != nil && tag.isEmpty && ids.isEmpty && classes.isEmpty && attrs.isEmpty && pseudos.isEmpty
+            && nths.isEmpty && negations.isEmpty && anyOf.isEmpty
+    }
 }
 
 struct CSSComplexSelector {
@@ -100,6 +184,11 @@ struct CSSComplexSelector {
     var pseudoElement = CSSPseudoElement.none
     /// ids << 20 | classes/attributes/pseudo-classes << 10 | types/pseudo-elements.
     var specificity: UInt32 = 0
+    /// `::slotted(<compound>)` (one element): the compounds before it match
+    /// the slot, this one the slotted element.
+    var slotted: [CSSCompound]? = nil
+    /// `::part(<ident>+)`: the compounds before it match the host.
+    var parts: [String]? = nil
 }
 
 let cssMaxSelectorCompounds = 32
@@ -166,6 +255,22 @@ struct CSSSelectorParser {
             sel.compounds.append(c)
             if sel.compounds.count > cssMaxSelectorCompounds { return nil }
             spec = cssAddSpecificity(spec, s)
+            if let sl = pendingSlotted {
+                pendingSlotted = nil
+                sel.slotted = [sl.0]
+                spec = cssAddSpecificity(cssAddSpecificity(spec, 1), sl.1)
+                skipWS()
+                if i < end { if case .comma = t[i] { break } else { return nil } }
+                break
+            }
+            if let ps = pendingParts {
+                pendingParts = nil
+                sel.parts = ps
+                spec = cssAddSpecificity(spec, 1)
+                skipWS()
+                if i < end { if case .comma = t[i] { break } else { return nil } }
+                break
+            }
             // A pseudo-element must be last; parseCompound records it in lastPseudo.
             if lastPseudo != .none {
                 sel.pseudoElement = lastPseudo
@@ -194,6 +299,8 @@ struct CSSSelectorParser {
     }
 
     var lastPseudo = CSSPseudoElement.none
+    var pendingSlotted: (CSSCompound, UInt32)? = nil
+    var pendingParts: [String]? = nil
 
     /// One compound selector and its specificity.
     mutating func parseCompound(_ depth: Int) -> (CSSCompound, UInt32)? {
@@ -236,7 +343,12 @@ struct CSSSelectorParser {
                         any = true
                         break loop
                     }
-                    c.pseudos.append(cssSimplePseudoClass(l))
+                    if l == "host" {
+                        if c.hostArgs != nil { return nil }
+                        c.hostArgs = []
+                    } else {
+                        c.pseudos.append(cssSimplePseudoClass(l))
+                    }
                     any = true
                     spec = cssAddSpecificity(spec, 1 << 10)
                 } else if case .function(let fname) = t[i], !double {
@@ -247,12 +359,33 @@ struct CSSSelectorParser {
                     guard let s = parseFunctionalPseudo(cssLower(fname), args, &c, depth) else { return nil }
                     spec = cssAddSpecificity(spec, s)
                     any = true
-                } else if double, case .function = t[i] {
-                    // ::part(), ::slotted(), ...: valid, never matches.
-                    let (e, _) = cssMatchEnd(t, i, end)
+                } else if double, case .function(let fname) = t[i] {
+                    let (e, closed) = cssMatchEnd(t, i, end)
+                    let argEnd = closed ? e - 1 : e
+                    let args = Array(t[(i + 1)..<argEnd])
                     i = e
-                    lastPseudo = .other
                     any = true
+                    switch cssLower(fname) {
+                    case "slotted":
+                        var p = CSSSelectorParser(args)
+                        guard let list = p.parseList(depth + 1), list.count == 1, list[0].compounds.count == 1,
+                              list[0].pseudoElement == .none, list[0].slotted == nil, list[0].parts == nil else { return nil }
+                        pendingSlotted = (list[0].compounds[0], list[0].specificity)
+                    case "part":
+                        var names: [String] = []
+                        for a in args {
+                            switch a {
+                            case .whitespace: continue
+                            case .ident(let n): names.append(n)
+                            default: return nil
+                            }
+                        }
+                        if names.isEmpty { return nil }
+                        pendingParts = names
+                    default:
+                        // Other functional pseudo-elements: valid, never match.
+                        lastPseudo = .other
+                    }
                     break loop
                 } else { return nil }
             default:
@@ -264,12 +397,18 @@ struct CSSSelectorParser {
 
     mutating func parseFunctionalPseudo(_ name: String, _ args: [CSSToken], _ c: inout CSSCompound, _ depth: Int) -> UInt32? {
         switch name {
+        case "host":
+            var p = CSSSelectorParser(args)
+            guard c.hostArgs == nil, let list = p.parseList(depth + 1), list.count == 1, list[0].compounds.count == 1,
+                  list[0].pseudoElement == .none, list[0].slotted == nil, list[0].parts == nil else { return nil }
+            c.hostArgs = [list[0].compounds[0]]
+            return cssAddSpecificity(1 << 10, list[0].specificity)
         case "not", "is", "where", "matches", "-webkit-any", "-moz-any", "any":
             var p = CSSSelectorParser(args)
             guard let list = p.parseList(depth + 1) else { return nil }
             var maxSpec: UInt32 = 0
             for s in list where s.pseudoElement == .none && s.specificity > maxSpec { maxSpec = s.specificity }
-            for s in list where s.pseudoElement != .none { return nil }
+            for s in list where s.pseudoElement != .none || s.slotted != nil || s.parts != nil { return nil }
             if name == "not" {
                 c.negations.append(contentsOf: list)
                 return maxSpec
@@ -313,7 +452,7 @@ private func cssSimplePseudoClass(_ n: String) -> CSSPseudoClass {
     case "checked": return .checked
     case "disabled": return .disabled
     case "enabled": return .enabled
-    case "defined": return .always
+    case "defined": return .defined
     default: return .never        // :active, :focus, :target, unknown, ...
     }
 }
@@ -500,7 +639,15 @@ private func cssAttrMatches(_ a: CSSAttrSelector, _ value: String) -> Bool {
     }
 }
 
-func cssMatchCompound<E: CSSElement>(_ c: CSSCompound, _ el: E, _ budget: inout Int) -> Bool {
+/// Match one compound. `featureless`: el is a shadow host seen from inside
+/// its own shadow tree, which only `:host` / `:host(...)` can match.
+func cssMatchCompound<E: CSSElement>(_ c: CSSCompound, _ el: E, _ budget: inout Int, featureless: Bool = false) -> Bool {
+    if featureless {
+        guard c.isHostOnly, let args = c.hostArgs else { return false }
+        for a in args where !cssMatchCompound(a, el, &budget) { return false }
+        return true
+    }
+    if c.hostArgs != nil { return false }
     if !c.tag.isEmpty && el.cssTagName != c.tag { return false }
     for id in c.ids where el.cssID != id { return false }
     if !c.classes.isEmpty {
@@ -527,6 +674,7 @@ func cssMatchCompound<E: CSSElement>(_ c: CSSCompound, _ el: E, _ budget: inout 
         case .disabled: if !el.cssIsDisabled { return false }
         case .enabled: if el.cssIsDisabled { return false }
         case .always: break
+        case .defined: if !el.cssIsDefined { return false }
         case .visited, .never: return false
         }
     }
@@ -549,30 +697,43 @@ func cssMatchCompound<E: CSSElement>(_ c: CSSCompound, _ el: E, _ budget: inout 
     return true
 }
 
-private func cssMatchFrom<E: CSSElement>(_ s: CSSComplexSelector, _ idx: Int, _ el: E, _ budget: inout Int) -> Bool {
+/// The parent for combinators: the parent element, or (from a top-level
+/// element of a shadow tree) the featureless host. A featureless host has
+/// no parent in its shadow tree's view.
+@inline(__always) private func cssSelectorParent<E: CSSElement>(_ el: E, _ featureless: Bool) -> (E, Bool)? {
+    if featureless { return nil }
+    if let p = el.cssParent { return (p, false) }
+    if let h = el.cssShadowHost { return (h, true) }
+    return nil
+}
+
+private func cssMatchFrom<E: CSSElement>(_ s: CSSComplexSelector, _ idx: Int, _ el: E, _ featureless: Bool,
+                                         _ budget: inout Int) -> Bool {
     budget -= 1
     if budget < 0 { return false }
-    if !cssMatchCompound(s.compounds[idx], el, &budget) { return false }
+    if !cssMatchCompound(s.compounds[idx], el, &budget, featureless: featureless) { return false }
     if idx == 0 { return true }
     switch s.combinators[idx - 1] {
     case .child:
-        guard let p = el.cssParent else { return false }
-        return cssMatchFrom(s, idx - 1, p, &budget)
+        guard let (p, f) = cssSelectorParent(el, featureless) else { return false }
+        return cssMatchFrom(s, idx - 1, p, f, &budget)
     case .descendant:
-        var cur = el.cssParent
-        while let p = cur {
-            if cssMatchFrom(s, idx - 1, p, &budget) { return true }
+        var cur = cssSelectorParent(el, featureless)
+        while let (p, f) = cur {
+            if cssMatchFrom(s, idx - 1, p, f, &budget) { return true }
             if budget < 0 { return false }
-            cur = p.cssParent
+            cur = cssSelectorParent(p, f)
         }
         return false
     case .adjacent:
+        if featureless { return false }
         guard let p = el.cssPreviousElementSibling else { return false }
-        return cssMatchFrom(s, idx - 1, p, &budget)
+        return cssMatchFrom(s, idx - 1, p, false, &budget)
     case .general:
+        if featureless { return false }
         var cur = el.cssPreviousElementSibling
         while let p = cur {
-            if cssMatchFrom(s, idx - 1, p, &budget) { return true }
+            if cssMatchFrom(s, idx - 1, p, false, &budget) { return true }
             if budget < 0 { return false }
             cur = p.cssPreviousElementSibling
         }
@@ -581,10 +742,57 @@ private func cssMatchFrom<E: CSSElement>(_ s: CSSComplexSelector, _ idx: Int, _ 
 }
 
 /// Does `el` match the selector (ignoring its pseudo-element)? `budget` caps
-/// the work on hostile selector/tree combinations.
-func cssMatchComplex<E: CSSElement>(_ s: CSSComplexSelector, _ el: E, _ budget: inout Int) -> Bool {
-    guard !s.compounds.isEmpty else { return false }
-    return cssMatchFrom(s, s.compounds.count - 1, el, &budget)
+/// the work on hostile selector/tree combinations. `featureless`: el is a
+/// shadow host matched by its own shadow tree's rules (`:host`).
+/// `::slotted` and `::part` selectors need their scope and go through
+/// cssMatchSlotted / cssMatchPart instead (here they never match).
+func cssMatchComplex<E: CSSElement>(_ s: CSSComplexSelector, _ el: E, _ budget: inout Int, featureless: Bool = false) -> Bool {
+    guard !s.compounds.isEmpty, s.slotted == nil, s.parts == nil else { return false }
+    return cssMatchFrom(s, s.compounds.count - 1, el, featureless, &budget)
+}
+
+/// `... ::slotted(c)` from the style sheets of scope `scope`: el must be
+/// assigned (possibly through slots assigned to slots) to a slot in that
+/// scope matching the compounds before `::slotted`.
+func cssMatchSlotted<E: CSSElement>(_ s: CSSComplexSelector, _ el: E, scope: Int, _ budget: inout Int) -> Bool {
+    guard let arg = s.slotted?.first, !s.compounds.isEmpty, scope != 0 else { return false }
+    var slot = el.cssAssignedSlot
+    var k = 0
+    while let sl = slot, k < 64 {
+        if sl.cssTreeScope.id == scope {
+            if !cssMatchCompound(arg, el, &budget) { return false }
+            return cssMatchFrom(s, s.compounds.count - 1, sl, false, &budget)
+        }
+        slot = sl.cssAssignedSlot
+        k += 1
+    }
+    return false
+}
+
+/// `... ::part(names)` from the style sheets of scope `scope`: el must be in
+/// the shadow tree of a host in that scope (directly, or through nested
+/// hosts that export the part) with every name, and the host must match the
+/// compounds before `::part`.
+func cssMatchPart<E: CSSElement>(_ s: CSSComplexSelector, _ el: E, scope: Int, _ budget: inout Int) -> Bool {
+    guard let want = s.parts, !s.compounds.isEmpty else { return false }
+    var names = el.cssPartNames
+    if names.isEmpty { return false }
+    var host = el.cssShadowHost
+    var k = 0
+    while let h = host, k < 32, !names.isEmpty {
+        if h.cssTreeScope.id == scope {
+            for w in want where !names.contains(w) { return false }
+            return cssMatchFrom(s, s.compounds.count - 1, h, false, &budget)
+        }
+        // Leaving h's tree: only exported names go on, renamed.
+        let map = h.cssExportParts
+        var next: [String] = []
+        for (inner, outer) in map where names.contains(inner) && !next.contains(outer) { next.append(outer) }
+        names = next
+        host = h.cssShadowHost
+        k += 1
+    }
+    return false
 }
 
 func cssMatches<E: CSSElement>(_ s: CSSComplexSelector, _ el: E) -> Bool {
