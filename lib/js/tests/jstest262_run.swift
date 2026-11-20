@@ -40,7 +40,7 @@
 
 /// HOOK (Phase 9E, Promise and microtasks): run the realm's job queue to
 /// completion. nil = async tests are skipped.
-nonisolated(unsafe) var jsTest262DrainJobs: ((JSRealm) -> Void)? = nil
+nonisolated(unsafe) var jsTest262DrainJobs: ((JSRealm) -> Void)? = { (realm: JSRealm) in _ = realm.runJobs() }
 
 final class JSTest262Budget {
     var deadline = 0

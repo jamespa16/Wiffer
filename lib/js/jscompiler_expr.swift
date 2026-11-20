@@ -128,11 +128,11 @@ extension JSCompiler {
             try notSupported("private class members")
             try adjust(1)
         case .yieldExpr:
-            try notSupported("generators")
-            try adjust(1)
+            try emitYield(n)
         case .awaitExpr:
-            try notSupported("async functions")
-            try adjust(1)
+            try emitExpr(node.a)
+            setPos(n)
+            try emitAwait()
         case .importCall, .importMeta:
             try notSupported("modules")
             try adjust(1)

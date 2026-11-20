@@ -12,7 +12,7 @@ let jsTest262RunSkipFeatures: [String] = [
     "host-gc-required", "Intl", "Intl.Locale", "Intl-enumeration", "intl-normative-optional",
     "legacy-regexp", "uint8array-base64", "upsert", "joint-iteration", "iterator-sequencing",
     "Math.sumPrecise", "Float16Array", "canonical-tz", "immutable-arraybuffer",
-    "RegExp.escape", "Error.isError", "Array.fromAsync", "promise-try",
+    "RegExp.escape", "Error.isError", "Array.fromAsync",
     "import-attributes", "import-assertions", "json-modules", "source-phase-imports",
     "source-phase-imports-module-source", "import-defer", "import-text", "import-bytes",
     "explicit-resource-management", "regexp-modifiers", "regexp-duplicate-named-groups",

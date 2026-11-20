@@ -229,6 +229,8 @@ public final class JSRealm {
     /// The built-in installers, in order. Later phases add one line each.
     func installBuiltins() {
         jsInstallBaseBuiltins(self)
+        jsInstallPromise(self)
+        jsInstallGenerators(self)
     }
 
     func markRoots(_ h: JSHeap) {

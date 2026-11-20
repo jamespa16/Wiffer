@@ -373,10 +373,6 @@ final class JSScopeAnalysis {
             }
             record(node.a, scope, name)
         }
-        if node.flags & (JSNodeFlags.async | JSNodeFlags.generator) != 0 {
-            stubs.insert(n)
-            return
-        }
         let f = newScope(.function, parent: scope, node: n)
         nodeScope[n] = f
         scopes[Int(f)].strict = node.flags & JSNodeFlags.strict != 0
