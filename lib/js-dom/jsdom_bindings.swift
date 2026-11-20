@@ -59,6 +59,11 @@ final class JSDOMEventTargetObject {
     var media = ""
     var mediaList = CSSMediaQueryList()
     var matches = false
+    /// Embedder extensions (Phase 9H, lib/js-web's XMLHttpRequest): the
+    /// wrapper's prototype instead of the interface's (keep it rooted), and
+    /// the embedder's state for this target.
+    var protoOverride: JSValue = .undefined
+    var hostData: AnyObject? = nil
     init(_ i: JSDOMInterface) { iface = i }
 }
 
@@ -169,7 +174,9 @@ final class JSDOMBindings {
         nodeClass.shouldRoot = { [unowned(unsafe) self] n in self.nodeWrapperIsRoot(n) }
         eventClass = JSHostClass<JSDOMEvent>(realm: realm, name: "Event", parent: protos[JSDOMInterface.Event.rawValue])
         eventClass.prototypeFor = { [unowned(unsafe) self] e in self.protos[e.iface.rawValue] }
-        classes.EventTargetObject.prototypeFor = { [unowned(unsafe) self] o in self.protos[o.iface.rawValue] }
+        classes.EventTargetObject.prototypeFor = { [unowned(unsafe) self] o in
+            o.protoOverride.isObject ? o.protoOverride : self.protos[o.iface.rawValue]
+        }
         classes.EventTargetObject.shouldRoot = { o in !o.listeners.items.isEmpty }
         // DOMException.prototype inherits Error.prototype.
         _ = heap.setPrototypeOf(protos[JSDOMInterface.DOMException.rawValue], realm.intrinsic(.errorPrototype))
