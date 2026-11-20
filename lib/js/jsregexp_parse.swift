@@ -88,6 +88,8 @@ struct JSReParser {
     var i = 0
     let u: Bool
     let ignoreCase: Bool
+    let sets: Bool              // v flag: ClassSetExpression syntax
+    var foldRuns: [UInt64] = [] // v + i: simple case folding for set operations
     var named = false
     var totalCaps = 0
     var ast = JSReAST()
@@ -98,6 +100,8 @@ struct JSReParser {
         n = p.count
         u = f.unicodeMode
         ignoreCase = f.ignoreCase
+        sets = f.unicodeSets
+        if sets && ignoreCase { foldRuns = jsReDecodeCaseTable(unicode: true) }
     }
 
     func err(_ m: String) -> JSRegExpError { JSRegExpError(m) }
@@ -602,6 +606,7 @@ struct JSReParser {
     }
 
     mutating func characterClass() throws(JSRegExpError) -> Int32 {
+        if sets { return try vCharacterClass() }
         i += 1
         var negate = false
         if i < n && p[i] == 0x5E { negate = true; i += 1 }

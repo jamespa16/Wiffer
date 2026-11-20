@@ -22,8 +22,8 @@
 //       RegExp object with the same source and flags (JSRegExpCache does
 //       that for literals evaluated in a loop and `new RegExp(s)` with a
 //       repeated s). Not thread-safe (one realm runs on one thread).
-//       A `v` flag is accepted and treated as `u` (ES2024 class set syntax
-//       is not implemented yet).
+//       The ES2024 `v` flag works (class set expressions, \q{...}; see
+//       jsregexp_vclass.swift) except properties of strings (\p{RGI_Emoji}).
 //
 //   program.exec(subject, from: lastIndex, stepLimit:) -> JSRegExpResult
 //       subject: any random-access collection of UInt8 (Latin-1) or UInt16

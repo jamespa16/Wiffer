@@ -334,6 +334,20 @@ let jsReMatchCases: [(String, String, String, [String?]?)] = [
     ("[^\\P{Lu}]", "u", "aB", ["B"]),
     ("\\p{White_Space}", "u", "a%u2003", ["%u2003"]),
     ("\\p{space}", "u", "a%u2003", ["%u2003"]),
+    // v flag (class set expressions).
+    ("[\\p{L}--[a-z]]+", "v", "abcDEFg", ["DEF"]),
+    ("[\\w&&\\d]+", "v", "ab12c", ["12"]),
+    ("[[a-z]--[aeiou]]+", "v", "aebcdo", ["bcd"]),
+    ("[\\q{abc|d}x]+", "v", "zabcxdq", ["abcxd"]),
+    ("^[\\q{abc|ab|}]$", "v", "ab", ["ab"]),
+    ("^[\\q{abc|ab|}]$", "v", "", [""]),
+    ("[^[a-z]&&[^aeiou]]", "v", "bB", ["B"]),
+    ("[\\w--k]", "vi", "K", nil),
+    ("[[^k]&&\\w]", "vi", "%u212A", nil),
+    ("[\\q{KI}]", "vi", "ki", ["ki"]),
+    ("[\\-\\&]+", "v", "&-", ["&-"]),
+    ("[^\\d]", "v", "1a", ["a"]),
+    ("\\P{Ll}", "vi", "a", ["a"]),
     // Sticky and flags that don't change matching.
     ("a", "y", "ba", nil),
     ("a", "g", "ba", ["a"]),
@@ -381,6 +395,11 @@ let jsReSyntaxCases: [(String, String, Bool)] = [
     ("a{9007199254740991}", "", true), ("x{2147483648,2147483647}", "", false), ("\\u{2}", "", true),
     ("(?=a){1}", "", true), ("[a-\\b]", "", false), ("[\\b-\\n]", "", true), ("\\c", "u", false),
     ("[\\c]", "u", false), ("[\\c1]", "", true), ("[\\c1]", "u", false), ("\\u{0000000041}", "u", true),
+    ("[\\w--k]", "u", false), ("[a&&&b]", "v", false), ("[a&&b--c]", "v", false), ("[a-z&&b]", "v", false), ("[a&&b]", "v", true),
+    ("[a--b--c]", "v", true), ("[(]", "v", false), ("[a-]", "v", false), ("[a!!b]", "v", false), ("[\\!]", "v", true),
+    ("[^\\q{ab}]", "v", false), ("[^\\q{a}]", "v", true), ("[^[\\q{ab}]]", "v", false), ("[\\q{ab}]", "v", true),
+    ("[[a]-z]", "v", false), ("[a-[z]]", "v", false), ("[a-\\d]", "v", false), ("[[[[a]]]]", "v", true),
+    ("[\\1]", "v", false), ("[]", "v", true), ("[^]", "v", true), ("[|]", "v", false), ("[a|b]", "v", false),
     ("a", "gg", false), ("a", "uv", false), ("a", "x", false), ("a", "dgimsuy", true),
 ]
 
@@ -639,7 +658,7 @@ func jsReTest262Tests(_ t: Tests) {
     t.section("regexp test262 parse")
     let files = jsTestShellLines("find build/test262/test/built-ins/RegExp build/test262/test/annexB/built-ins/RegExp -name '*.js' 2>/dev/null | sort")
     if files.isEmpty { print("note js: build/test262 absent, RegExp parse run skipped"); return }
-    let skip = jsTest262SkipFeatures + ["regexp-v-flag"]
+    let skip = jsTest262SkipFeatures
     var pass = 0, fail = 0, skipped = 0, neg = 0
     var report: [UInt8] = []
     for path in files {
@@ -663,7 +682,7 @@ func jsReTest262Tests(_ t: Tests) {
     t.check(pass >= jsReTest262ParseFloor, "test262 RegExp parse pass count \(pass) >= floor \(jsReTest262ParseFloor)")
 }
 
-let jsReTest262ParseFloor = 1_598
+let jsReTest262ParseFloor = 1_734
 
 /// Mutated patterns against fixed subjects: compiling and matching must
 /// never trap, whatever the pattern.
