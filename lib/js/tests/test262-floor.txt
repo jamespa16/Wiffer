@@ -1,7 +1,7 @@
 # test262 pass-count floors (Phase 9D): <directory> <full run> <sample run>.
 # The run fails if a directory's pass count drops below its floor. 0 = untracked.
 # Raise them as phases land: see the header of jstest262_run.swift and ROADMAP Phase 9D.
-TOTAL 19500 1450
+TOTAL 22900 1450
 annexB/built-ins/Array 0 0
 annexB/built-ins/Date 17 1
 annexB/built-ins/Function 6 1
