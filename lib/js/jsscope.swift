@@ -33,6 +33,10 @@ enum JSScopeKind: UInt8 {
 enum JSBindingKind: UInt8 {
     case var_, let_, const_, class_, classInner, function, blockFunction, param, catchParam
     case calleeName, arguments, this_, newTarget, home, funcObj
+    /// Hidden class-scope bindings (Phase 9E): a private name's record
+    /// (JSPseudoName.privateName) or a computed field key
+    /// (JSPseudoName.computedField).
+    case hidden
 }
 
 /// Pseudo names (never pool ids, which are >= 0).
@@ -41,6 +45,10 @@ enum JSPseudoName {
     static let newTarget: Int32 = -3
     static let home: Int32 = -4
     static let funcObj: Int32 = -5
+    /// `#x` (pool id of "x") in the class scope that declares it.
+    static func privateName(_ id: Int32) -> Int32 { -0x4000_0000 - id }
+    /// The key of the computed class field at property node n.
+    static func computedField(_ n: Int32) -> Int32 { -0x2000_0000 - n }
 }
 
 /// Resolution results other than a binding id.
@@ -229,6 +237,11 @@ final class JSScopeAnalysis {
                 record(n, scope, JSPseudoName.this_)
             case .newTarget:
                 record(n, scope, JSPseudoName.newTarget)
+            case .privateMember:
+                record(n, scope, JSPseudoName.privateName(node.b))
+                stack.append((node.a, scope))
+            case .privateName:
+                record(n, scope, JSPseudoName.privateName(node.a))
             case .superExpr:
                 recordSuper(n, scope, 0, JSPseudoName.home)
                 recordSuper(n, scope, 1, JSPseudoName.this_)
@@ -434,6 +447,25 @@ final class JSScopeAnalysis {
                 classFieldScope[n] = fi
             }
             return fi
+        }
+        // Private names and computed field keys: hidden class-scope
+        // bindings, referenced from the initializer scopes that use them.
+        for m in ast.list(node.c, node.d) {
+            let mn = ast[m]
+            guard mn.kind == .property else { continue }
+            let isStatic = mn.flags & JSNodeFlags.isStatic != 0
+            if ast.kind(mn.a) == .privateName {
+                let pn = JSPseudoName.privateName(ast[mn.a].a)
+                if scopes[Int(c)].names[pn] == nil { declare(pn, .hidden, in: c, end: 0) }
+                if mn.op != JSPropertyKind.field.rawValue && !isStatic { record(-1, fieldScope(false), pn) }
+                if mn.op == JSPropertyKind.field.rawValue { record(-1, fieldScope(isStatic), pn) }
+                if let b = scopes[Int(c)].names[pn] { bindings[Int(b)].used = true }
+            } else if mn.op == JSPropertyKind.field.rawValue && mn.flags & JSNodeFlags.computed != 0 {
+                let ck = JSPseudoName.computedField(m)
+                let b = declare(ck, .hidden, in: c, end: 0)
+                bindings[Int(b)].used = true
+                record(-1, fieldScope(isStatic), ck)
+            }
         }
         for m in ast.list(node.c, node.d).reversed() {
             let mn = ast[m]

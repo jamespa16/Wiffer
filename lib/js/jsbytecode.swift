@@ -244,6 +244,8 @@ final class JSCode {
     /// JSGenKind: 0 an ordinary function, else generator / async /
     /// async generator / module body (jsgenerator.swift).
     var genKind: UInt8 = 0
+    /// Sloppy eval code that declares a var or function `arguments`.
+    var declaresArguments = false
     /// Make an own `prototype` object for closures (ordinary functions).
     var hasPrototype = false
     var isConstructor = false

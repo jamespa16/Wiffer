@@ -80,6 +80,9 @@ final class JSFuncState {
     var isClassCtor = false
     /// JSGenKind of the function being compiled (0: ordinary).
     var genKind: UInt8 = 0
+    /// Compiling parameter initializers (direct eval there may not
+    /// declare `arguments`).
+    var inParams = false
 }
 
 final class JSCompiler {
@@ -550,6 +553,7 @@ final class JSCompiler {
             if !sa.scopes[0].strict {
                 for b in sa.scopes[0].bindings {
                     let bd = sa.bindings[Int(b)]
+                    if bd.name == JSWord.arguments && (bd.kind == .var_ || bd.kind == .function) { fs.code.declaresArguments = true }
                     if (bd.kind == .var_) && bd.name >= 0 { try emitU32(.declareVar, key(bd.name), 0) }
                 }
             }
@@ -725,6 +729,8 @@ final class JSCompiler {
             try emitPutBinding(b, initialize: true)
         }
         // Patterns, defaults and the rest parameter.
+        fs.inParams = fkind != .arrow
+        defer { fs.inParams = false }
         for (i, p) in params.enumerated() {
             let pk = ast.kind(p)
             if pk == .identifier { continue }
@@ -737,6 +743,7 @@ final class JSCompiler {
                 try emitBindingInit(p, mode: .initialize)
             }
         }
+        fs.inParams = false
         // Generators suspend after the parameters are bound.
         if fs.genKind == JSGenKind.generator || fs.genKind == JSGenKind.asyncGenerator {
             try emit(.generatorStart, 0)

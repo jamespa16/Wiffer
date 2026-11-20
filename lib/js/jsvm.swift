@@ -835,10 +835,11 @@ extension JSRealm {
                             pc = frames[t].pc; base = frames[t].base
                         }
                     case .directEval:
-                        let argc = jsReadU16(bc, pc + 1)
+                        // Bit 15 of the count: the call is in a parameter list.
+                        let raw = jsReadU16(bc, pc + 1)
                         pc += 3
                         frames[t].pc = pc
-                        if try directEval(argc, strict: code.strict) {
+                        if try directEval(raw & 0x7FFF, strict: code.strict, inParams: raw & 0x8000 != 0) {
                             t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr)
                             pc = frames[t].pc; base = frames[t].base
                         }
@@ -890,21 +891,31 @@ extension JSRealm {
                         if stack[sp - 1].isNull {
                             push(.undefined)
                         } else {
-                            let (done, v) = try iteratorStep(stack[sp - 2], stack[sp - 1])
-                            if done { stack[sp - 1] = .null; push(.undefined) } else { push(v) }
+                            // The record is done (null) while next() runs: if
+                            // it throws, the iterator is not closed.
+                            let next = stack[sp - 1]
+                            let nr = heap.root(next)
+                            stack[sp - 1] = .null
+                            let (done, v) = try iteratorStep(stack[sp - 2], next)
+                            heap.popRoots(to: nr.slot)
+                            if !done { stack[sp - 1] = next }
+                            push(done ? .undefined : v)
                         }
                         pc += 1
                     case .iterRest:
                         let a = heap.newArray(proto: arrayPrototype)
                         push(a)
                         if !stack[sp - 2].isNull {
+                            let next = stack[sp - 2]
+                            let nr = heap.root(next)
+                            stack[sp - 2] = .null
                             while true {
-                                let (done, v) = try iteratorStep(stack[sp - 3], stack[sp - 2])
+                                let (done, v) = try iteratorStep(stack[sp - 3], next)
                                 if done { break }
                                 _ = heap.createDataProperty(a, .index(heap.arrayLength(a)), v)
                                 if heap.termination != nil { throw JSThrow() }
                             }
-                            stack[sp - 2] = .null
+                            heap.popRoots(to: nr.slot)
                         }
                         pc += 1
                     case .iterClose:
@@ -1154,10 +1165,71 @@ extension JSRealm {
                         push(a); push(b); push(c); pc += 1
                     case .getterThisSwap:
                         pc += 1
-                    case .newPrivateName, .getPrivate, .putPrivate, .definePrivate, .hasPrivate, .addPrivateBrand,
-                         .setPrivateMethod, .objectRestDynamic, .directEvalArray, .importMeta, .dynamicImport,
-                         .getModuleBinding:
-                        throw throwSyntaxError("not supported yet")
+                    // Phase 9E: private names (jsvm_private.swift).
+                    case .newPrivateName:
+                        let d = consts[jsReadU32(bc, pc + 1)]
+                        let kind = Int64(bc[pc + 5])
+                        pc += 6
+                        push(newPrivateRecord(d, kind: kind))
+                    case .getPrivate:
+                        // [obj rec] -> [value]; a getter runs as a frame.
+                        pc += 1
+                        switch try privateGet(stack[sp - 2], stack[sp - 1]) {
+                        case .value(let v):
+                            sp -= 1; stack[sp - 1] = v
+                        case .getter(let g):
+                            let o = stack[sp - 2]
+                            stack[sp - 2] = g; stack[sp - 1] = o
+                            frames[t].pc = pc
+                            if try dispatchCall(0, mode: JSFrameMode.normal) {
+                                t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr); pc = frames[t].pc; base = frames[t].base
+                            }
+                        }
+                    case .putPrivate:
+                        // [obj rec v] -> [v]; a setter runs as a frame.
+                        pc += 1
+                        if let st = try privateSet(stack[sp - 3], stack[sp - 2], stack[sp - 1]) {
+                            let o = stack[sp - 3], v = stack[sp - 1]
+                            try ensureStack(2)
+                            stack[sp - 3] = v; stack[sp - 2] = st; stack[sp - 1] = o
+                            push(v)
+                            frames[t].pc = pc
+                            if try dispatchCall(1, mode: JSFrameMode.discard) {
+                                t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr); pc = frames[t].pc; base = frames[t].base
+                            }
+                        } else {
+                            stack[sp - 3] = stack[sp - 1]
+                            sp -= 2
+                        }
+                    case .definePrivate:
+                        try privateDefine(stack[sp - 3], stack[sp - 2], stack[sp - 1])
+                        sp -= 3; pc += 1
+                    case .hasPrivate:
+                        let r = try privateHas(stack[sp - 1], stack[sp - 2])
+                        sp -= 1; stack[sp - 1] = .bool(r); pc += 1
+                    case .addPrivateBrand:
+                        try privateAddBrand(stack[sp - 2], stack[sp - 1])
+                        sp -= 1; pc += 1
+                    case .setPrivateMethod:
+                        let w = bc[pc + 1]
+                        heap.setSlot(stack[sp - 2], w == 2 ? 2 : 1, stack[sp - 1])
+                        sp -= 2; pc += 2
+                    case .objectRestDynamic:
+                        // [src excludedKeysArray] -> [rest]
+                        pc += 1
+                        let o = heap.newObject(proto: objectPrototype)
+                        push(o)
+                        try copyDataPropertiesExcludingArray(into: o, from: stack[sp - 3], keys: stack[sp - 2])
+                        sp -= 2; stack[sp - 1] = o
+                    case .directEvalArray:
+                        pc += 3
+                        frames[t].pc = pc
+                        let argc = try spreadArgs()
+                        if try directEval(argc, strict: code.strict) {
+                            t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr); pc = frames[t].pc; base = frames[t].base
+                        }
+                    case .importMeta, .dynamicImport, .getModuleBinding:
+                        throw throwSyntaxError("not supported yet: modules")
                     }
                 }
             } catch {

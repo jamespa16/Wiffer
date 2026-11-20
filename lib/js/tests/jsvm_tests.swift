@@ -181,7 +181,7 @@ let jsVMCases: [(String, String)] = [
     ("class A { constructor(v) { this.v = v } } class B extends A { constructor() { super(7); this.w = 1 } } var b = new B(); b.v + b.w + ',' + (b instanceof A)", "8,true"),
     ("class A { constructor() { this.a = 1 } } class B extends A {} new B().a", "1"),
     ("class A { x = 1; y = this.x + 1; static s = 'st' } new A().y + A.s", "2st"),
-    ("class A { static #p = 1 }", "Uncaught SyntaxError: not supported yet: private class members"),
+    ("class A { static #p = 1; static p() { return A.#p } } A.p()", "1"),
     ("class A {} A()", "Uncaught TypeError: Class constructor A cannot be invoked without 'new'"),
     ("class B extends Object { constructor() { this.x = 1 } } new B()", "Uncaught ReferenceError: Cannot access 'this' before initialization"),
     ("class A { static { this.init = 'ok' } } A.init", "ok"),
