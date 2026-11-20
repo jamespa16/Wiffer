@@ -1,0 +1,99 @@
+// DOM Standard: Element (plus the CSSOM View and DOM Parsing members).
+dictionary ShadowRootInit {
+  required ShadowRootMode mode;
+  boolean delegatesFocus = false;
+  SlotAssignmentMode slotAssignment = "named";
+  boolean clonable = false;
+  boolean serializable = false;
+};
+
+[Kind=node]
+interface Element : Node {
+  readonly attribute DOMString? namespaceURI;
+  readonly attribute DOMString? prefix;
+  readonly attribute DOMString localName;
+  readonly attribute DOMString tagName;
+
+  [CEReactions, Reflect] attribute DOMString id;
+  [CEReactions, Reflect=class] attribute DOMString className;
+  [SameObject, PutForwards=value] readonly attribute DOMTokenList classList;
+  [CEReactions, Reflect] attribute DOMString slot;
+
+  boolean hasAttributes();
+  [SameObject] readonly attribute NamedNodeMap attributes;
+  sequence<DOMString> getAttributeNames();
+  DOMString? getAttribute(DOMString qualifiedName);
+  DOMString? getAttributeNS(DOMString? namespace, DOMString localName);
+  [CEReactions, Throws] undefined setAttribute(DOMString qualifiedName, DOMString value);
+  [CEReactions, Throws] undefined setAttributeNS(DOMString? namespace, DOMString qualifiedName, DOMString value);
+  [CEReactions] undefined removeAttribute(DOMString qualifiedName);
+  [CEReactions] undefined removeAttributeNS(DOMString? namespace, DOMString localName);
+  [CEReactions, Throws] boolean toggleAttribute(DOMString qualifiedName, optional boolean force);
+  boolean hasAttribute(DOMString qualifiedName);
+  boolean hasAttributeNS(DOMString? namespace, DOMString localName);
+
+  any getAttributeNode(DOMString qualifiedName);
+  any getAttributeNodeNS(DOMString? namespace, DOMString localName);
+  [CEReactions, Throws] any setAttributeNode(Attr attr);
+  [CEReactions, Throws] any setAttributeNodeNS(Attr attr);
+  [CEReactions, Throws] any removeAttributeNode(Attr attr);
+
+  [Throws] ShadowRoot attachShadow(ShadowRootInit init);
+  readonly attribute ShadowRoot? shadowRoot;
+
+  [Throws] Element? closest(DOMString selectors);
+  [Throws] boolean matches(DOMString selectors);
+  [Throws, Impl=Element_matches] boolean webkitMatchesSelector(DOMString selectors);
+
+  HTMLCollection getElementsByTagName(DOMString qualifiedName);
+  HTMLCollection getElementsByTagNameNS(DOMString? namespace, DOMString localName);
+  HTMLCollection getElementsByClassName(DOMString classNames);
+
+  [CEReactions, Throws] Element? insertAdjacentElement(DOMString where, Element element);
+  [Throws] undefined insertAdjacentText(DOMString where, DOMString data);
+
+  // DOM Parsing and Serialization / HTML.
+  [CEReactions, LegacyNullToEmptyString] attribute DOMString innerHTML;
+  [CEReactions, Throws, LegacyNullToEmptyString] attribute DOMString outerHTML;
+  [CEReactions, Throws] undefined insertAdjacentHTML(DOMString position, DOMString string);
+  [CEReactions] undefined setHTMLUnsafe(DOMString html);
+  DOMString getHTML(optional any options);
+
+  // CSSOM View.
+  any getClientRects();
+  any getBoundingClientRect();
+  boolean checkVisibility(optional any options);
+  undefined scrollIntoView(optional any arg);
+  undefined scroll(optional any x, optional any y);
+  [Impl=Element_scroll] undefined scrollTo(optional any x, optional any y);
+  undefined scrollBy(optional any x, optional any y);
+  attribute unrestricted double scrollTop;
+  attribute unrestricted double scrollLeft;
+  readonly attribute long scrollWidth;
+  readonly attribute long scrollHeight;
+  readonly attribute long clientTop;
+  readonly attribute long clientLeft;
+  readonly attribute long clientWidth;
+  readonly attribute long clientHeight;
+};
+Element includes ParentNode;
+Element includes NonDocumentTypeChildNode;
+Element includes ChildNode;
+Element includes Slottable;
+
+// DOM Standard: Attr (not a node wrapper here: its own class).
+[Kind=object, Swift=JSDOMAttr]
+interface Attr : Node {
+  readonly attribute DOMString? namespaceURI;
+  readonly attribute DOMString? prefix;
+  readonly attribute DOMString localName;
+  readonly attribute DOMString name;
+  [CEReactions] attribute DOMString value;
+  [CEReactions, Impl=Attr_value] attribute DOMString nodeValue;
+  [CEReactions, Impl=Attr_value] attribute DOMString textContent;
+  readonly attribute unsigned short nodeType;
+  [Impl=Attr_name] readonly attribute DOMString nodeName;
+  readonly attribute Element? ownerElement;
+  readonly attribute Document? ownerDocument;
+  readonly attribute boolean specified;
+};

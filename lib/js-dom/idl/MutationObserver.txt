@@ -1,0 +1,34 @@
+// DOM Standard: MutationObserver and MutationRecord (over lib/html's
+// mutation hook; records are delivered from a microtask).
+callback MutationCallback = undefined (any mutations, any observer);
+
+dictionary MutationObserverInit {
+  boolean childList = false;
+  boolean attributes;
+  boolean characterData;
+  boolean subtree = false;
+  boolean attributeOldValue;
+  boolean characterDataOldValue;
+  sequence<DOMString> attributeFilter;
+};
+
+[Kind=object, Swift=JSDOMMutationObserver]
+interface MutationObserver {
+  [Throws] constructor(MutationCallback callback);
+  [Throws] undefined observe(Node target, optional MutationObserverInit options = {});
+  undefined disconnect();
+  any takeRecords();
+};
+
+[Kind=object, Swift=JSDOMMutationRecord]
+interface MutationRecord {
+  readonly attribute DOMString type;
+  readonly attribute Node target;
+  [SameObject] readonly attribute any addedNodes;
+  [SameObject] readonly attribute any removedNodes;
+  readonly attribute Node? previousSibling;
+  readonly attribute Node? nextSibling;
+  readonly attribute DOMString? attributeName;
+  readonly attribute DOMString? attributeNamespace;
+  readonly attribute DOMString? oldValue;
+};

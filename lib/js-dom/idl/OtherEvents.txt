@@ -1,0 +1,72 @@
+// HTML's event interfaces the page realm needs.
+dictionary SubmitEventInit : EventInit {
+  HTMLElement? submitter = null;
+};
+
+dictionary PopStateEventInit : EventInit {
+  any state = null;
+};
+
+dictionary HashChangeEventInit : EventInit {
+  USVString oldURL = "";
+  USVString newURL = "";
+};
+
+dictionary ErrorEventInit : EventInit {
+  DOMString message = "";
+  USVString filename = "";
+  unsigned long lineno = 0;
+  unsigned long colno = 0;
+  any error;
+};
+
+dictionary MessageEventInit : EventInit {
+  any data = null;
+  USVString origin = "";
+  DOMString lastEventId = "";
+};
+
+dictionary MediaQueryListEventInit : EventInit {
+  DOMString media = "";
+  boolean matches = false;
+};
+
+interface SubmitEvent : Event {
+  constructor(DOMString type, optional SubmitEventInit eventInitDict = {});
+  readonly attribute HTMLElement? submitter;
+};
+
+interface PopStateEvent : Event {
+  constructor(DOMString type, optional PopStateEventInit eventInitDict = {});
+  [Impl=CustomEvent_detail] readonly attribute any state;
+};
+
+interface HashChangeEvent : Event {
+  constructor(DOMString type, optional HashChangeEventInit eventInitDict = {});
+  readonly attribute USVString oldURL;
+  readonly attribute USVString newURL;
+};
+
+interface ErrorEvent : Event {
+  constructor(DOMString type, optional ErrorEventInit eventInitDict = {});
+  readonly attribute DOMString message;
+  readonly attribute USVString filename;
+  readonly attribute unsigned long lineno;
+  readonly attribute unsigned long colno;
+  [Impl=CustomEvent_detail] readonly attribute any error;
+};
+
+interface MediaQueryListEvent : Event {
+  constructor(DOMString type, optional MediaQueryListEventInit eventInitDict = {});
+  readonly attribute DOMString media;
+  readonly attribute boolean matches;
+};
+
+interface MessageEvent : Event {
+  constructor(DOMString type, optional MessageEventInit eventInitDict = {});
+  [Impl=CustomEvent_detail] readonly attribute any data;
+  readonly attribute USVString origin;
+  readonly attribute DOMString lastEventId;
+  readonly attribute any source;
+  readonly attribute any ports;
+};

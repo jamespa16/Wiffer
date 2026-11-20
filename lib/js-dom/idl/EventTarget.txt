@@ -1,0 +1,24 @@
+// DOM Standard: EventTarget and the listener callback/option types.
+callback interface EventListener {
+  undefined handleEvent(Event event);
+};
+
+dictionary EventListenerOptions {
+  boolean capture = false;
+};
+
+dictionary AddEventListenerOptions : EventListenerOptions {
+  boolean passive;
+  boolean once = false;
+  AbortSignal signal;
+};
+
+[Kind=anytarget]
+interface EventTarget {
+  constructor();
+  // options: (AddEventListenerOptions or boolean); converted by the
+  // implementation (a boolean is `capture`).
+  [Throws] undefined addEventListener(DOMString type, EventListener? callback, optional any options);
+  [Throws] undefined removeEventListener(DOMString type, EventListener? callback, optional any options);
+  [Throws] boolean dispatchEvent(Event event);
+};

@@ -1,0 +1,16 @@
+// DOM Standard: AbortController and AbortSignal.
+[Kind=object, Swift=JSDOMAbortController]
+interface AbortController {
+  constructor();
+  [SameObject] readonly attribute any signal;
+  undefined abort(optional any reason);
+};
+
+[Kind=target]
+interface AbortSignal : EventTarget {
+  [Throws] static any abort(optional any reason);
+  readonly attribute boolean aborted;
+  readonly attribute any reason;
+  [Throws] undefined throwIfAborted();
+  attribute EventHandler onabort;
+};

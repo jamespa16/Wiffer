@@ -1,0 +1,48 @@
+// DOM Standard: NodeList, HTMLCollection, DOMTokenList, NamedNodeMap;
+// HTML: DOMStringMap. Indexed and named properties come from each class's
+// JSHostExotic (b.exotic_<Name>(), jsdom_collections.swift).
+
+[Kind=object, Swift=JSDOMNodeList, Exotic]
+interface NodeList {
+  getter Node? item(unsigned long index);
+  readonly attribute unsigned long length;
+  iterable<Node>;
+};
+
+[Kind=object, Swift=JSDOMHTMLCollection, Exotic]
+interface HTMLCollection {
+  readonly attribute unsigned long length;
+  getter Element? item(unsigned long index);
+  getter Element? namedItem(DOMString name);
+};
+
+[Kind=object, Swift=JSDOMTokenList, Exotic]
+interface DOMTokenList {
+  readonly attribute unsigned long length;
+  getter DOMString? item(unsigned long index);
+  boolean contains(DOMString token);
+  [CEReactions, Throws] undefined add(DOMString... tokens);
+  [CEReactions, Throws] undefined remove(DOMString... tokens);
+  [CEReactions, Throws] boolean toggle(DOMString token, optional boolean force);
+  [CEReactions, Throws] boolean replace(DOMString token, DOMString newToken);
+  [Throws] boolean supports(DOMString token);
+  [CEReactions] stringifier attribute DOMString value;
+  iterable<DOMString>;
+};
+
+[Kind=object, Swift=JSDOMNamedNodeMap, Exotic]
+interface NamedNodeMap {
+  readonly attribute unsigned long length;
+  getter any item(unsigned long index);
+  getter any getNamedItem(DOMString qualifiedName);
+  any getNamedItemNS(DOMString? namespace, DOMString localName);
+  [CEReactions, Throws] any setNamedItem(Attr attr);
+  [CEReactions, Throws] any setNamedItemNS(Attr attr);
+  [CEReactions, Throws] any removeNamedItem(DOMString qualifiedName);
+  [CEReactions, Throws] any removeNamedItemNS(DOMString? namespace, DOMString localName);
+};
+
+[Kind=object, Swift=JSDOMStringMap, Exotic]
+interface DOMStringMap {
+  // Named getter, setter and deleter only (data-* attributes).
+};

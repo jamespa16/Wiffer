@@ -4607,7 +4607,7 @@ objects).
   bomb.js (64 MiB cap) and the REPL (multi-line, errors, timers, Ctrl-C,
   Ctrl-D). Host tests: 2870 pass (jsembed_tests.swift).
 
-## Phase 9G: DOM bindings (`lib/js-dom`, plus lib/html and lib/layout work)
+## Phase 9G: DOM bindings (`lib/js-dom`, plus lib/html and lib/layout work) (done)
 
 Groundwork, no engine needed (can start beside 9A):
 
@@ -4761,6 +4761,110 @@ Bindings (needs 9F):
   `dom/` and `html/` testharness.js tests that run without rendering)
   passes at a recorded floor, and jQuery 3's own selector and
   manipulation smoke tests run on the host.
+
+**Status: bindings done** (`lib/js-dom`; `./run.sh --hosttest js-dom`).
+Results:
+- **Generator.** `lib/js-dom/idl/*.txt` is a WebIDL subset (interfaces,
+  mixins + includes, dictionaries with inheritance, callbacks, enums,
+  typedefs, namespaces, constants, constructors, static members, variadic
+  / optional / nullable arguments with defaults, `iterable<T>`,
+  stringifiers, getter markers) with extended attributes `Kind=` (how
+  `this` unwraps: node / event / target / anytarget / window / object),
+  `Swift=`, `Exotic`, `Tags=` / `SVGTags=` (element → interface),
+  `Global`, `LegacyFactoryFunction` (Image, Option), `Throws`,
+  `CEReactions` (recorded in `jsdomCEReactionMembers` for 9I), `Reflect`
+  (string / boolean / long / URL, `Default=`), `SameObject` (cached in a
+  wrapper slot), `PutForwards`, `Replaceable`, `LegacyNullToEmptyString`,
+  `Impl=`. `tools/gen_bindings.py` writes `jsdom_generated.swift` (about
+  13k lines, 150 interfaces, ~700 implementation functions); `--check` is
+  a host test, `--signatures` prints the Swift signature every
+  implementation function must have. Members are enumerable accessors /
+  methods on per-interface prototypes with `@@toStringTag`, interface
+  objects chain like the prototypes, constants sit on both.
+- **Wrappers.** One `JSHostClass<HTMLNode>` (one identity cache) with a
+  prototype per node chosen by `nodeInterface` (`JSHostClass.prototypeFor`,
+  new in lib/js); a node wrapper is a GC root while the node is connected,
+  has listeners, or the wrapper has own properties. Events are one
+  `JSHostClass<JSDOMEvent>` the same way; other platform objects have a
+  class each (`JSDOMClasses`). `JSHostExotic` gained `namedSet` /
+  `namedDelete` (dataset, Storage). `<form>`/`<select>` wrappers get an
+  exotic hook for `form[0]` / `form.fieldName`, the document one for
+  named items (`document.formName`).
+- **DOM.** Node / Element / CharacterData / Text / Comment / Document /
+  DocumentFragment / ShadowRoot / DocumentType / Attr over lib/html's
+  mutation API (HTMLDOMError → DOMException 1:1); ProcessingInstruction and
+  CDATASection are comment / text nodes with a side flag; namespaced
+  attributes and prefixed elements keep their namespace in side tables
+  (lib/html stores qualified names). Selectors use lib/css's parser and
+  matcher through `JSDOMSelElement: CSSElement`; lib/css gained a strict
+  parse (`cssParseSelectorListStrict`: unknown / unsupported pseudo-classes
+  are SyntaxErrors, so jQuery falls back to Sizzle) and `:scope` / `:focus`.
+  Live NodeList / HTMLCollection recompute when the page's mutation
+  version changes. HTML elements: links (URL parts), forms (validity,
+  submit via `requestSubmit` / buttons, reset), input / select / option /
+  textarea state (dirty value, checkedness, selectedness owned by the
+  page), labels, images, templates, slots, tables, dialogs, details, about
+  45 element interfaces; SVG `getBBox` (layout rect) and
+  `viewBox.baseVal`.
+- **Events.** DOM dispatch with capture / target / bubble along the
+  composed path, shadow retargeting (`retargeted(against:)`), closed-tree
+  hiding in `composedPath()`, once / passive (default-passive touch/wheel
+  on window/document) / capture / AbortSignal options, handleEvent
+  objects, `window.event`, legacy-pre-activation (checkbox / radio) and
+  activation behavior (links → `followHyperlink`, submit / reset buttons,
+  labels, summary); exceptions in listeners are reported (ErrorEvent at the
+  window, `onerror` with five arguments) and a microtask checkpoint runs
+  when the JS stack empties. on* content attributes compile lazily
+  (`with (document) with (form) with (element)` scope), body / frameset
+  forward the window handlers.
+- **Window / CSSOM / MutationObserver.** `location` (fragment changes
+  in-page with `hashchange`, everything else `JSDOMHost.navigate`),
+  `history` (pushState / replaceState with structured-cloned state,
+  `popState(id:url:)` from the browser), navigator, screen, matchMedia with
+  `change` events on `viewportChanged()`, requestAnimationFrame (queued,
+  drained by `runAnimationFrames(now:)`), requestIdleCallback, atob/btoa,
+  structuredClone, localStorage / sessionStorage (in memory, persisted via
+  a hook), performance, alert / confirm / prompt hooks, getSelection stub.
+  `element.style` is a CSSStyleDeclaration over the style attribute
+  (validated by lib/css's declaration parser for the properties it knows,
+  kept as given for other real properties), with camelCase / dashed
+  accessors for ~230 properties; getComputedStyle serializes lib/layout's
+  forced computed style (plus used width/height). MutationObserver over
+  lib/html's hook: records queued per observer, delivered from one
+  microtask, transient registered observers; lib/html's slotchange
+  becomes a `slotchange` event.
+- **`JSDOMPage` / `JSDOMHost`** (jsdom_page.swift, documented there for
+  9H): one page per document (runtime, realm, event loop, console,
+  bindings); `runScript(_:name:element:)` (currentScript, document.write
+  insertion point), `finishParsing()` / `finishLoading()`,
+  `dispatchMouse/Key/Input` and `dispatch(event:kind:to:)` → canceled,
+  `setFocus`, `controlValue(of:)` / `setUserValue`, `runAnimationFrames`,
+  `viewportChanged`, `popState`, `evaluateForConsole`, `tearDown`. The host
+  struct carries time, console / error reporting, navigation, history,
+  link and form submission, cookies, storage, viewport / scrolling, the
+  LayoutEngine for forced layout, image sizes, dialogs and focus.
+- **Tests** (`./run.sh --hosttest js-dom`): generator up to date; core,
+  events, observers, style, forms, navigation hooks, window and GC checks
+  (also under `WIFFER_JSDOM_GCSTRESS=1`); jQuery 3.7.1 smoke
+  (`fixtures/jquery-smoke.js`, 101 checks: selectors incl. Sizzle-only
+  pseudos, traversal, manipulation, attributes / props / val, css / show /
+  hide, delegated and custom events, data, utilities, deferreds, ready) on
+  a page with a real LayoutEngine; a DOM fuzz (grammar of 32 DOM
+  statement kinds × 10 layout fixture pages, then forced layout of every
+  element and a full update; seeds 1-5 clean); and **WPT**: 356 files
+  vendored from dom/nodes, dom/events, dom/collections, dom/lists and
+  html/dom/documents/dom-tree-accessors at wpt@f004511
+  (`tools/vendor_wpt.py`, LICENSE.md included), run in document order on a
+  virtual clock: **8540/9720 subtests pass (254/356 files clean), floor 8540** (26 s on
+  the host). Page setup costs about 2 ms on the host (3400 natives, 3600 objects).
+- **Gaps:** no Range / TreeWalker / NodeIterator, no XML parser (DOMParser
+  parses every type as HTML), no window named properties (`window.myId`),
+  no CSSStyleSheet objects (`style.sheet` is null), Attr is not a node
+  wrapper (Node members don't accept it), shorthands in `element.style`
+  are not expanded into longhands, offset* metrics ignore transforms,
+  selection is a stub, the new processing-instruction-attributes feature
+  (891 WPT subtests) isn't implemented, and nested-form activation differs
+  from browsers in one WPT file.
 
 ## Phase 9H: scripts in the browser (`lib/browser`, `user/browse`)
 
