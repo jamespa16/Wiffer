@@ -26,6 +26,8 @@ p::before { content: "> " }
 .under { text-decoration: underline }
 .hl span, .hl b { color: #0a0 }
 div:empty { height: 10px; background: #ccc }
+div:empty + p { color: #c0c }
+ul:empty ~ div { color: #0cc }
 """
 private let incStyles = ["", "display:none", "float:right", "color:green", "margin:0 20px", "padding:4px", "width:50%", "position:relative;top:4px", "font-size:18px", "visibility:hidden"]
 private let incSnippets = ["<p class=hl>new text</p>", "<div><span>a</span> b</div>", "<ul><li>1<li>2</ul>", "<img src=a.png>", "<b>x</b>",
@@ -83,7 +85,7 @@ private func incMutate(_ e: LayoutEngine, _ doc: HTMLNode, _ rng: inout TestRand
                                           ("colspan", "2"), ("bgcolor", "#ffcc00"), ("data-x", "1"), ("src", "b.png")]
         let (a, v) = opts[rng.below(opts.count)]
         incSetAttr(n, a, v)
-        return "attr \(a)"
+        return "attr \(a) on <\(n.name)> parent <\(n.parent?.name ?? "")>"
     case 5, 6:
         guard n.kind == .element, let f = incFragment(incSnippets[rng.below(incSnippets.count)]) else { return "skip" }
         let ri = rng.below(n.children.count + 1)
@@ -152,7 +154,7 @@ private func incCompare(_ inc: LayoutEngine, _ fresh: LayoutEngine) -> String {
             if layoutStyleAffectsLayout(x.style, y.style) { bad = "layout style of <\(n.name)>"; return false }
             if x.style.color != y.style.color || x.style.backgroundColor != y.style.backgroundColor
                 || x.style.opacity != y.style.opacity || x.style.visibility != y.style.visibility
-                || x.style.textDecoration != y.style.textDecoration { bad = "paint style of <\(n.name)>"; return false }
+                || x.style.textDecoration != y.style.textDecoration { bad = "paint style of <\(n.name)> color \(x.style.color.r) vs \(y.style.color.r) bg \(x.style.backgroundColor.r) vs \(y.style.backgroundColor.r) op \(x.style.opacity) vs \(y.style.opacity) vis \(x.style.visibility == y.style.visibility) deco \(x.style.textDecoration.rawValue) vs \(y.style.textDecoration.rawValue) cls \(n.attribute("class") ?? "-")"; return false }
         }
         return true
     }
@@ -207,7 +209,7 @@ private func incFuzzPage(_ t: Tests, _ name: String, _ html: [UInt8], _ sheet: C
             if hostEnvDebug {
                 print("SRC inc \(inc.styleSources.count) fresh \(fresh.styleSources.count) " + inc.styleSources.map { String($0.text.prefix(20)) }.joined(separator: "|") + " // " + fresh.styleSources.map { String($0.text.prefix(20)) }.joined(separator: "|"))
             }
-            if hostEnvDebug { print("STATS paint \(inc.stats.paintOnly - st0.paintOnly) sub \(inc.stats.subtreeRebuilds - st0.subtreeRebuilds) full \(inc.stats.fullRebuilds - st0.fullRebuilds)") }
+            if hostEnvDebug { print("SRCV \(inc.styleSourcesVersion) \(fresh.styleSourcesVersion) hs \(inc.hasSiblingRules)"); print("STATS paint \(inc.stats.paintOnly - st0.paintOnly) sub \(inc.stats.subtreeRebuilds - st0.subtreeRebuilds) full \(inc.stats.fullRebuilds - st0.fullRebuilds)") }
             if hostEnvDebug { print("LOG \(name): " + log.joined(separator: " | ")) }
             t.check(false, "\(name) round \(r)", d + " after " + log.suffix(k + 1).joined(separator: "; "))
             if failures >= 3 { break }
@@ -302,6 +304,38 @@ func layoutIncrementalTests(_ t: Tests) {
         let fresh = LayoutEngine(document: e.document, text: layoutFonts(t), viewportWidth: 400, viewportHeight: 300)
         fresh.update()
         t.check(e.dump() == fresh.dump(), "observer-driven result equals from scratch")
+    }
+
+    // display: contents parent: the child inherits through the contents element's style
+    // (seed 9 regression), not through the nearest box.
+    do {
+        let e = layoutPage(t, """
+        <style>.c{display:contents;visibility:hidden}.s+p{color:red}</style>
+        <div><div class=c id=c><span id=s>a</span></div></div><p>x</p>
+        """)
+        let sp = e.document.getElementById("s")!
+        t.equal(e.computedStyle(of: sp)?.visibility == .hidden ? 1 : 0, 1, "contents child inherits hidden")
+        incSetAttr(sp, "class", "s")
+        e.updateIfNeeded()
+        t.equal(e.computedStyle(of: sp)?.visibility == .hidden ? 1 : 0, 1, "restyled contents child still inherits hidden")
+        let fresh = LayoutEngine(document: e.document, text: layoutFonts(t), viewportWidth: 400, viewportHeight: 300)
+        fresh.update()
+        t.check(e.dump() == fresh.dump(), "contents restyle equals from scratch")
+    }
+
+    // A child list change that flips :empty on a block reaches its following siblings.
+    do {
+        let e = layoutPage(t, """
+        <style>div:empty + p { color: #f00 }</style>
+        <div id=d>x</div><p id=p>after</p>
+        """)
+        let d = e.document.getElementById("d")!, p = e.document.getElementById("p")!
+        t.equal(e.computedStyle(of: p)?.color.r ?? 0, 0, "sibling not red while div has text")
+        _ = try? d.removeChild(d.children[0])
+        t.equal(e.computedStyle(of: p)?.color.r ?? 0, 255, ":empty sibling effect after child removal")
+        let fresh = LayoutEngine(document: e.document, text: layoutFonts(t), viewportWidth: 400, viewportHeight: 300)
+        fresh.update()
+        t.check(e.dump() == fresh.dump(), ":empty sibling restyle equals from scratch")
     }
 
     // Fuzz: incremental result == from-scratch result.

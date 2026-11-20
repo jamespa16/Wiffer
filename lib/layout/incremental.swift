@@ -238,10 +238,25 @@ extension LayoutEngine {
                 }
             }
         }
+        // A child list change can flip :empty / :nth-child on the parent, which
+        // sibling combinators carry to the parent's following siblings.
+        var kidSiblings = false
+        if hasSiblingRules {
+            for k in kids where connected(k) {
+                guard let gp = k.parent, k.kind == .element else { continue }
+                var after = false
+                for c in gp.children where c.kind == .element {
+                    if after { roots.append(c); kidSiblings = true } else if c === k { after = true }
+                }
+            }
+        }
         var restyled = false
         if !roots.isEmpty {
             if restyleInPlace(roots, widen: false) {
                 restyled = true
+            } else if kidSiblings {
+                needsStyle = true
+                return
             } else {
                 for d in attrs where connected(d) {
                     let start: HTMLNode? = hasSiblingRules ? (d.parent?.kind == .element ? d.parent : d) : d
