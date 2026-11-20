@@ -293,7 +293,9 @@ func jsTest262RunTests(_ t: Tests) {
         let s0 = hostMillis()
         for path in sampled {
             guard let src = hostReadFile(path) else { continue }
+            let t0 = hostMillis()
             let r = runner.run(path: path, src: src, meta: jsTest262Meta(src))
+            if hostMillis() - t0 > 2000 { print("test262 gc stress: slow \(path) \(hostMillis() - t0) ms") }
             if r.status != .pass {
                 diff += 1
                 print("FAIL test262 gcEveryAllocation \(path): \(r.message)")

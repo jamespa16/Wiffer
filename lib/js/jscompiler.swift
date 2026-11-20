@@ -290,7 +290,7 @@ final class JSCompiler {
 
     func addConst(_ v: JSValue) -> Int {
         if v.isNumber || v.isString {
-            let k = v.isString ? (UInt64(1) << 63) | UInt64(v.handle) : v.bits
+            let k = v.bits   // the tag keeps strings and numbers apart (-0 has bit 63 set)
             if let i = fs.valueConsts[k] { return i }
             fs.code.constants.append(v)
             fs.valueConsts[k] = fs.code.constants.count - 1

@@ -867,7 +867,7 @@ func jsInstallTypedArrayPrototype(_ realm: JSRealm, _ tap: JSValue) {
     }
 
     // Iterators: %ArrayIteratorPrototype% objects (kind .iterator, slots
-    // [source], flags user0 = keys, user1 = entries).
+    // [source], flags user1 = keys, user2 = entries).
     func makeIter(_ realm: JSRealm, _ o: JSValue, _ f: JSObjectFlags, _ fn: String) throws(JSThrow) -> JSValue {
         _ = try realm.validateTypedArray(o, fn)
         let it = realm.heap.newObject(proto: realm.intrinsic(.arrayIteratorPrototype), kind: .iterator, flags: f.union(.extensible))
@@ -880,10 +880,10 @@ func jsInstallTypedArrayPrototype(_ realm: JSRealm, _ tap: JSValue) {
     realm.setIntrinsic(.typedArrayValues, values)
     _ = heap.defineOwnProperty(tap, iterKey, .data(values, [.writable, .configurable]))
     realm.defineMethod(tap, "keys", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
-        try makeIter(realm, args.this, [.user0], "keys")
+        try makeIter(realm, args.this, [.user1], "keys")
     }
     realm.defineMethod(tap, "entries", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
-        try makeIter(realm, args.this, [.user1], "entries")
+        try makeIter(realm, args.this, [.user2], "entries")
     }
     jsInstallArrayIteratorKinds(realm)
 
@@ -1244,8 +1244,8 @@ func jsInstallTypedArrayPrototype(_ realm: JSRealm, _ tap: JSValue) {
     }
 }
 
-/// %ArrayIteratorPrototype%.next with the iteration kinds (flags user0 =
-/// keys, user1 = entries, neither = values) and typed array sources (a
+/// %ArrayIteratorPrototype%.next with the iteration kinds (flags user1 =
+/// keys, user2 = entries (jsbuiltins_array.swift's convention), neither = values) and typed array sources (a
 /// detached or out-of-bounds one is a TypeError). String iterators
 /// (user3) keep their own prototype.
 func jsInstallArrayIteratorKinds(_ realm: JSRealm) {
@@ -1277,10 +1277,10 @@ func jsInstallArrayIteratorKinds(_ realm: JSRealm) {
             return try realm.iterResult(.undefined, done: true)
         }
         h.setInternalInt(it, Int64(i + 1))
-        if f.contains(.user0) { return try realm.iterResult(.number(i), done: false) }
+        if f.contains(.user1) { return try realm.iterResult(.number(i), done: false) }
         let k: JSPropertyKey = i < 0xFFFF_FFFF ? .index(UInt32(i)) : try realm.toPropertyKey(.number(i))
         let v = try realm.getV(src, k)
-        if f.contains(.user1) {
+        if f.contains(.user2) {
             let depth = h.rootDepth
             defer { h.popRoots(to: depth) }
             _ = h.root(v)

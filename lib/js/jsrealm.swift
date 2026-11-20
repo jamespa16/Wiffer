@@ -111,6 +111,8 @@ public enum JSIntrinsic: Int {
     case syntaxErrorConstructor, evalErrorConstructor, uriErrorConstructor, aggregateErrorConstructor
     case regExpConstructor, dateConstructor
     case eval, arrayValues, stringIterator, throwTypeError
+    case symbolRegistry, regExpExecFn, regExpStringIteratorPrototype
+    case arrayJoinStack, mathObject
     // Phase 9E
     case mapPrototype, setPrototype, mapConstructor, setConstructor, mapIteratorPrototype, setIteratorPrototype
     case weakMapPrototype, weakSetPrototype, weakRefPrototype, finalizationRegistryPrototype
@@ -202,6 +204,12 @@ public final class JSRealm {
     public var printHandler: ((String) -> Void)? = nil
     public var output: [String] = []
     public var regExpCreate: JSRegExpCreate? = nil
+    /// Date.now() / new Date(): milliseconds since the epoch (nil: 0, so host tests are deterministic).
+    public var nowMs: (() -> Double)? = nil
+    /// The local time zone for Date (UTC by default).
+    public var dateZone: JSDateZone = .utc
+    /// State of the String/RegExp/Symbol/Date built-ins (jsbuiltins_regexp.swift).
+    let b2 = JSBuiltins2State()
     /// Finalizer for host objects (embedder; called during GC sweep, must
     /// not touch the heap).
     public var hostFinalizer: ((JSHandle, Int64) -> Void)? = nil
@@ -231,6 +239,11 @@ public final class JSRealm {
     /// The built-in installers, in order. Later phases add one line each.
     func installBuiltins() {
         jsInstallBaseBuiltins(self)
+        jsInstallBuiltins1(self)
+        jsInstallString(self)
+        jsInstallRegExp(self)
+        jsInstallSymbol(self)
+        jsInstallDate(self)
         jsInstallES2015Runtime(self)
     }
 
@@ -258,6 +271,7 @@ public final class JSRealm {
             }
             return
         }
+        if heap.kind(o) == .regexp { b2.releaseRegExp(Int(ii)); return }
         hostFinalizer?(h, ii)
     }
 

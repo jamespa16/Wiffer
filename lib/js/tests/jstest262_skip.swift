@@ -32,4 +32,6 @@ let jsTest262RunSkipSource: [(needle: String, reason: String)] = [
     ("$262.agent", "$262.agent"),
     ("$262.IsHTMLDDA", "IsHTMLDDA"),
     ("$262.AbstractModuleSource", "AbstractModuleSource"),
+    // Exhaustive code point sweeps (property escapes, character class escapes): seconds per test.
+    ("regExpUtils.js", "slow: code point sweep"),
 ]

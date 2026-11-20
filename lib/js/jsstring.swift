@@ -458,7 +458,12 @@ extension JSHeap {
     public func propertyKey(_ v: JSValue) -> JSPropertyKey? {
         if v.isString {
             guard let i = stringCell(v) else { return nil }
-            if strings[i].isAtom { return .atom(v.handle) }
+            if strings[i].isAtom {
+                // Atoms made from literals may be index-like ("0"): keep keys canonical.
+                if !strings[i].isWide, strings[i].count <= 10, let f = strings[i].latin1.first, f >= 0x30, f <= 0x39,
+                   let idx = jsArrayIndex(strings[i].latin1) { return .index(idx) }
+                return .atom(v.handle)
+            }
             if !strings[i].isWide, strings[i].count <= 10, let idx = jsArrayIndex(strings[i].latin1) {
                 return .index(idx)
             }

@@ -933,18 +933,7 @@ public func jsPowNumber(_ x: Double, _ y: Double) -> Double {
     }
     let isInt = jsTrunc(y) == y
     if x < 0 && !isInt { return .nan }
-    if isInt && y.magnitude <= 1073741824.0 {
-        var n = UInt64(y.magnitude)
-        var b = ax, r = 1.0
-        while n > 0 {
-            if n & 1 != 0 { r *= b }
-            b *= b
-            n >>= 1
-        }
-        if y < 0 { r = 1 / r }
-        return x < 0 && jsIsOddInteger(y) ? -r : r
-    }
-    let r = jsExpNumber(y * jsLogNumber(ax))
+    let r = jsMathPowAccurate(ax, y)
     return x < 0 && jsIsOddInteger(y) ? -r : r
 }
 
