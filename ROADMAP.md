@@ -4338,7 +4338,7 @@ In the order real sites need them:
 **Status: the VM-level parts (items 1, 3 and 5 and the 9B gaps) are
 done**; item 2 and 4 built-ins are the sibling agents' (9C, collections/
 Proxy/typed arrays). `./run.sh --hosttest js` (`jsVM2Tests` in
-`tests/jsvm2_tests.swift`: 96 scripts and 16 module graphs, each run
+`tests/jsvm2_tests.swift`: 103 scripts (generators, async ordering, Promise, private members, proxies) and 16 module graphs, each run
 again under `gcEveryAllocation`, job-queue API checks, a 10 000-mutant
 script fuzz and a 3 000-mutant module fuzz that never trap). API
 contracts are at the top of each new file:
@@ -4409,7 +4409,10 @@ contracts are at the top of each new file:
   tests (imports resolved relative to the test file); `promise-try`,
   `dynamic-import`, `top-level-await`, `module-code` and
   `export-star-as-namespace-from-module` are no longer skipped. Floors
-  in `test262-floor.txt` raised (numbers in the commit).
+  in `test262-floor.txt` raised: the full run passes 37 299 tests (was
+  26 280 at the merged master before 9E's VM parts), the sample 2 352.
+  Promise 632 / 742 pass, language/module-code 556, GeneratorPrototype
+  and AsyncGeneratorPrototype all pass.
 - **Known gaps:** mapped (aliased) `arguments` in sloppy functions is
   still unmapped (it needs exotic hooks in the object property path,
   which the Proxy work is changing). Getters reached through primitives,
