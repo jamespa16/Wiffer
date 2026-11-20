@@ -86,7 +86,7 @@ extension JSRealm {
 
     func arrHas(_ o: JSValue, _ i: Int) throws(JSThrow) -> Bool {
         if heap.denseElement(o, i) != nil { return true }
-        return heap.hasProperty(o, try jsIndexKey(i))
+        return try objHas(o, try jsIndexKey(i))
     }
 
     /// Set(O, i, v, true).
@@ -97,7 +97,7 @@ extension JSRealm {
     /// DeletePropertyOrThrow.
     func arrDelete(_ o: JSValue, _ i: Int) throws(JSThrow) {
         let k = try jsIndexKey(i)
-        if !heap.deleteProperty(o, k) {
+        if !(try objDelete(o, k)) {
             try jsCheckAlloc()
             throw throwTypeError("Cannot delete property '" + keyDisplay(k) + "' of " + describeForError(o))
         }
@@ -126,7 +126,12 @@ extension JSRealm {
         try setV(o, heap.names.length, .number(n), strict: true)
     }
 
-    func jsIsArray(_ v: JSValue) -> Bool { v.isObject && heap.kind(v) == .array }
+    func jsIsArray(_ v: JSValue) -> Bool {
+        if !v.isObject { return false }
+        let k = heap.kind(v)
+        // 9E: a proxy for an array is an array (a revoked one: see isArray).
+        return k == .array || (k == .proxy && heap.proxyFallback(v, { t in heap.kind(t) == .array }) == true)
+    }
 
     func jsIsConstructor(_ v: JSValue) -> Bool {
         v.isObject && heap.flags(v).contains(.constructor)
@@ -357,7 +362,7 @@ func jsInstallArray(_ realm: JSRealm) {
 
     // ------------------------------------------------------------ statics
     realm.defineMethod(ac, "isArray", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
-        .bool(realm.jsIsArray(args[0]))
+        .bool(try realm.isArray(args[0]))
     }
     realm.defineGetter(ac, "[Symbol.species]", key: .symbol(heap.symbolsWellKnown.species.handle)) {
         (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in args.this

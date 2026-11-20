@@ -44,9 +44,13 @@ private func incFragment(_ s: String) -> HTMLNode? {
 
 private func incAllNodes(_ doc: HTMLNode) -> [HTMLNode] {
     var out: [HTMLNode] = []
-    doc.walk { n in if n.kind == .element || n.kind == .text { out.append(n) }; return true }
+    doc.walkShadowIncluding { n in if n.kind == .element || n.kind == .text { out.append(n) }; return true }
     return out
 }
+
+private let incShadowContents = ["<slot></slot>", "<div class=hl><slot name=a>fallback a</slot></div><p><slot></slot></p>",
+                                 "<style>p { color: #090 } :host { padding: 3px } ::slotted(span) { font-size: 20px }</style><slot name=b></slot><p>shadow p</p><slot></slot>",
+                                 "<b part=lbl>label</b><slot name=a></slot>", "<ul><li><slot></slot></li></ul><slot name=b><i>fb</i></slot>"]
 
 private func incIsWithin(_ n: HTMLNode, _ anc: HTMLNode) -> Bool {
     var p: HTMLNode? = n
@@ -66,7 +70,38 @@ private func incMutate(_ e: LayoutEngine, _ doc: HTMLNode, _ rng: inout TestRand
     let n = nodes[rng.below(nodes.count)]
     let structural = n.kind == .element && n.name != "html" && n.name != "head" && n.name != "body"
         || n.kind == .text
-    switch rng.below(10) {
+    switch rng.below(incShadowOps ? 14 : 10) {
+    case 10:
+        // Attach a shadow root (if the element can host one) with slots.
+        guard n.kind == .element, n.isValidShadowHostName, !n.isShadowHost,
+              let s = try? n.attachShadow(mode: rng.below(3) == 0 ? .closed : .open) else { return "skip" }
+        s.setInnerHTML(incShadowContents[rng.below(incShadowContents.count)])
+        return "attachShadow on <\(n.name)>"
+    case 11:
+        guard n.kind == .element else { return "skip" }
+        incSetAttr(n, "slot", ["a", "b", "c", nil][rng.below(4)])
+        return "slot attr on <\(n.name)>"
+    case 12:
+        // Rename a slot, or add one somewhere.
+        var slots: [HTMLNode] = []
+        doc.walkShadowIncluding { x in if x.isSlot { slots.append(x) }; return true }
+        if !slots.isEmpty && rng.below(3) != 0 {
+            let sl = slots[rng.below(slots.count)]
+            incSetAttr(sl, "name", ["a", "b", nil][rng.below(3)])
+            return "rename slot"
+        }
+        guard n.kind == .element, let f = incFragment("<slot name=a>new slot fallback</slot>") else { return "skip" }
+        _ = try? n.appendChild(f)
+        return "insert slot into <\(n.name)>"
+    case 13:
+        // A slotted insert into a host.
+        var hosts: [HTMLNode] = []
+        doc.walkShadowIncluding { x in if x.isShadowHost { hosts.append(x) }; return true }
+        guard !hosts.isEmpty, let f = incFragment(["<span slot=a>to a</span>", "<p>to default</p>", "<em slot=b>to b</em>", "<b part=lbl slot=c>c</b>"][rng.below(4)]) else { return "skip" }
+        let h = hosts[rng.below(hosts.count)]
+        let ri = rng.below(h.children.count + 1)
+        _ = try? h.insertBefore(f, ri < h.children.count ? h.children[ri] : nil)
+        return "slotted insert into <\(h.name)>"
     case 0, 1, 2:
         guard n.kind == .element else { return "skip" }
         let c = incClassPool[rng.below(incClassPool.count)]
@@ -146,7 +181,7 @@ private func incCompare(_ inc: LayoutEngine, _ fresh: LayoutEngine) -> String {
     if inc.documentHeight != fresh.documentHeight || inc.documentWidth != fresh.documentWidth { return "document size" }
     // Computed styles of every element.
     var bad = ""
-    inc.document.walk { n in
+    inc.document.walkShadowIncluding { n in
         guard n.kind == .element, bad.isEmpty else { return bad.isEmpty }
         let x = inc.box(for: n), y = fresh.box(for: n)
         if (x == nil) != (y == nil) { bad = "box presence of <\(n.name)>"; return false }
@@ -183,6 +218,8 @@ private func incCompare(_ inc: LayoutEngine, _ fresh: LayoutEngine) -> String {
 }
 
 private let hostEnvDebug = getenv("WIFFER_INC_DEBUG") != nil
+/// The fuzz's shadow DOM operations (attachShadow, slot names, slotted inserts).
+private var incShadowOps = true
 
 private func incFuzzPage(_ t: Tests, _ name: String, _ html: [UInt8], _ sheet: CSSStylesheet?, seed: UInt64, rounds: Int) -> (Int, Int, LayoutUpdateStats) {
     let doc = htmlParse(html)
@@ -211,6 +248,11 @@ private func incFuzzPage(_ t: Tests, _ name: String, _ html: [UInt8], _ sheet: C
             }
             if hostEnvDebug { print("SRCV \(inc.styleSourcesVersion) \(fresh.styleSourcesVersion) hs \(inc.hasSiblingRules)"); print("STATS paint \(inc.stats.paintOnly - st0.paintOnly) sub \(inc.stats.subtreeRebuilds - st0.subtreeRebuilds) full \(inc.stats.fullRebuilds - st0.fullRebuilds)") }
             if hostEnvDebug { print("LOG \(name): " + log.joined(separator: " | ")) }
+            if hostEnvDebug {
+                var roots: [HTMLNode] = []
+                doc.walkShadowIncluding { x in if x.isShadowRoot { roots.append(x) }; return true }
+                print("DOM \(name): " + doc.getHTML(shadowRoots: roots))
+            }
             t.check(false, "\(name) round \(r)", d + " after " + log.suffix(k + 1).joined(separator: "; "))
             if failures >= 3 { break }
             // Resynchronise: continue from scratch state.
@@ -338,6 +380,43 @@ func layoutIncrementalTests(_ t: Tests) {
         t.check(e.dump() == fresh.dump(), ":empty sibling restyle equals from scratch")
     }
 
+    // Shadow DOM: slot renames, slotted inserts and attachShadow follow the flat tree.
+    do {
+        let e = layoutPage(t, """
+        <div id=h><template shadowrootmode=open><div class=head><slot name=title>Untitled</slot></div><div id=body><slot id=def></slot></div><slot name=foot><i>no footer</i></slot></template><b slot=title>T</b><p id=p>para</p></div>
+        """)
+        func same(_ what: String) {
+            let fresh = LayoutEngine(document: e.document, text: layoutFonts(t), viewportWidth: 400, viewportHeight: 300)
+            fresh.update()
+            e.updateIfNeeded()
+            let a = e.dump(), b = fresh.dump()
+            t.check(a == b, what, a + "\n---\n" + b)
+        }
+        let h = e.document.getElementById("h")!
+        let def = h.attachedShadowRoot!.getElementById("def")!
+        let title = h.attachedShadowRoot!.firstElement { $0.isSlot }!
+        _ = title.removeAttribute("name")
+        try? def.setAttribute("colspan", "3")
+        same("an earlier slot becomes the default one")
+        try? title.setAttribute("name", "title")
+        same("and back")
+        try? def.setAttribute("name", "a")
+        same("renaming the default slot unassigns its nodes")
+        try? def.setAttribute("colspan", "2")
+        same("attribute on a slot")
+        try? h.children[1].setAttribute("slot", "a")
+        same("slot attribute moves a node into a slot")
+        _ = try? h.appendChild(incFragment("<em slot=foot>footer</em>")!)
+        same("slotted insert replaces fallback")
+        let d2 = try! e.document.body!.appendChild(incFragment("<section>light <b>content</b></section>")!)
+        e.updateIfNeeded()
+        let s2 = try! d2.attachShadow(mode: .open)
+        same("attachShadow with an empty root hides the light content")
+        s2.setInnerHTML("<style>p { color: #f00 }</style><p>shadow</p><slot></slot>")
+        same("filling the shadow root")
+        t.check(e.stats.fullRebuilds > 0 || e.stats.subtreeRebuilds > 0, "updates ran")
+    }
+
     // Fuzz: incremental result == from-scratch result.
     var pages: [(String, [UInt8], CSSStylesheet?)] = []
     for n in layoutFixtureNames where n != "hn" {
@@ -346,6 +425,13 @@ func layoutIncrementalTests(_ t: Tests) {
     if let h = t.readFileIfPresent("lib/layout/fixtures/hn.html"), let c = t.readFileIfPresent("lib/layout/fixtures/hn.css") {
         pages.append(("hn", Array(h.prefix(12000)), cssParseStylesheet(c)))
     }
+    pages.append(("shadow", Array("""
+    <style>x-a::part(lbl) { color: #c00 } .hl { background: #ff0 }</style>
+    <div id=h1><template shadowrootmode=open><style>:host { border: 2px solid } ::slotted(p) { margin: 2px }</style><slot name=a>fa</slot><div><slot></slot></div></template><p slot=a>one</p><p>two</p>text<span slot=b>unslotted</span></div>
+    <x-a><template shadowrootmode=open><b part=lbl>L</b><slot></slot></template><i>in x-a</i></x-a>
+    <section><template shadowrootmode=open><p>shadow only</p></template><p>never shown</p></section>
+    <div><p>plain</p><ul><li>a<li>b</ul></div>
+    """.utf8), nil))
     pages.append(("synthetic", Array("""
     <body><div class=a>1</div><div class=a>2</div><p>p1</p><ul><li>a<li>b<li>c<li>d</ul>
     <div><span>inline</span> text <b>bold</b><div>nested block</div> after</div>

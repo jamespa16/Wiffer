@@ -4418,6 +4418,84 @@ contracts are at the top of each new file:
   was not started). A sync generator frame resumed from Swift (for-of
   over a generator) is one nested loop per step.
 
+**Status: library half done** (items 2's collections, 4, and 6's
+WeakRef/FinalizationRegistry; Promise/generators/async/modules are the
+concurrent VM agent's). `./run.sh --hosttest js` (`jsBuiltins3Tests` in
+`tests/jsbuiltins3_tests.swift`, ~370 checks). Contracts at the top of
+each file:
+
+- **`jsexotic.swift`: the exotic-object hook** (the contract 9F's host
+  objects use). `JSRealm.obj*` are the essential internal methods in
+  throwing form (`objGet/objSet(receiver:)/objHas/objDelete/objOwnKeys/
+  objGetOwnProperty/objDefineOwnProperty/objGetPrototypeOf/
+  objSetPrototypeOf/objIsExtensible/objPreventExtensions`, plus
+  `isArray`, `speciesConstructor`, `fromPropertyDescriptor`,
+  `toPropertyDescriptorFull`). Native code handling user objects must use
+  them. An object with flag `JSObjectFlags.exotic` dispatches by kind:
+  `.proxy` to the Proxy methods, anything else to a `JSExoticHandler`
+  (optional getOwnProperty / defineOwnProperty / deleteProperty / ownKeys
+  / has / get / set / setPrototypeOf / preventExtensions closures; nil or
+  a nil result = ordinary behavior) registered with
+  `realm.registerExoticHandler` and attached with `realm.makeExotic(o,
+  handler:)`. The heap side: `JSGetResult` / `JSSetResult` gained
+  `.exotic(obj)`; `heap.getProperty` / `setProperty` stop at the first
+  exotic object on the chain (or an exotic receiver, or a typed-array
+  store that needs ToNumber of an object) and the VM/realm finish with the
+  dispatched algorithm. VM edits are small: getField/getElem/getV/super/
+  globals handle `.exotic`, `in`/`delete`/`with`/for-in/spread/instanceof
+  use the obj* methods, and call/construct dispatch `.proxy`. Heap-level
+  methods treat a Proxy as its target (no traps) and a host exotic as
+  ordinary.
+- **Proxy/Reflect** (`jsbuiltins_proxy.swift`): all 13 traps with every
+  invariant check, `Proxy.revocable`, callable/constructor proxies,
+  nesting capped at 2000 (RangeError). The 9C Object/Array statics were
+  switched to the obj* methods so `Object.keys(proxy)` etc. run traps.
+- **Map/Set** (`jsbuiltins_collections.swift`): entries in the object's
+  slots, a Swift open-addressing index (strings by content, -0 = +0);
+  holes compacted with registered iterators remapped, so iteration
+  survives deletes, clears and GC. `Map.groupBy`, the ES2025 Set methods.
+- **Weak** (`jsbuiltins_weak.swift`): WeakMap/WeakSet as ephemeron side
+  tables (per-cycle pending lists shrink each fixed-point round; a value
+  reachable only through its key dies; symbols allowed unless registered),
+  WeakRef (AddToKeptObjects; the embedder calls `realm.clearKeptObjects()`
+  at job end), FinalizationRegistry (held values strong, targets and
+  tokens weak; dead cells queue their held values,
+  `tables.onFinalizationCleanupNeeded` fires from the GC, the embedder
+  runs `realm.runFinalizationCleanups()`).
+- **Typed arrays** (`jsbuiltins_typedarray.swift`): ArrayBuffer (bytes in
+  `JSHeap.byteStores`, freed with the buffer and counted in liveBytes;
+  resizable, `transfer`/`transferToFixedLength` move the store, `slice`,
+  `detached`; `realm.detachArrayBuffer` is test262's
+  `$262.detachArrayBuffer`), DataView (all get/set incl. Float16, both
+  endiannesses), Int8..Float64 + Float16Array with length-tracking views,
+  every %TypedArray% method, species. Integer-indexed exotic behavior
+  lives in the heap (canonical numeric strings included), so every path
+  sees it without JS. AggregateError.
+- **Results** (host, `-Osize`, Apple silicon): test262 full run with
+  9C+9E: built-ins/Proxy 272 pass / 1 fail, Reflect 153/0, Map 168/0,
+  Set 352/28, WeakMap 101/0, WeakSet 84/0, WeakRef 28/0,
+  FinalizationRegistry 46/0, ArrayBuffer 178/1, DataView 442/6,
+  TypedArray 867/85, TypedArrayConstructors 368/5, AggregateError 24/0
+  (floors raised). Remaining failures are BigInt (BigInt64Array, `1n`)
+  and generators. The 9E script cases pass again under
+  `gcEveryAllocation` (~0.4 s); a 15 000-mutant Proxy-heavy fuzz never
+  traps.
+
+  | Script | Time |
+  | --- | --- |
+  | Map set+get 200k int keys | ~350 ms |
+  | Map 100k string keys | ~125 ms |
+  | Uint8Array 1M writes + reads (in a function) | ~350 ms |
+  | Proxy get trap 100k | ~100 ms |
+- **Known gaps:** BigInt64Array/BigUint64Array and DataView
+  get/setBig* (no BigInt yet); SharedArrayBuffer/Atomics; for-in over a
+  proxy skips the per-key "still there?" check; Set methods iterate by
+  position while calling `has` (a compaction mid-call could skip an
+  element); the last 16 proxy ownKeys results keep their key strings
+  rooted (a ring) rather than exact rooting. The test262 GC-stress
+  sample now takes ~2 min of the 240 s hosttest budget, almost all in two
+  decodeURI tests (9C/9D should drop them from the stress sample).
+
 ## Phase 9F: embedding and a shell (`lib/js`, `user/js`)
 
 - **Host objects:** native classes with internal slots (a host handle
@@ -4684,6 +4762,69 @@ mostly empty `<some-widget>` boxes, even with a working engine.
 - **Done when:** the WPT floors hold, the Lit page renders and reacts to
   a click, and a server-rendered page using declarative Shadow DOM
   renders the same with JavaScript off.
+
+**Status: engine-independent groundwork done** (lib/html, lib/css,
+lib/layout; custom element definitions/reactions, JS event dispatch,
+`adoptedStyleSheets` bindings, WPT testharness subsets and the Lit page
+wait for the JS bindings). Results:
+- **lib/html (HTMLShadow.swift):** `attachShadow(mode:delegatesFocus:
+  slotAssignment:clonable:serializable:customElementShadowDisabled:)`
+  with the DOM's checks (HTML namespace, valid shadow host name, reuse of
+  a declarative root of the same mode); the ShadowRoot is a fragment
+  owned by its host (`attachedShadowRoot`, `shadowRoot` open only,
+  `host`), in the host's document and arena, freed iteratively.
+  `isConnected` and `rootNode(composed:)` are shadow-including; queries
+  and getElementById stop at the boundary; host-including ancestry, adopt
+  and import follow the spec. Slots: named and manual assignment (the DOM's
+  find a slot / find slottables / assign slottables (for a tree)) run
+  eagerly from insert, remove, `slot`/`name` attribute changes and
+  `assign()`; `assignedNodes/Elements(flatten:)`, `assignedSlot`. Two
+  deliberate deviations, matching engines: a manually assigned node that
+  returns to its host is taken again, and a slot that loses nodes to
+  `assign()` in another tree updates at once. Mutation records gain three
+  engine-only kinds: `.slotchange` (the DOM's "signal a slot change"),
+  `.shadowRootAttached`, `.customElementState`. Flat tree helpers
+  (`flatTreeChildren`, `flatTreeParent`, `isInFlatTree`), `retargeted
+  (against:)`, `walkShadowIncluding`. Declarative shadow DOM in the tree
+  builder (shadowrootmode open/closed, delegatesfocus, clonable,
+  serializable; on for `htmlParse`, off for innerHTML, on for
+  `setHTMLUnsafe`/`htmlParseFragment(declarativeShadowRoots:)`, including
+  the context element itself), `getHTML(serializableShadowRoots:
+  shadowRoots:)`, clonable roots in cloneNode, custom element state with
+  the valid custom element name check. 262 html checks (135 new),
+  html5lib unchanged at 1695/1701; a random shadow-mutation fuzz checks
+  stored assignments against from-scratch "find slottables".
+- **lib/css:** `:host`, `:host(<compound>)` (featureless host), 
+  `::slotted(<compound>)` (through nested slots), `::part()` with
+  `exportparts`, `:defined`; `:host-context()` parses and never matches.
+  `CSSElement` gained `cssTreeScope`, `cssShadowHost`,
+  `cssShadowRootScope`, `cssAssignedSlot`, `cssPartNames`,
+  `cssExportParts`, `cssIsDefined` (all defaulted). The resolver keeps a
+  rule set per shadow root (`setScopeSheets`); the cascade's
+  shadow-tree context step sits after origin/importance and before the
+  style attribute (outer wins for normal, inner for !important). 42 new
+  css checks. Cost: Wikipedia style pass about 5% slower on the host
+  (128 → 134 ms) from the generalized cascade sort.
+- **lib/layout:** the box builder walks the flat tree; shadow trees'
+  `<style>`/`<link>` become scoped sources (`LayoutStyleSource.scope`, so
+  the browser's fetch loop is unchanged); `setAdoptedStyleSheets(_:for:)`
+  for documents and shadow roots; hover chains, hit testing and link
+  lookup follow the flat tree; `LayoutHit.documentNode` is the hit node
+  retargeted against the document. Incremental restyle follows slot
+  changes, attachShadow and shadow-tree mutations (rebuild roots walk the
+  flat tree); two fixes found by the extended fuzz (a boxless
+  display:contents element's restyle, siblings of unrendered nodes).
+  Fixtures `shadow` and `shadowstyle`; the incremental fuzz adds
+  attachShadow, slot renames, slot attributes and slotted inserts, plus a
+  shadow page (745 checks by default, 0 failures).
+- **Harness:** tests/web/layout/shadow.html (declarative shadow DOM) is
+  compared pixel by pixel with shadow-light.html, on the host and in
+  tests/serial_session.py.
+- **Gaps:** no slotchange during parsing (slots are assigned after the
+  parse), `::slotted()::before` and `::part()` followed by pseudo-classes
+  are not supported, focus/delegatesFocus and `:focus-within` need the
+  event layer, a document-level `adoptedStyleSheets` change restyles
+  everything.
 
 ## Phase 9J: tests, performance and target sites
 

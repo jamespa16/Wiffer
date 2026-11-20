@@ -2498,6 +2498,33 @@ def web_checks_run(s, timeout, check, find, browsers, kill_all, srv, tsrv, base,
         kill_all()
     print(f"harness: {len(pages)} layout pages in {time.time() - t0:.0f} s")
 
+    # ---- Declarative shadow DOM (Phase 9I), with no script engine: the page
+    # renders pixel for pixel like its light-DOM equivalent.
+    def page_region(path, title, want_pixels, w=360, h=200):
+        got, found = load(f"{base}/{path}")
+        ok = found and f"title '{title}'" in got and "browse: error" not in got
+        if not check(ok, f"{path} loads with title '{title}'", got[-300:]):
+            kill_all()
+            return None
+        time.sleep(0.8)
+        for x, y, want in want_pixels:
+            px = pixel_in_page(title, x, y, want)
+            check(px == bytes.fromhex(want), f"{path}: pixel ({x},{y}) is #{want}", px.hex() if px else "no window")
+        o = origin(title)
+        region = None
+        if o:
+            s.screendump(dump)
+            pw, ph, pix = read_ppm(dump)
+            region = [pixel(pw, pix, o[0] + x, o[1] + y) for y in range(0, h, 2) for x in range(0, w, 2)]
+        kill_all()
+        return region
+    dsd_pixels = [(12, 12, "802040"), (300, 25, "2060E0"), (32, 57, "E0A020")]
+    shadow = page_region("layout/shadow.html", "Layout: shadow", dsd_pixels)
+    light = page_region("layout/shadow-light.html", "Layout: shadow light", dsd_pixels)
+    if shadow is not None and light is not None:
+        diff = sum(1 for a, b in zip(shadow, light) if a != b)
+        check(diff == 0, "declarative shadow DOM page renders like its light-DOM twin (JS off)", f"{diff} of {len(shadow)} sampled pixels differ")
+
     # ---- Images: PNG with alpha, JPEG baseline and progressive, GIF.
     got, found = load(f"{base}/images.html")
     check(found and resources(got) == (4, 4) and "can't decode" not in got, "images.html: all four images fetched and decoded", got[-300:])

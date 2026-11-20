@@ -30,7 +30,10 @@
 // produces a removal record on the fragment, then one insertion record
 // with all its children. Nodes in a `<template>`'s contents belong to the
 // inert template contents document, so the page's observers do not see
-// them (they are not rendered).
+// them (they are not rendered). Shadow trees belong to their host's
+// document, so changes inside them are reported (target.isConnected is
+// shadow-including). Shadow DOM adds three engine-only kinds (.slotchange,
+// .shadowRootAttached, .customElementState; see HTMLMutationKind).
 //
 // An observer may mutate the tree (its records are delivered re-entrantly,
 // in order). It must not hold a strong reference to the document it
@@ -39,6 +42,12 @@
 
 public enum HTMLMutationKind: UInt8 {
     case childList, attributes, characterData
+    /// Not DOM MutationRecords (a JS MutationObserver must skip these):
+    /// "signal a slot change" for `target` (a slot; the event layer fires
+    /// `slotchange` from these), a shadow root attached to `target` (the
+    /// rendering of the host changes), and a changed custom element state
+    /// of `target` (`:defined` may change).
+    case slotchange, shadowRootAttached, customElementState
 }
 
 public struct HTMLMutation {

@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html><head><meta charset=utf-8><title>Layout: shadow light</title>
+<style>
+body { margin: 0; font-family: sans-serif; --accent: #2060E0 }
+/* The light-DOM equivalent of shadow.html's x-card. */
+x-card { display: block; margin: 10px; border: 4px solid #802040; padding: 6px; background: #FFFFFF }
+x-card .head { height: 30px; background: var(--accent); color: #FFFFFF }
+x-card .badge { display: inline-block; width: 40px; height: 20px; background: #E0A020 }
+x-card p { margin: 4px 0; color: #30A050 }
+</style></head>
+<body>
+<x-card><div class=head><b>Declarative card</b></div><span class=badge></span><p>First slotted paragraph</p><p>Second slotted paragraph</p><div class=foot>no footer</div></x-card>
+<div style="height:40px;background:#C02080"></div>
+</body></html>

@@ -7,6 +7,7 @@ struct CSSIndexedRule {
     var declarations: [CSSDeclaration]
     var order: Int
     var origin: CSSOrigin
+    var hasImportant: Bool
 }
 
 struct CSSSelectorEntry {
@@ -28,6 +29,13 @@ final class CSSRuleSet {
     private(set) var rules: [CSSIndexedRule] = []
     private(set) var entries: [CSSSelectorEntry] = []
     fileprivate var buckets = [CSSBucketSet(), CSSBucketSet(), CSSBucketSet()]
+    /// Selectors whose subject is `:host` / `:host(...)` (per pseudo slot:
+    /// none, ::before, ::after), `::slotted(...)` and `::part(...)` ones.
+    /// They only apply from a shadow root's sheets (or, for parts, to the
+    /// shadow trees of the scope's hosts), so they are kept apart.
+    fileprivate var hostEntries: [[Int32]] = [[], [], []]
+    fileprivate var slottedEntries: [Int32] = []
+    fileprivate var partEntries: [Int32] = []
     private var nextOrder = 0
 
     init() {}
@@ -59,17 +67,28 @@ final class CSSRuleSet {
                     let e = Int32(truncatingIfNeeded: entries.count)
                     entries.append(CSSSelectorEntry(selector: sel, rule: idx))
                     let c = sel.compounds[sel.compounds.count - 1]
+                    if sel.slotted != nil { if slot == 0 { slottedEntries.append(e) }; continue }
+                    if sel.parts != nil { if slot == 0 { partEntries.append(e) }; continue }
+                    if c.hostArgs != nil { hostEntries[slot].append(e); continue }
                     if let id = c.ids.first { buckets[slot].byID[id, default: []].append(e) }
                     else if let cl = c.classes.first { buckets[slot].byClass[cl, default: []].append(e) }
                     else if !c.tag.isEmpty { buckets[slot].byTag[c.tag, default: []].append(e) }
                     else { buckets[slot].universal.append(e) }
                 }
                 if used {
-                    rules.append(CSSIndexedRule(declarations: rule.declarations, order: nextOrder, origin: origin))
+                    var imp = false
+                    for d in rule.declarations where d.important { imp = true; break }
+                    rules.append(CSSIndexedRule(declarations: rule.declarations, order: nextOrder, origin: origin, hasImportant: imp))
                     nextOrder += 1
                 }
             }
         }
+    }
+
+    /// Any selector for this pseudo slot (0 none, 1 ::before, 2 ::after)?
+    func hasRules(slot: Int) -> Bool {
+        let b = buckets[slot]
+        return !b.byID.isEmpty || !b.byClass.isEmpty || !b.byTag.isEmpty || !b.universal.isEmpty || !hostEntries[slot].isEmpty
     }
 }
 
@@ -164,9 +183,26 @@ final class CSSCustomResolver {
 
 // MARK: - The resolver
 
+/// One block of declarations that applies to an element: a rule of one of
+/// the rule sets in play, the style attribute, or the presentational hints.
+/// `key` orders normal declarations, `importantKey` !important ones (later
+/// wins in both).
 private struct CSSMatch {
     var key: UInt64
-    var rule: Int32
+    var importantKey: UInt64
+    var rule: Int32       // -2 style="", -3 hints
+    var set: UInt8        // index into the resolver's per-compute rule set list
+    var hasImportant: Bool
+}
+
+/// Cascade sort keys: [class 2 bits][context 6][element-attached 1]
+/// [specificity 30][order 24]. Normal: class 0 user agent, 1 author, and
+/// context 63 - depth (an outer tree's declaration beats an inner one).
+/// Important: class 2 author, 3 user agent, and context = depth (inner wins).
+@inline(__always) private func cssCascadeKey(_ cls: UInt64, _ ctx: Int, _ attached: Bool, _ spec: UInt32, _ order: Int) -> UInt64 {
+    let c = UInt64(max(0, min(63, ctx)))
+    return cls << 61 | c << 55 | (attached ? 1 << 54 : 0) | UInt64(spec & 0x3fff_ffff) << 24
+        | UInt64(truncatingIfNeeded: order & 0xff_ffff)
 }
 
 /// Computes styles. Create one per document, add the sheets in order (user
@@ -177,8 +213,13 @@ final class CSSStyleResolver {
     var ctx: CSSContext
     private(set) var ruleSet = CSSRuleSet()
     private var sheets: [(CSSStylesheet, CSSOrigin)] = []
+    /// Shadow root scopes (CSSTreeScope.id): their author sheets, in order
+    /// (`<style>`/`<link>` in the shadow tree, then adoptedStyleSheets).
+    private var scopeSheets: [Int: [CSSStylesheet]] = [:]
+    private(set) var scopeRules: [Int: CSSRuleSet] = [:]
     private var winRule = [Int32](repeating: -1, count: cssPropCount)
     private var winDecl = [Int32](repeating: 0, count: cssPropCount)
+    private var sets: [CSSRuleSet] = []
 
     /// With the built-in user agent sheet (`cssUserAgentStyleSheet`).
     init(ctx: CSSContext = CSSContext()) {
@@ -203,21 +244,69 @@ final class CSSStyleResolver {
         let old = sheets
         ruleSet = CSSRuleSet()
         for (s, o) in old { ruleSet.add(s, origin: o, ctx: ctx) }
+        var rebuilt: [Int: CSSRuleSet] = [:]
+        for (id, list) in scopeSheets {
+            let rs = CSSRuleSet()
+            for s in list { rs.add(s, origin: .author, ctx: ctx) }
+            rebuilt[id] = rs
+        }
+        scopeRules = rebuilt
+    }
+
+    /// The author style sheets of a shadow root scope (CSSTreeScope.id,
+    /// never 0), replacing any it had. An empty list removes the scope.
+    func setScopeSheets(_ scope: Int, _ list: [CSSStylesheet]) {
+        if scope == 0 { return }
+        if list.isEmpty { scopeSheets[scope] = nil; scopeRules[scope] = nil; return }
+        scopeSheets[scope] = list
+        let rs = CSSRuleSet()
+        for s in list { rs.add(s, origin: .author, ctx: ctx) }
+        scopeRules[scope] = rs
+    }
+
+    func clearScopes() {
+        scopeSheets = [:]
+        scopeRules = [:]
+    }
+
+    /// Every rule set: the document's, then each scope's.
+    var allRuleSets: [CSSRuleSet] {
+        var out = [ruleSet]
+        for (_, r) in scopeRules { out.append(r) }
+        return out
     }
 
     // MARK: Matching
 
-    private func collect<E: CSSElement>(_ el: E, _ slot: Int, _ out: inout [CSSMatch]) {
-        let b = ruleSet.buckets[slot]
+    private func setIndex(_ rs: CSSRuleSet) -> UInt8 {
+        for (i, s) in sets.enumerated() where s === rs { return UInt8(truncatingIfNeeded: i) }
+        sets.append(rs)
+        return UInt8(truncatingIfNeeded: sets.count - 1)
+    }
+
+    private func addMatch(_ rs: CSSRuleSet, _ si: UInt8, _ entry: CSSSelectorEntry, _ depth: Int, _ out: inout [CSSMatch]) {
+        let rule = rs.rules[Int(entry.rule)]
+        let spec = entry.selector.specificity
+        let ua = rule.origin == .userAgent
+        let key = cssCascadeKey(ua ? 0 : 1, ua ? 0 : 63 - depth, false, spec, rule.order + 1)
+        let ik = cssCascadeKey(ua ? 3 : 2, ua ? 0 : depth, false, spec, rule.order + 1)
+        out.append(CSSMatch(key: key, importantKey: ik, rule: entry.rule, set: si, hasImportant: rule.hasImportant))
+    }
+
+    /// Rules of `rs` whose subject compound fits `el` (by bucket).
+    /// `authorOnly`/`uaOnly` filter by origin.
+    private func collectBuckets<E: CSSElement>(_ rs: CSSRuleSet, _ el: E, _ slot: Int, _ depth: Int, skipAuthor: Bool,
+                                               _ out: inout [CSSMatch]) {
+        let b = rs.buckets[slot]
+        var si: UInt8 = 255
         func test(_ list: [Int32]) {
             for ei in list {
-                let entry = ruleSet.entries[Int(ei)]
+                let entry = rs.entries[Int(ei)]
+                if skipAuthor && rs.rules[Int(entry.rule)].origin == .author { continue }
                 var budget = 20_000
                 if cssMatchComplex(entry.selector, el, &budget) {
-                    let rule = ruleSet.rules[Int(entry.rule)]
-                    let key = UInt64(rule.origin.rawValue) << 60 | UInt64(entry.selector.specificity) << 24
-                        | UInt64(truncatingIfNeeded: rule.order & 0xff_ffff)
-                    out.append(CSSMatch(key: key, rule: entry.rule))
+                    if si == 255 { si = setIndex(rs) }
+                    addMatch(rs, si, entry, depth, &out)
                 }
             }
         }
@@ -228,6 +317,70 @@ final class CSSStyleResolver {
         }
         if let l = b.byTag[el.cssTagName] { test(l) }
         test(b.universal)
+    }
+
+    private func collect<E: CSSElement>(_ el: E, _ slot: Int, _ out: inout [CSSMatch]) {
+        let scope = el.cssTreeScope
+        if scope.id == 0 {
+            collectBuckets(ruleSet, el, slot, 0, skipAuthor: false, &out)
+        } else {
+            // A shadow tree: the user agent rules, then its own sheets only.
+            collectBuckets(ruleSet, el, slot, scope.depth, skipAuthor: true, &out)
+            if let rs = scopeRules[scope.id] { collectBuckets(rs, el, slot, scope.depth, skipAuthor: false, &out) }
+        }
+        if scopeRules.isEmpty { return }
+        // :host rules of the element's own shadow root (an inner context).
+        if let hs = el.cssShadowRootScope, let rs = scopeRules[hs], !rs.hostEntries[slot].isEmpty {
+            let si = setIndex(rs)
+            for ei in rs.hostEntries[slot] {
+                let entry = rs.entries[Int(ei)]
+                var budget = 20_000
+                if cssMatchComplex(entry.selector, el, &budget, featureless: true) { addMatch(rs, si, entry, scope.depth + 1, &out) }
+            }
+        }
+        if slot != 0 { return }
+        // ::slotted rules of the scopes the element is slotted into (inner contexts).
+        var sl = el.cssAssignedSlot
+        var k = 0
+        while let s = sl, k < 64 {
+            let ss = s.cssTreeScope
+            if let rs = scopeRules[ss.id], !rs.slottedEntries.isEmpty {
+                let si = setIndex(rs)
+                for ei in rs.slottedEntries {
+                    let entry = rs.entries[Int(ei)]
+                    var budget = 20_000
+                    if cssMatchSlotted(entry.selector, el, scope: ss.id, &budget) { addMatch(rs, si, entry, ss.depth, &out) }
+                }
+            }
+            sl = s.cssAssignedSlot
+            k += 1
+        }
+        // ::part rules of the scopes outside (outer contexts).
+        if scope.id != 0 && !el.cssPartNames.isEmpty {
+            var h = el.cssShadowHost
+            var j = 0
+            while let host = h, j < 32 {
+                let hs = host.cssTreeScope
+                let rs: CSSRuleSet? = hs.id == 0 ? ruleSet : scopeRules[hs.id]
+                if let r = rs, !r.partEntries.isEmpty {
+                    let si = setIndex(r)
+                    for ei in r.partEntries {
+                        let entry = r.entries[Int(ei)]
+                        var budget = 20_000
+                        if cssMatchPart(entry.selector, el, scope: hs.id, &budget) { addMatch(r, si, entry, hs.depth, &out) }
+                    }
+                }
+                h = host.cssShadowHost
+                j += 1
+            }
+        }
+    }
+
+    /// Any ::before/::after rule anywhere (doc or scopes) for this slot?
+    private func anyRules(slot: Int) -> Bool {
+        if ruleSet.hasRules(slot: slot) { return true }
+        for (_, r) in scopeRules where r.hasRules(slot: slot) { return true }
+        return false
     }
 
     // MARK: Computing
@@ -251,8 +404,7 @@ final class CSSStyleResolver {
     func computePseudoStyle<E: CSSElement>(_ el: E, _ pseudo: CSSPseudoElement, elementStyle: CSSComputedStyle) -> CSSComputedStyle? {
         let slot = pseudo == .before ? 1 : (pseudo == .after ? 2 : 0)
         guard slot != 0 else { return nil }
-        if ruleSet.buckets[slot].byID.isEmpty && ruleSet.buckets[slot].byClass.isEmpty
-            && ruleSet.buckets[slot].byTag.isEmpty && ruleSet.buckets[slot].universal.isEmpty { return nil }
+        if !anyRules(slot: slot) { return nil }
         var s = compute(el, slot, elementStyle, inlineStyle: false, isRoot: false)
         guard s.contentKind == .items else { return nil }
         var items: [String] = []
@@ -268,48 +420,55 @@ final class CSSStyleResolver {
 
     private func compute<E: CSSElement>(_ el: E, _ slot: Int, _ parent: CSSComputedStyle, inlineStyle: Bool, isRoot: Bool,
                                         hints: [CSSDeclaration] = []) -> CSSComputedStyle {
+        sets.removeAll(keepingCapacity: true)
         var matches: [CSSMatch] = []
         collect(el, slot, &matches)
         var inline: [CSSDeclaration] = []
         if inlineStyle, let attr = el.cssAttribute("style"), !attr.isEmpty {
             inline = cssParseInlineStyle(attr)
         }
+        // The style attribute and hints belong to the element's own tree context.
+        let own = el.cssTreeScope.depth
+        if !hints.isEmpty {
+            matches.append(CSSMatch(key: cssCascadeKey(1, 63 - own, false, 0, 0), importantKey: 0, rule: -3, set: 0, hasImportant: false))
+        }
+        if !inline.isEmpty {
+            var imp = false
+            for d in inline where d.important { imp = true; break }
+            matches.append(CSSMatch(key: cssCascadeKey(1, 63 - own, true, 0, 0), importantKey: cssCascadeKey(2, own, true, 0, 0),
+                                    rule: -2, set: 0, hasImportant: imp))
+        }
         if matches.count > 1 { matches.sort { $0.key < $1.key } }
 
-        // Winners per property: (rule, -2 for style="" or -3 for a hint; declaration index).
+        // Winners per property: (index into matches; declaration index).
         for k in 0..<cssPropCount { winRule[k] = -1 }
         var customWinners: [String: [CSSComponent]] = [:]
         var hasPending = false
 
-        func take(_ d: CSSDeclaration, _ rule: Int32, _ idx: Int) {
+        func decls(_ m: CSSMatch) -> [CSSDeclaration] {
+            if m.rule == -2 { return inline }
+            if m.rule == -3 { return hints }
+            return sets[Int(m.set)].rules[Int(m.rule)].declarations
+        }
+        func take(_ d: CSSDeclaration, _ mi: Int, _ idx: Int) {
             if d.kind == .custom { customWinners[d.name] = d.raw; return }
             if d.kind == .pending { hasPending = true }
-            winRule[Int(d.prop.rawValue)] = rule
+            winRule[Int(d.prop.rawValue)] = Int32(truncatingIfNeeded: mi)
             winDecl[Int(d.prop.rawValue)] = Int32(truncatingIfNeeded: idx)
         }
-        // 1. normal declarations: user agent, then presentational hints, then
-        //    author (specificity, order), then style=""
-        var hintsTaken = hints.isEmpty
-        for m in matches {
-            if !hintsTaken && ruleSet.rules[Int(m.rule)].origin == .author {
-                for (i, d) in hints.enumerated() where !d.important { take(d, -3, i) }
-                hintsTaken = true
-            }
-            let ds = ruleSet.rules[Int(m.rule)].declarations
-            for (i, d) in ds.enumerated() where !d.important { take(d, m.rule, i) }
+        // 1. Normal declarations in cascade order: user agent, then author
+        //    (outer tree contexts last; within one: hints, rules by
+        //    specificity and order, style="").
+        for (mi, m) in matches.enumerated() {
+            for (i, d) in decls(m).enumerated() where !d.important { take(d, mi, i) }
         }
-        if !hintsTaken { for (i, d) in hints.enumerated() where !d.important { take(d, -3, i) } }
-        for (i, d) in inline.enumerated() where !d.important { take(d, -2, i) }
-        // 2. author !important (rules, then style="")
-        for m in matches where ruleSet.rules[Int(m.rule)].origin == .author {
-            let ds = ruleSet.rules[Int(m.rule)].declarations
-            for (i, d) in ds.enumerated() where d.important { take(d, m.rule, i) }
-        }
-        for (i, d) in inline.enumerated() where d.important { take(d, -2, i) }
-        // 3. user agent !important beats everything
-        for m in matches where ruleSet.rules[Int(m.rule)].origin == .userAgent {
-            let ds = ruleSet.rules[Int(m.rule)].declarations
-            for (i, d) in ds.enumerated() where d.important { take(d, m.rule, i) }
+        // 2. !important: author (inner contexts last; style="" after rules
+        //    within one), then user agent.
+        var imp: [(UInt64, Int)] = []
+        for (mi, m) in matches.enumerated() where m.hasImportant { imp.append((m.importantKey, mi)) }
+        if imp.count > 1 { imp.sort { $0.0 < $1.0 } }
+        for (_, mi) in imp {
+            for (i, d) in decls(matches[mi]).enumerated() where d.important { take(d, mi, i) }
         }
 
         var style = CSSComputedStyle()
@@ -330,10 +489,7 @@ final class CSSStyleResolver {
             let rule = winRule[k]
             if rule == -1 { continue }
             let prop = CSSProp(rawValue: UInt8(k)) ?? .custom
-            var d: CSSDeclaration
-            if rule == -2 { d = inline[Int(winDecl[k])] }
-            else if rule == -3 { d = hints[Int(winDecl[k])] }
-            else { d = ruleSet.rules[Int(rule)].declarations[Int(winDecl[k])] }
+            var d = decls(matches[Int(rule)])[Int(winDecl[k])]
             explicit[k] = true
             if d.kind == .pending {
                 // Substitute var() and parse as the declared (shorthand) property.

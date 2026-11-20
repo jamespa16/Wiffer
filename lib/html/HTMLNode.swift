@@ -48,6 +48,12 @@ final class HTMLDocumentState {
     var inert = false
     /// The template contents owner document (created on first use).
     var templateDocument: HTMLNode? = nil
+    /// Set once a shadow root is attached to (or adopted into) this document:
+    /// until then the slot-assignment steps of every mutation are skipped.
+    var hasShadowTrees = false
+    /// The parser's "allow declarative shadow roots" flag (template contents
+    /// owner documents inherit it).
+    var allowDeclarativeShadowRoots = false
 }
 
 public final class HTMLNode {
@@ -84,6 +90,9 @@ public final class HTMLNode {
     var templateStorage: HTMLNode?
     /// Template contents fragment only: the template element it belongs to.
     unowned(unsafe) var templateHost: HTMLNode?
+    /// Rarely needed per-node state (shadow roots, slots, custom element
+    /// state); nil for most nodes. See HTMLShadow.swift.
+    var rare: HTMLNodeRare?
 
     init(kind: HTMLNodeKind, name: String = "", tag: HTMLTag = .unknown,
          namespace: HTMLNamespace = .html, attributes: [HTMLAttribute] = [], data: [UInt8] = []) {
@@ -104,6 +113,7 @@ public final class HTMLNode {
         self.docState = nil
         self.templateStorage = nil
         self.templateHost = nil
+        self.rare = nil
         if kind == .document {
             docState = HTMLDocumentState()
             nodeDocument = self
@@ -113,18 +123,26 @@ public final class HTMLNode {
     deinit {
         if docState != nil { dismantleArena() }
         if let t = templateStorage { t.templateHost = nil }
-        if children.isEmpty { return }
-        // Free the subtree iteratively: a child nobody else holds has its
-        // children taken first, so the release never recurses (this matters
-        // for nodes outside any arena, e.g. after their document went away).
-        // Children that outlive this node must not point back at it.
         var stack = children
+        if let r = rare {
+            r.releaseLinks(self)
+            if let s = r.shadowRoot { r.shadowRoot = nil; s.rare?.host = nil; stack.append(s) }
+        }
+        if stack.isEmpty { return }
+        // Free the subtree iteratively: a child nobody else holds has its
+        // children (and shadow root) taken first, so the release never
+        // recurses (this matters for nodes outside any arena, e.g. after their
+        // document went away). Children that outlive this node must not point
+        // back at it.
         children = []
         while var n = stack.popLast() {
             n.parent = nil
-            if isKnownUniquelyReferenced(&n) && !n.children.isEmpty {
-                stack.append(contentsOf: n.children)
-                n.children = []
+            if isKnownUniquelyReferenced(&n) {
+                if !n.children.isEmpty {
+                    stack.append(contentsOf: n.children)
+                    n.children = []
+                }
+                if let r = n.rare, let s = r.shadowRoot { r.shadowRoot = nil; s.rare?.host = nil; stack.append(s) }
             }
         }
     }
@@ -190,8 +208,12 @@ public final class HTMLNode {
         guard let st = docState else { return }
         var arena = st.arena
         st.arena = []
-        // Nodes that outlive the document are left without one.
-        for case let n? in arena { n.nodeDocument = nil }
+        // Nodes that outlive the document are left without one (and without
+        // slot links, which are unowned).
+        for case let n? in arena {
+            n.nodeDocument = nil
+            if let r = n.rare { r.releaseLinks(n) }
+        }
         for c in children { c.parent = nil }
         children = []
         var kids: [HTMLNode] = []
@@ -207,6 +229,11 @@ public final class HTMLNode {
                 kids = n.children
                 n.children = []
                 if let t = n.templateStorage { t.templateHost = nil; n.templateStorage = nil }
+                if let r = n.rare, let s = r.shadowRoot {
+                    r.shadowRoot = nil
+                    s.rare?.host = nil
+                    kids.append(s)
+                }
                 for c in kids {
                     c.parent = nil
                     let ci = c.arenaIndex
@@ -378,8 +405,8 @@ public final class HTMLNode {
         parent = nil
     }
 
-    /// Fill in `index` for every node under this one (template contents
-    /// included).
+    /// Fill in `index` for every node under this one (template contents and
+    /// shadow roots included).
     func assignIndices() {
         var stack: [HTMLNode] = [self]
         while let n = stack.popLast() {
@@ -387,9 +414,10 @@ public final class HTMLNode {
             for c in n.children {
                 c.index = i
                 i += 1
-                if !c.children.isEmpty || c.templateStorage != nil { stack.append(c) }
+                if !c.children.isEmpty || c.templateStorage != nil || c.rare != nil { stack.append(c) }
             }
             if let t = n.templateStorage { stack.append(t) }
+            if let s = n.rare?.shadowRoot { stack.append(s) }
         }
     }
 }

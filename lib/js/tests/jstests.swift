@@ -10,5 +10,6 @@ func libTests(_ t: Tests) {
     jsVM2Tests(t)
     jsBuiltins2Tests(t)
     jsBuiltins1Tests(t)
+    jsBuiltins3Tests(t)
     jsTest262RunTests(t)
 }

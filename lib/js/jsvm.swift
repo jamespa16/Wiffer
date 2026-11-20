@@ -158,6 +158,10 @@ extension JSRealm {
                 argc = try unbind(f, argc: argc, construct: false)
                 steps += 1
                 if steps > 10_000 { throw throwRangeError("Maximum call stack size exceeded") }
+            case .proxy where heap.isCallable(f):
+                // 9E: the apply trap (jsbuiltins_proxy.swift).
+                try dispatchProxyCall(argc, mode: mode)
+                return false
             default:
                 throw throwTypeError(describeForError(f) + " is not a function")
             }
@@ -230,6 +234,10 @@ extension JSRealm {
                 argc = try unbind(f, argc: argc, construct: true)
                 steps += 1
                 if steps > 10_000 { throw throwRangeError("Maximum call stack size exceeded") }
+            case .proxy:
+                // 9E: the construct trap (jsbuiltins_proxy.swift).
+                try dispatchProxyConstruct(argc)
+                return false
             default:
                 throw throwTypeError(describeForError(f) + " is not a constructor")
             }
@@ -468,6 +476,10 @@ extension JSRealm {
                                     t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr)
                                     pc = frames[t].pc; base = frames[t].base
                                 }
+                            case .exotic(let e):
+                                // 9E: Proxy / host exotic on the chain (jsexotic.swift).
+                                frames[t].pc = pc
+                                stack[sp - 1] = try exoticGet(e, k, receiver: o)
                             }
                         } else {
                             stack[sp - 1] = try getPrimitive(o, k)
@@ -502,6 +514,10 @@ extension JSRealm {
                                     t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr)
                                     pc = frames[t].pc; base = frames[t].base
                                 }
+                            case .exotic(let e):
+                                // 9E: Proxy / host exotic on the chain (jsexotic.swift).
+                                frames[t].pc = pc
+                                stack[sp - 1] = try exoticGet(e, k, receiver: o)
                             }
                         } else {
                             stack[sp - 1] = try getPrimitive(o, k)
@@ -724,7 +740,7 @@ extension JSRealm {
                         let o = stack[sp - 1]
                         guard o.isObject else { throw throwTypeError("Cannot use 'in' operator to search for a key in " + describeForError(o)) }
                         let k = try toPropertyKey(stack[sp - 2])
-                        sp -= 1; stack[sp - 1] = .bool(heap.hasProperty(o, k)); pc += 1
+                        sp -= 1; stack[sp - 1] = .bool(try objHas(o, k)); pc += 1
                     case .neg:
                         let a = stack[sp - 1]
                         if a.isInt32 && a.asInt32 != 0 && a.asInt32 != Int32.min { stack[sp - 1] = .int32(-a.asInt32) }
@@ -1184,6 +1200,9 @@ extension JSRealm {
                             if try dispatchCall(0, mode: JSFrameMode.normal) {
                                 t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr); pc = frames[t].pc; base = frames[t].base
                             }
+                        case .exotic:
+                            // Private elements are raw own slots: never exotic.
+                            throw throwTypeError("invalid private access")
                         }
                     case .putPrivate:
                         // [obj rec v] -> [v]; a setter runs as a frame.

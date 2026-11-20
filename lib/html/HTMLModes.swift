@@ -317,11 +317,7 @@ extension HTMLTreeBuilder {
             mode = .inHeadNoscript
         case .noframes, .style: genericRaw(t, rcdata: false)
         case .template:
-            insertHTML(t)
-            pushMarker()
-            framesetOK = false
-            mode = .inTemplate
-            templateModes.append(.inTemplate)
+            templateStartTag(t)
         case .script:
             insertHTML(t)
             tokenizer.state = .scriptData

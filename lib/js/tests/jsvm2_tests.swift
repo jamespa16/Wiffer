@@ -148,6 +148,16 @@ let jsVM2Cases: [(String, String)] = [
      "nexterr 0"),
     ("var closed = 0; var it = { [Symbol.iterator]() { return { next() { return { value: undefined, done: false } }, return() { closed++; return {} } } } }; try { var [a = (() => { throw 'd' })()] = it } catch (e) { log(e, closed) }",
      "d 1"),
+    // ------------------------------------------------- through Proxy (9E)
+    ("function* g() { yield 1; yield 2 } log([...new Proxy(g, {})()].join()); try { new Proxy(g(), {}).next() } catch (e) { log(e.name) }",
+     "1,2 | TypeError"),
+    ("class B { constructor(o) { return o } } class C extends B { #y = 'onproxy'; static get(o) { return o.#y } } var p = new Proxy({}, { ownKeys() { return [] } }); new C(p); log(C.get(p), Reflect.ownKeys(p).length)",
+     "onproxy 0"),
+    ("class A { #x = 1; static get(o) { return o.#x } } try { A.get(new Proxy(new A(), {})) } catch (e) { log(e.name) }", "TypeError"),
+    ("async function f() { return await new Proxy(Promise.resolve(5), {}) } f().catch(e => log('rej', e.name))", "rej TypeError"),
+    ("Promise.resolve(new Proxy({ then(r) { r('proxied then') } }, {})).then(log)", "proxied then"),
+    ("(async () => { for await (const x of new Set([Promise.resolve('s')])) log(x) })()", "s"),
+    ("var o = new Proxy({ get m() { return function () { return 'getter-call' } } }, {}); log(o.m())", "getter-call"),
     ("var n = 0; var o = { get m() { n++; return function () { return this === o } } }; log(o.m(), n)", "true 1"),
 ]
 
