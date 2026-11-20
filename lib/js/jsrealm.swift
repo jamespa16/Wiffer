@@ -261,6 +261,7 @@ public final class JSRealm {
         jsInstallGenerators(self)
         jsInstallModules(self)
         jsInstallBigInt(self)
+        jsInstallIntl(self)
     }
 
     func markRoots(_ h: JSHeap) {

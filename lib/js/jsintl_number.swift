@@ -478,7 +478,7 @@ func jsIntlFormatParts(_ dec: JSIntlDecimal?, negative: Bool, nan: Bool, infinit
                 txt = (plural ? jsIntlSimpleUnit(pieces[0])?.3 : jsIntlSimpleUnit(pieces[0])?.2) ?? pieces[0]
                 txt += " per " + (jsIntlSimpleUnit(pieces[1])?.2 ?? pieces[1])
             } else if pieces[0] == "mile" && pieces[1] == "hour" { txt = "mph" }
-            else { txt = name(pieces[0]) + "/" + name(pieces[1]) }
+            else { txt = name(pieces[0]) + "/" + (pieces[1] == "hour" && o.unitDisplay != 2 ? "h" : name(pieces[1])) }
         } else { txt = name(o.unit) }
         let tight = o.unitDisplay == 1 || (o.unitDisplay == 0 && (o.unit == "percent" || o.unit == "celsius" || o.unit == "fahrenheit"))
         if !tight || o.unitDisplay == 2 || (o.unitDisplay == 1 && txt.utf8.count > 2 && o.unit != "celsius" && o.unit != "fahrenheit" && o.unit != "degree") {
