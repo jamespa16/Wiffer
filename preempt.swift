@@ -321,7 +321,9 @@ func preemptionTests(_ t: inout SelfTest) {
         var ok = true
         for i in 1..<n {
             let d = perCPUEntry(i).pointee.lapicTicks &- before[i - 1]
-            if d < 15 || d > 25 { ok = false; print("  cpu \(i): \(d) LAPIC ticks in 20 PIT ticks") }
+            // Wide on purpose: under TCG on a loaded host the AP vCPU threads
+            // lag the PIT (13 of 20 seen); a miscalibration is ~2x off.
+            if d < 10 || d > 30 { ok = false; print("  cpu \(i): \(d) LAPIC ticks in 20 PIT ticks") }
         }
         t.check("6D: every AP's LAPIC timer ticks at ~100 Hz", ok)
     }
