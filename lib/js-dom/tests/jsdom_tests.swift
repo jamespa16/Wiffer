@@ -34,6 +34,8 @@ final class JSDOMTestPage {
         configure?(&host)
         page = JSDOMPage(document: doc, url: url, host: host)
         self.box = box
+        // WIFFER_JSDOM_GCSTRESS=1: collect at every allocation.
+        if jsdomEnv("WIFFER_JSDOM_GCSTRESS") != nil { page.realm.heap.gcEveryAllocation = true }
     }
     let box: JSDOMTestBox
 

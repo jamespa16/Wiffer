@@ -609,12 +609,12 @@ extension JSDOMBindings {
         }
         var ref: HTMLNode? = nil
         if let b = nodeClass.unwrap(before) { ref = b }
-        else if before.isNumber { ref = HTMLSelectElement_item(n, Int(before.numberValue)) }
+        else if before.isNumber { ref = HTMLSelectElement_item(n, jsdomRound(before.numberValue)) }
         if let r = ref, let p = r.parent { _ = try Node_insertBefore(p, e, r) } else { _ = try Node_appendChild(n, e) }
     }
     func HTMLSelectElement_remove(_ n: HTMLNode, _ index: JSValue) {
         if index.isUndefined { n.remove(); return }
-        let i = index.isNumber ? Int(index.numberValue) : 0
+        let i = index.isNumber ? jsdomRound(index.numberValue) : 0
         HTMLSelectElement_item(n, i)?.remove()
     }
     func HTMLSelectElement_selectedIndex(_ n: HTMLNode) -> Int {
@@ -739,12 +739,12 @@ extension JSDOMBindings {
         return host.imageSize(resolveURL(s) ?? s)
     }
     func HTMLImageElement_width(_ n: HTMLNode) -> Int {
-        if let r = layoutRect(n) { return Int(r.w.rounded()) }
+        if let r = layoutRect(n) { return jsdomRound(r.w) }
         if let w = n.attribute("width").flatMap({ jsdomParseInteger($0) }), w >= 0 { return w }
         return imageSize(n)?.0 ?? 0
     }
     func HTMLImageElement_height(_ n: HTMLNode) -> Int {
-        if let r = layoutRect(n) { return Int(r.h.rounded()) }
+        if let r = layoutRect(n) { return jsdomRound(r.h) }
         if let h = n.attribute("height").flatMap({ jsdomParseInteger($0) }), h >= 0 { return h }
         return imageSize(n)?.1 ?? 0
     }

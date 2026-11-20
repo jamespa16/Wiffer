@@ -39,6 +39,7 @@ final class JSDOMLayoutPage {
         host.beginTask = { budget.deadline = hostMillis() + budgetMs }
         page = JSDOMPage(document: doc, url: "https://example.test/smoke.html", host: host)
         page.runtime.interruptHandler = { _ in hostMillis() > budget.deadline }
+        if jsdomEnv("WIFFER_JSDOM_GCSTRESS") != nil { page.realm.heap.gcEveryAllocation = true }
     }
 
     /// Run the event loop on a virtual clock until idle.

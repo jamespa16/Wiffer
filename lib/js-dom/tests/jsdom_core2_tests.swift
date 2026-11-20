@@ -132,6 +132,60 @@ func jsdomCore2Tests(_ t: Tests) {
     t.equal(c.run("try { document.querySelector('::bogus') } catch (e) { console.log(e.name) } try { document.querySelector('a:hover:has(b)') } catch (e) { console.log(e.name) } console.log(document.querySelectorAll(':scope li').length, document.getElementById('u').querySelectorAll(':scope > li').length)"),
             "SyntaxError\nSyntaxError\n3 3", "strict selectors and :scope")
 
+    t.section("browser entry points")
+    var focusLog: [String] = []
+    var links: [String] = []
+    let e = JSDOMTestPage("<body><a id=l href='/x'>x</a><input id=i value=a><div id=d onclick='console.log(\"div\", event.isTrusted, event.clientX)'>d</div></body>") { h in
+        h.focusChanged = { n in focusLog.append(n?.attribute("id") ?? "none") }
+        h.followHyperlink = { _, url, _ in links.append(url) }
+    }
+    _ = e.run("""
+    document.addEventListener('DOMContentLoaded', function () { console.log('dcl', document.readyState) });
+    window.addEventListener('load', function () { console.log('load', document.readyState) });
+    document.getElementById('i').addEventListener('input', function (ev) { console.log('input', this.value, ev.inputType) });
+    document.getElementById('l').addEventListener('click', function (ev) { if (window.blockLink) ev.preventDefault() });
+    """)
+    e.box.lines = []
+    e.page.finishParsing()
+    e.page.finishLoading()
+    t.equal(e.box.lines.joined(separator: ","), "dcl interactive,load complete", "DOMContentLoaded and load")
+    let doc = e.page.document
+    func byID(_ id: String) -> HTMLNode { doc.firstElement { $0.attribute("id") == id }! }
+    e.box.lines = []
+    var info = JSDOMInputInfo()
+    info.clientX = 12
+    t.check(!e.page.dispatchMouse("click", at: byID("d"), info), "trusted click not canceled")
+    t.equal(e.box.lines.joined(separator: ","), "div true 12", "trusted click reaches the onclick handler")
+    e.page.dispatchMouse("click", at: byID("l"))
+    _ = e.run("window.blockLink = true")
+    t.check(e.page.dispatch(event: "click", kind: .pointer, to: byID("l")), "canceled click reports defaultPrevented")
+    t.equal(links.joined(separator: ","), "https://example.test/x", "link default action only when not canceled")
+    e.page.setFocus(byID("i"))
+    e.box.lines = []
+    e.page.setUserValue(byID("i"), "typed")
+    t.equal(e.box.lines.joined(separator: ","), "input typed insertText", "user input sets the value and fires input")
+    t.equal(e.page.controlValue(of: byID("i")), "typed", "controlValue")
+    t.equal(e.run("console.log(document.activeElement.id)"), "i", "activeElement follows setFocus")
+    t.equal(focusLog.joined(separator: ","), "i", "focusChanged hook")
+
+    t.section("cost")
+    let t0 = hostMillis()
+    var k = 0
+    while k < 10 {
+        let d = htmlParse("<body><p>x")
+        let pg = JSDOMPage(document: d, url: "https://example.test/", host: JSDOMHost())
+        pg.tearDown()
+        k += 1
+    }
+    let perPage = (hostMillis() - t0) / 10
+    let probe = JSDOMPage(document: htmlParse("<body>"), url: "https://example.test/", host: JSDOMHost())
+    var costLine = "js-dom: page setup " + String(perPage) + " ms, "
+    costLine += String(probe.realm.natives.count) + " natives, "
+    costLine += String(probe.realm.heap.objectCount) + " objects"
+    print(costLine)
+    t.check(perPage < 1000, "page setup is cheap enough (" + String(perPage) + " ms)")
+    probe.tearDown()
+
     t.section("gc")
     let g = JSDOMTestPage("<body><div id=a></div>")
     g.page.realm.heap.gcEveryAllocation = true

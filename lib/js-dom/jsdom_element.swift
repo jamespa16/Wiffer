@@ -326,17 +326,17 @@ extension JSDOMBindings {
         guard n.isConnected, let e = host.layout() else { return nil }
         return e.metrics(of: n)
     }
-    func Element_scrollWidth(_ n: HTMLNode) -> Int { Int((metrics(n)?.scrollWidth ?? 0).rounded()) }
-    func Element_scrollHeight(_ n: HTMLNode) -> Int { Int((metrics(n)?.scrollHeight ?? 0).rounded()) }
-    func Element_clientTop(_ n: HTMLNode) -> Int { Int((metrics(n)?.clientTop ?? 0).rounded()) }
-    func Element_clientLeft(_ n: HTMLNode) -> Int { Int((metrics(n)?.clientLeft ?? 0).rounded()) }
+    func Element_scrollWidth(_ n: HTMLNode) -> Int { jsdomRound(metrics(n)?.scrollWidth ?? 0) }
+    func Element_scrollHeight(_ n: HTMLNode) -> Int { jsdomRound(metrics(n)?.scrollHeight ?? 0) }
+    func Element_clientTop(_ n: HTMLNode) -> Int { jsdomRound(metrics(n)?.clientTop ?? 0) }
+    func Element_clientLeft(_ n: HTMLNode) -> Int { jsdomRound(metrics(n)?.clientLeft ?? 0) }
     func Element_clientWidth(_ n: HTMLNode) -> Int {
         if n === document.documentElement { return host.viewport().0 }
-        return Int((metrics(n)?.clientWidth ?? 0).rounded())
+        return jsdomRound(metrics(n)?.clientWidth ?? 0)
     }
     func Element_clientHeight(_ n: HTMLNode) -> Int {
         if n === document.documentElement { return host.viewport().1 }
-        return Int((metrics(n)?.clientHeight ?? 0).rounded())
+        return jsdomRound(metrics(n)?.clientHeight ?? 0)
     }
 
     func HTMLElement_offsetParent(_ n: HTMLNode) -> HTMLNode? {
@@ -360,10 +360,10 @@ extension JSDOMBindings {
         let st = host.layout()?.computedStyle(of: p)
         return (r.x - pr.x - (st?.borderLeftWidth ?? 0), r.y - pr.y - (st?.borderTopWidth ?? 0))
     }
-    func HTMLElement_offsetTop(_ n: HTMLNode) -> Int { Int(offsetOrigin(n).1.rounded()) }
-    func HTMLElement_offsetLeft(_ n: HTMLNode) -> Int { Int(offsetOrigin(n).0.rounded()) }
-    func HTMLElement_offsetWidth(_ n: HTMLNode) -> Int { Int((layoutRect(n)?.w ?? 0).rounded()) }
-    func HTMLElement_offsetHeight(_ n: HTMLNode) -> Int { Int((layoutRect(n)?.h ?? 0).rounded()) }
+    func HTMLElement_offsetTop(_ n: HTMLNode) -> Int { jsdomRound(offsetOrigin(n).1) }
+    func HTMLElement_offsetLeft(_ n: HTMLNode) -> Int { jsdomRound(offsetOrigin(n).0) }
+    func HTMLElement_offsetWidth(_ n: HTMLNode) -> Int { jsdomRound(layoutRect(n)?.w ?? 0) }
+    func HTMLElement_offsetHeight(_ n: HTMLNode) -> Int { jsdomRound(layoutRect(n)?.h ?? 0) }
 
     // MARK: HTMLElement
 

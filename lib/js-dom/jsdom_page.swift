@@ -111,6 +111,11 @@ public struct JSDOMHost {
     public init() {}
 }
 
+/// Which event interface JSDOMPage.dispatch(event:kind:to:) creates.
+public enum JSDOMEventKind {
+    case event, mouse, pointer, wheel, keyboard, input, focus
+}
+
 /// Event fields for JSDOMPage's input entry points.
 public struct JSDOMInputInfo {
     public var clientX = 0.0, clientY = 0.0, screenX = 0.0, screenY = 0.0
@@ -294,6 +299,45 @@ public final class JSDOMPage {
         e.relatedTarget = info.relatedTarget.map { .node($0) }
         if iface == .PointerEvent { e.pointerType = "mouse"; e.isPrimary = true; e.pointerId = 1 }
         return dispatch(e, to: node)
+    }
+
+    /// The general form: an event of `kind` at `node` (nil: the window).
+    /// Returns true if the default action was prevented. Dispatch, then
+    /// do the default action unless this returns true.
+    @discardableResult
+    public func dispatch(event type: String, kind: JSDOMEventKind, to node: HTMLNode?, bubbles: Bool = true,
+                         cancelable: Bool = true, _ info: JSDOMInputInfo = JSDOMInputInfo()) -> Bool {
+        let iface: JSDOMInterface
+        switch kind {
+        case .event: iface = .Event
+        case .mouse: iface = .MouseEvent
+        case .pointer: iface = .PointerEvent
+        case .wheel: iface = .WheelEvent
+        case .keyboard: iface = .KeyboardEvent
+        case .input: iface = .InputEvent
+        case .focus: iface = .FocusEvent
+        }
+        let e = JSDOMEvent(iface, type: type, time: bindings.now())
+        e.bubbles = bubbles
+        e.cancelable = cancelable
+        e.composed = kind != .event
+        e.isTrusted = true
+        e.viewIsWindow = kind != .event
+        e.clientX = info.clientX; e.clientY = info.clientY; e.screenX = info.screenX; e.screenY = info.screenY
+        e.offsetX = info.offsetX; e.offsetY = info.offsetY
+        e.button = info.button; e.buttons = info.buttons; e.detail = info.detail
+        e.ctrlKey = info.ctrlKey; e.shiftKey = info.shiftKey; e.altKey = info.altKey; e.metaKey = info.metaKey
+        e.key = info.key; e.code = info.code; e.keyCode = info.keyCode; e.charCode = info.charCode; e.repeatKey = info.repeatKey
+        e.data = info.data; e.inputType = info.inputType
+        e.deltaX = info.deltaX; e.deltaY = info.deltaY
+        e.relatedTarget = info.relatedTarget.map { .node($0) }
+        if kind == .pointer { e.pointerType = "mouse"; e.isPrimary = true; e.pointerId = 1 }
+        guard let n = node else {
+            let canceled = (try? bindings.dispatch(e, to: .window)) ?? false
+            loop.performMicrotaskCheckpoint()
+            return canceled
+        }
+        return dispatch(e, to: n)
     }
 
     /// keydown / keyup / keypress at the focused element (or body).

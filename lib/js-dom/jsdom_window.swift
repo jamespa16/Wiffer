@@ -274,7 +274,7 @@ extension JSDOMBindings {
         var out = ""
         var buf = 0, bits = 0
         for v in vals {
-            buf = (buf << 6) | v
+            buf = ((buf << 6) | v) & 0xFFFFFF
             bits += 6
             if bits >= 8 {
                 bits -= 8

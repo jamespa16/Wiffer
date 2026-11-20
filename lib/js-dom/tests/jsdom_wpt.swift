@@ -73,7 +73,10 @@ func jsdomRunWPT(_ t: Tests, _ path: String) -> JSDOMWPTResult {
     host.reportError = { msg, _ in box.errors.append(msg) }
     let page = JSDOMPage(document: doc, url: "http://web-platform.test:8000/" + path, host: host)
     let start = hostMillis()
-    page.runtime.interruptHandler = { _ in hostMillis() - start > 20_000 }
+    let gcStress = jsdomEnv("WIFFER_JSDOM_GCSTRESS") != nil
+    if gcStress { page.realm.heap.gcEveryAllocation = true }
+    let limit = gcStress ? 600_000 : 20_000
+    page.runtime.interruptHandler = { _ in hostMillis() - start > limit }
     let realm = page.realm
     realm.defineMethod(realm.global, "__wpt_result", length: 3) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
         let st = Int(try realm.toNumber(args[0]))
@@ -131,7 +134,7 @@ func jsdomRunWPT(_ t: Tests, _ path: String) -> JSDOMWPTResult {
         if box.done { break }
         guard let d = page.loop.nextDeadline() else { break }
         if d > 0 { box.clock += d }
-        if box.clock > 600_000 || hostMillis() - start > 30_000 { break }
+        if box.clock > 600_000 || hostMillis() - start > limit + 10_000 { break }
     }
     if !box.done {
         box.result.harness = "INCOMPLETE"
@@ -155,13 +158,17 @@ func jsdomWPTTests(_ t: Tests) {
         if path.isEmpty { continue }
         if let o = only, !jsdomHasSubstring(path, o) { continue }
         host_guard_label("js-dom: wpt " + path)
+        let t1 = hostMillis()
         let r = jsdomRunWPT(t, path)
+        let elapsed = hostMillis() - t1
         files += 1
         pass += r.pass
         fail += r.fail
         if r.fail == 0 && r.harness == "OK" { clean += 1 }
         if verbose {
-            print("wpt " + path + ": " + String(r.pass) + "/" + String(r.pass + r.fail) + " " + r.harness)
+            var line = "wpt " + path + ": " + String(r.pass) + "/" + String(r.pass + r.fail)
+            line += " " + r.harness + " " + String(elapsed) + " ms"
+            print(line)
             for f in r.failures { print("    " + f) }
         }
     }

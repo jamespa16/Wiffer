@@ -844,3 +844,13 @@ func jsdomHasSubstring(_ s: String, _ sub: String) -> Bool {
     }
     return false
 }
+
+/// A Double from layout or script as an Int, never trapping (NaN -> 0,
+/// clamped to +-2^53).
+func jsdomRound(_ d: Double) -> Int {
+    if d.isNaN { return 0 }
+    let r = d.rounded()
+    if r >= 9_007_199_254_740_992 { return 9_007_199_254_740_992 }
+    if r <= -9_007_199_254_740_992 { return -9_007_199_254_740_992 }
+    return Int(r)
+}
