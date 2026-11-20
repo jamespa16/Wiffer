@@ -66,6 +66,10 @@ protocol CSSElement {
     var cssExportParts: [(String, String)] { get }
     /// `:defined` (the custom element state is uncustomized or custom).
     var cssIsDefined: Bool { get }
+    /// `:scope` (defaults to `cssIsRoot`; the DOM's querySelector overrides it).
+    var cssIsScope: Bool { get }
+    /// `:focus`.
+    var cssIsFocused: Bool { get }
 }
 
 extension CSSElement {
@@ -94,6 +98,8 @@ extension CSSElement {
     var cssPartNames: [String] { [] }
     var cssExportParts: [(String, String)] { [] }
     var cssIsDefined: Bool { true }
+    var cssIsScope: Bool { cssIsRoot }
+    var cssIsFocused: Bool { false }
 }
 
 /// Parse an `exportparts` value: "a, b: c" -> [(a, a), (b, c)]. Invalid
@@ -139,6 +145,9 @@ enum CSSPseudoClass: UInt8 {
     case firstChild, lastChild, onlyChild, firstOfType, lastOfType, onlyOfType
     case link, visited, hover, root, empty, checked, disabled, enabled
     case never, always, defined
+    /// `:scope` (the root in style sheets; the context element for
+    /// querySelector & co.) and `:focus`.
+    case scope, focus
 }
 
 enum CSSNthKind: UInt8 { case child, lastChild, ofType, lastOfType }
@@ -225,7 +234,12 @@ struct CSSSelectorParser {
     var i = 0
     let end: Int
 
-    init(_ tokens: [CSSToken]) { t = tokens; end = tokens.count }
+    /// Strict (the DOM's "parse a selector"): an unknown or unsupported
+    /// pseudo-class or pseudo-element is a syntax error, so scripts (and
+    /// libraries that fall back to their own engine) can tell.
+    var strict = false
+
+    init(_ tokens: [CSSToken], strict: Bool = false) { t = tokens; end = tokens.count; self.strict = strict }
 
     mutating func skipWS() {
         while i < end, case .whitespace = t[i] { i += 1 }
@@ -338,7 +352,9 @@ struct CSSSelectorParser {
                         switch l {
                         case "before": lastPseudo = .before
                         case "after": lastPseudo = .after
-                        default: lastPseudo = .other
+                        default:
+                            if strict && !cssKnownPseudoElement(l) { return nil }
+                            lastPseudo = .other
                         }
                         any = true
                         break loop
@@ -347,7 +363,9 @@ struct CSSSelectorParser {
                         if c.hostArgs != nil { return nil }
                         c.hostArgs = []
                     } else {
-                        c.pseudos.append(cssSimplePseudoClass(l))
+                        let pc = cssSimplePseudoClass(l)
+                        if strict && pc == .never && !cssKnownNeverPseudoClass(l) { return nil }
+                        c.pseudos.append(pc)
                     }
                     any = true
                     spec = cssAddSpecificity(spec, 1 << 10)
@@ -367,7 +385,7 @@ struct CSSSelectorParser {
                     any = true
                     switch cssLower(fname) {
                     case "slotted":
-                        var p = CSSSelectorParser(args)
+                        var p = CSSSelectorParser(args, strict: strict)
                         guard let list = p.parseList(depth + 1), list.count == 1, list[0].compounds.count == 1,
                               list[0].pseudoElement == .none, list[0].slotted == nil, list[0].parts == nil else { return nil }
                         pendingSlotted = (list[0].compounds[0], list[0].specificity)
@@ -384,6 +402,7 @@ struct CSSSelectorParser {
                         pendingParts = names
                     default:
                         // Other functional pseudo-elements: valid, never match.
+                        if strict { return nil }
                         lastPseudo = .other
                     }
                     break loop
@@ -398,13 +417,13 @@ struct CSSSelectorParser {
     mutating func parseFunctionalPseudo(_ name: String, _ args: [CSSToken], _ c: inout CSSCompound, _ depth: Int) -> UInt32? {
         switch name {
         case "host":
-            var p = CSSSelectorParser(args)
+            var p = CSSSelectorParser(args, strict: strict)
             guard c.hostArgs == nil, let list = p.parseList(depth + 1), list.count == 1, list[0].compounds.count == 1,
                   list[0].pseudoElement == .none, list[0].slotted == nil, list[0].parts == nil else { return nil }
             c.hostArgs = [list[0].compounds[0]]
             return cssAddSpecificity(1 << 10, list[0].specificity)
         case "not", "is", "where", "matches", "-webkit-any", "-moz-any", "any":
-            var p = CSSSelectorParser(args)
+            var p = CSSSelectorParser(args, strict: strict)
             guard let list = p.parseList(depth + 1) else { return nil }
             var maxSpec: UInt32 = 0
             for s in list where s.pseudoElement == .none && s.specificity > maxSpec { maxSpec = s.specificity }
@@ -422,7 +441,9 @@ struct CSSSelectorParser {
             c.nths.append(CSSNthSelector(kind: kind, a: a, b: b))
             return 1 << 10
         default:
-            // :lang(), :dir(), :has() and friends: never match (:has is too costly to support).
+            // :lang(), :dir(), :has() and friends: never match (:has is too
+            // costly to support). Strict parsing rejects them instead.
+            if strict { return nil }
             c.pseudos.append(.never)
             return 1 << 10
         }
@@ -436,6 +457,29 @@ func cssAddSpecificity(_ a: UInt32, _ b: UInt32) -> UInt32 {
     return ia << 20 | ib << 10 | ic
 }
 
+/// Pseudo-classes that are valid but never match here (strict parsing
+/// accepts them).
+func cssKnownNeverPseudoClass(_ n: String) -> Bool {
+    switch n {
+    case "active", "visited", "target", "target-within", "focus-visible", "focus-within", "local-link",
+         "current", "past", "future", "playing", "paused", "fullscreen", "modal", "popover-open",
+         "placeholder-shown", "autofill", "read-only", "read-write", "required", "optional", "valid",
+         "invalid", "user-valid", "user-invalid", "in-range", "out-of-range", "indeterminate", "default",
+         "blank", "open", "closed":
+        return true
+    default: return false
+    }
+}
+
+func cssKnownPseudoElement(_ n: String) -> Bool {
+    switch n {
+    case "before", "after", "first-line", "first-letter", "marker", "placeholder", "selection", "backdrop",
+         "file-selector-button", "cue", "grammar-error", "spelling-error", "target-text":
+        return true
+    default: return false
+    }
+}
+
 private func cssSimplePseudoClass(_ n: String) -> CSSPseudoClass {
     switch n {
     case "first-child": return .firstChild
@@ -447,7 +491,9 @@ private func cssSimplePseudoClass(_ n: String) -> CSSPseudoClass {
     case "link", "any-link": return .link
     case "visited": return .visited
     case "hover": return .hover
-    case "root", "scope": return .root
+    case "root": return .root
+    case "scope": return .scope
+    case "focus": return .focus
     case "empty": return .empty
     case "checked": return .checked
     case "disabled": return .disabled
@@ -576,6 +622,15 @@ func cssParseSelectorList(_ s: String) -> [CSSComplexSelector]? {
     cssParseSelectorList(cssTokenize(Array(s.utf8)))
 }
 
+/// The DOM's "parse a selector" (querySelector, matches, closest): strict,
+/// nil on any syntax error or unsupported pseudo-class.
+func cssParseSelectorListStrict(_ s: String) -> [CSSComplexSelector]? {
+    var p = CSSSelectorParser(cssTokenize(Array(s.utf8)), strict: true)
+    guard let l = p.parseList(0), !l.isEmpty else { return nil }
+    p.skipWS()
+    return p.i >= p.end ? l : nil
+}
+
 // MARK: - Matching
 
 @inline(__always) func cssNthMatches(_ a: Int, _ b: Int, _ idx: Int) -> Bool {
@@ -675,6 +730,8 @@ func cssMatchCompound<E: CSSElement>(_ c: CSSCompound, _ el: E, _ budget: inout 
         case .enabled: if el.cssIsDisabled { return false }
         case .always: break
         case .defined: if !el.cssIsDefined { return false }
+        case .scope: if !el.cssIsScope { return false }
+        case .focus: if !el.cssIsFocused { return false }
         case .visited, .never: return false
         }
     }

@@ -77,6 +77,11 @@ public struct JSHostExotic<T: AnyObject> {
     public var namedEnumerable = false
     /// Indexed assignment (nil: indexed properties are read-only).
     public var indexedSet: ((_ realm: JSRealm, _ this: T, _ index: Int, _ value: JSValue) throws(JSThrow) -> Bool)? = nil
+    /// Named assignment (DOMStringMap): true when handled (nil: named
+    /// properties are read-only and assignment makes an ordinary property).
+    public var namedSet: ((_ realm: JSRealm, _ this: T, _ name: String, _ value: JSValue) throws(JSThrow) -> Bool)? = nil
+    /// Named deletion (DOMStringMap): true when the name was handled.
+    public var namedDelete: ((_ realm: JSRealm, _ this: T, _ name: String) throws(JSThrow) -> Bool)? = nil
     public init() {}
 }
 
@@ -94,6 +99,10 @@ public final class JSHostClass<T: AnyObject> {
     var exotic: JSHostExotic<T>? = nil
     /// GC-root condition, evaluated at every collection.
     public var shouldRoot: ((_ object: T) -> Bool)? = nil
+    /// The prototype for a new wrapper of `object` (default: `prototype`).
+    /// One class can then serve a whole interface hierarchy (DOM nodes:
+    /// one identity cache, a prototype per interface).
+    public var prototypeFor: ((_ object: T) -> JSValue)? = nil
 
     /// A class whose prototype inherits `parent` (default Object.prototype).
     public init(realm: JSRealm, name: String, parent: JSValue? = nil, exotic: JSHostExotic<T>? = nil) {
@@ -197,7 +206,7 @@ public final class JSHostClass<T: AnyObject> {
         let id = ObjectIdentifier(obj)
         if let i = byIdentity[id] { return .object(handles[i]) }
         let heap = realm.heap
-        let o = heap.newObject(proto: prototype, kind: .host, flags: [.extensible, .hasFinalizer])
+        let o = heap.newObject(proto: prototypeFor?(obj) ?? prototype, kind: .host, flags: [.extensible, .hasFinalizer])
         if o.handle == 0 { return .undefined }
         var i: Int
         if let f = freeSlots.popLast() {
@@ -269,6 +278,12 @@ public final class JSHostClass<T: AnyObject> {
             return try g(realm, t, Int(k.index)) ?? .undefined
         }
         h.set = { [self] (realm: JSRealm, o: JSValue, k: JSPropertyKey, v: JSValue, receiver: JSValue) throws(JSThrow) -> Bool? in
+            if k.isString, let ns = e.namedSet, let t = self.unwrap(o), receiver == o,
+               realm.heap.getOwnProperty(o, k) == nil {
+                let n = realm.heap.swiftString(realm.heap.keyValue(k))
+                if try ns(realm, t, n, v) { return true }
+                return nil
+            }
             guard k.isIndex, let t = self.unwrap(o), let g = e.indexedGet else { return nil }
             if let s = e.indexedSet { return try s(realm, t, Int(k.index), v) }
             if try g(realm, t, Int(k.index)) != nil { return false }
@@ -284,7 +299,8 @@ public final class JSHostClass<T: AnyObject> {
             if k.isIndex, let g = e.indexedGet, try g(realm, t, Int(k.index)) != nil { return false }
             if k.isString, let g = e.namedGet, realm.heap.getOwnProperty(o, k) == nil {
                 let n = realm.heap.swiftString(realm.heap.keyValue(k))
-                if try g(realm, t, n) != nil { return false }
+                if let d = e.namedDelete { if try d(realm, t, n) { return true } }
+                else if try g(realm, t, n) != nil { return false }
             }
             return nil
         }
