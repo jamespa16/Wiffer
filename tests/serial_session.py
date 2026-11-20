@@ -691,6 +691,7 @@ def main():
     ap.add_argument("--screendump", metavar="PPM", help="with -c: dump the display at the end")
     ap.add_argument("--nodesktop", action="store_true", help="with -c: boot the full-screen shell")
     ap.add_argument("--web-only", action="store_true", help="run only the Phase 8I web checks (one QEMU)")
+    ap.add_argument("--js-only", action="store_true", help="run only the Phase 9F /bin/js checks (one QEMU)")
     ap.add_argument("--nodisk", action="store_true", default=bool(os.environ.get("WIFFER_NODISK")),
                     help="no scratch virtio disk on the main session")
     opts = ap.parse_args()
@@ -702,6 +703,14 @@ def main():
             return 1 if n else 0
         finally:
             w.close()
+    if opts.js_only:  # development: just the 9F session
+        j = Session(monitor=True)
+        try:
+            n = js_checks(j, opts.timeout)
+            print(f"{n} js check failure(s)")
+            return 1 if n else 0
+        finally:
+            j.close()
     print(f"harness: -smp {SMP}" + (", no disk" if opts.nodisk else f", {DISK_MIB} MiB scratch disk"))
     disk, disk_dir = (None, None) if opts.nodisk else scratch_disk()
 
@@ -724,6 +733,7 @@ def main():
     gui = None if opts.command else Session(monitor=True)  # Phase 6F, in the boot desktop
     web = None if opts.command else Session(monitor=True)  # Phase 8H, the browser, in the boot desktop
     web8i = None if opts.command else Session(monitor=True)  # Phase 8I, the browser against tests/web_server.py
+    jsx = None if opts.command else Session(monitor=True)  # Phase 9F, /bin/js, in the boot desktop
     # Phase Y: persistence (boot 1 of 2, in the desktop, on its own FAT32
     # image) and mkfs on a blank image. Not with --nodisk.
     persist = blank = None
@@ -928,6 +938,8 @@ def main():
             failures += browse_checks(web, opts.timeout)
         if web8i:
             failures += web_checks(web8i, opts.timeout)
+        if jsx:
+            failures += js_checks(jsx, opts.timeout)
         if blank:
             failures += mkfs_checks(blank, blank_img[0], opts.timeout)
         if persist:
@@ -985,6 +997,8 @@ def main():
             web.close()
         if web8i:
             web8i.close()
+        if jsx:
+            jsx.close()
 
 
 def fake_dns_server():
@@ -1507,6 +1521,122 @@ def preempt_desktop_checks(s: Session, timeout: float) -> int:
         s.command(f"kill {p}", timeout)
     got = s.command("ps", timeout)
     check(not any(re.search(rf"^\s*{p}\s+\d+\s+running", got, re.M) for p in pids), "spins killed", repr(got))
+    return failures
+
+
+def js_checks(s: Session, timeout: float) -> int:
+    """Phase 9F: /bin/js on the scripts in /js. A computation with a known
+    answer, a timer sequence, the REPL (line editing, multi-line input,
+    Ctrl-C), an infinite loop the time budget terminates and a heap bomb the
+    heap cap terminates; the desktop (pointer, shell) keeps answering while
+    a script spins."""
+    failures = 0
+    def check(ok, label, detail=""):
+        nonlocal failures
+        failures += not ok
+        print(f"{'PASS' if ok else 'FAIL'}: 9F js: {label}" + ("" if ok or not detail else f"\n  {detail}"))
+        return ok
+    boot = s.read_prompt(boot_timeout(timeout))
+    if not check(PROMPT_RE.search(boot) and b"desktop: on" in s.log, "boots into the desktop", repr(boot[-200:])):
+        return failures
+    got = s.command("js /js/fib.js", 60.0)
+    check("fib(20) = 6765\r\n" in got, "fib(20) = 6765", repr(got))
+    check('json = {"a":[1,2,{"b":"x"}],"c":null} true' in got, "JSON round trip", repr(got))
+    check("[ 1, 4, 9 ] { n: 1, s: 'two', nested: { deep: [ 1, 2 ] } }" in got, "console.log formats objects", repr(got))
+    check("answer is 42.5 years and 99% done [ 1 ]" in got, "console.log %s %d %i %% %o", repr(got))
+    got = s.command("js -e console.log(typeof setTimeout, [1,2,3].length, 'ok')", 30.0)
+    check("function 3 ok\r\n" in got, "js -e", repr(got))
+    got = s.command("js /js/timers.js", 30.0)
+    order = re.findall(r"^(sync|micro|t0-first|t0-second|t50|t200|tick\d|done)\r?$", got, re.M)
+    check(order == ["sync", "micro", "t0-first", "t0-second", "t50", "tick1", "t200", "tick2", "tick3", "done"]
+          and "never" not in got, "timer sequence runs in due order", repr(got))
+    got = s.command("js /js/mod.mjs", 30.0)
+    check("module dep 144\r\nawaited\r\n" in got and "Uncaught (in promise) Error: unhandled on purpose" in got,
+          "an ES module with an import, top-level await and an unhandled rejection", repr(got))
+    got = s.command("js -e Promise.resolve(5).then(v=>console.log('p'+v));console.log('s')", 30.0)
+    check("s\r\np5\r\n" in got, "promise jobs run after the script", repr(got))
+    got = s.command("js /js/nosuch.js", 30.0)
+    check("js: /js/nosuch.js: no such file" in got, "a missing file is reported", repr(got))
+    got = s.command("js -e throw new TypeError('bad')", 30.0)
+    check("Uncaught TypeError: bad" in got, "an uncaught exception is reported", repr(got))
+
+    # The REPL: raw terminal, line editing, multi-line input, Ctrl-C, Ctrl-D.
+    s.send("js")
+    got = s.read_until(b"\r> ", 30.0).decode(errors="replace")
+    check("Wiffer JavaScript" in got, "the REPL starts", repr(got))
+    s.send("6 * 7")
+    got = s.read_until(b"42\r\n", 30.0).decode(errors="replace")
+    check(got.endswith("42\r\n"), "REPL evaluates 6 * 7", repr(got))
+    s.send("function f(n) {")
+    s.read_until(b"... ", 10.0)
+    s.send("  return n + 1")
+    s.read_until(b"... ", 10.0)
+    s.send("}")
+    s.read_until(b"undefined\r\n", 10.0)
+    s.send("f(41)")
+    got = s.read_until(b"42\r\n", 30.0).decode(errors="replace")
+    check(got.endswith("42\r\n"), "REPL multi-line input (unexpected end of input continues)", repr(got))
+    s.send("var o = {a: [1, 'x'], f}; o")
+    got = s.read_until(b"}\r\n", 30.0).decode(errors="replace")
+    check("{ a: [ 1, 'x' ], f: [Function: f] }" in got, "REPL inspects results", repr(got))
+    s.send("let q = 1; q +")
+    s.read_until(b"... ", 10.0)
+    s.send("1")
+    got = s.read_until(b"2\r\n", 30.0).decode(errors="replace")
+    check(got.endswith("2\r\n"), "REPL continues an incomplete expression", repr(got))
+    s.send("nosuchvar")
+    got = s.read_until(b"not defined\r\n", 30.0).decode(errors="replace")
+    check("Uncaught ReferenceError: nosuchvar is not defined" in got, "REPL reports errors", repr(got))
+    s.send("setTimeout(() => console.log('late'), 300)")
+    s.read_until(b"1\r\n", 10.0)
+    got = s.read_until(b"late\r\n", 10.0).decode(errors="replace")
+    check("late\r\n" in got, "REPL timers fire while it waits for input", repr(got))
+    s.send("while (true) {}")
+    time.sleep(1.0)
+    s.p.stdin.write(b"\x03")
+    s.p.stdin.flush()
+    got = s.read_until(b"interrupted", 30.0).decode(errors="replace")
+    check("script terminated: interrupted" in got, "Ctrl-C terminates a running REPL script", repr(got))
+    s.send("q")
+    got = s.read_until(b"1\r\n", 30.0).decode(errors="replace")
+    check(got.endswith("1\r\n"), "the REPL survives, its globals intact", repr(got))
+    s.p.stdin.write(b"\x04")
+    s.p.stdin.flush()
+    got = s.read_prompt(timeout).decode(errors="replace")
+    check(PROMPT_RE.search(got.encode()) is not None, "Ctrl-D leaves the REPL for the shell", repr(got))
+    got = s.command("echo shell back", timeout)
+    check("shell back" in got, "the shell works after the REPL", repr(got))
+
+    # An infinite loop: the 5 s default budget terminates it; the desktop and
+    # the shell keep answering meanwhile.
+    t0 = time.time()
+    got = s.command("js /js/loop.js &", timeout)
+    check("[" in got, "loop.js starts in the background", repr(got))
+    time.sleep(0.5)
+    t1 = time.time()
+    got = s.command("echo alive", timeout)
+    check("alive" in got and time.time() - t1 < 3.0, "the shell answers while a script spins", repr(got))
+    s.warp(333, 222)
+    check(s.pointer() == (333, 222, 0), "the pointer still moves while a script spins", repr(s.pointer()))
+    wins, _ = s.windows()
+    check(bool(wins), "the window manager answers while a script spins", repr(wins))
+    got = s.read_until(b"time budget exceeded", 30.0).decode(errors="replace")
+    took = time.time() - t0
+    check("script terminated: time budget exceeded" in got and 4.0 <= took < 25.0,
+          f"the default budget terminates an infinite loop ({took:.1f} s)", repr(got))
+    s.read_prompt(timeout)
+    got = s.command("js --budget 1000 /js/loop.js", 30.0)
+    check("script terminated: time budget exceeded (1000 ms)" in got, "--budget sets the budget", repr(got))
+
+    # A heap bomb: the heap cap terminates it, memory comes back.
+    before = re.search(r"(\d+) used", s.command("mem"))
+    got = s.command("js /js/bomb.js", 120.0)
+    check("script terminated: heap limit exceeded (64 MiB)" in got, "the heap cap terminates a heap bomb", repr(got[-300:]))
+    after = re.search(r"(\d+) used", s.command("mem"))
+    check(before and after and int(after.group(1)) <= int(before.group(1)) + 64,
+          "the heap bomb's memory is returned", f"{before and before.group(0)} -> {after and after.group(0)}")
+    got = s.command("echo done", timeout)
+    check("done" in got, "the shell works after the bomb", repr(got))
     return failures
 
 

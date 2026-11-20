@@ -37,6 +37,8 @@ extension JSRealm {
         let h = heap
         let depth = h.rootDepth
         defer { h.popRoots(to: depth) }
+        // A host hook may return a fresh, unrooted value.
+        _ = h.root(p.value); _ = h.root(p.getter); _ = h.root(p.setter)
         let o = h.newObject(proto: objectPrototype)
         _ = h.root(o)
         let n = h.names
