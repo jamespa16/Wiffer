@@ -1,8 +1,8 @@
 // html5lib tree-construction fixtures (lib/html/fixtures/*.dat, MIT licensed,
 // see fixtures/LICENSE): parse #data, compare the tree dump with #document.
 // Fragment cases (#document-fragment) parse with the given context element
-// through htmlParseFragment. #script-on cases are skipped (the parser runs
-// with scripting off). Failures are written to
+// through htmlParseFragment. #script-on cases parse with the scripting flag
+// (`scripting: true`). Failures are written to
 // build/hosttest/html5lib-failures.txt; the run fails if the pass count
 // drops below the recorded floor.
 
@@ -86,13 +86,12 @@ func html5libTests(_ t: Tests) {
         var n = 0
         for c in html5libParseFile(bytes) {
             n += 1
-            if c.scriptOn { skip += 1; continue }
             var got: [UInt8]
             if c.fragment {
                 guard let ctx = html5libContext(c.context, ctxDoc) else { skip += 1; continue }
-                got = Array(htmlTreeDump(htmlParseFragment(c.data, context: ctx)).utf8)
+                got = Array(htmlTreeDump(htmlParseFragment(c.data, context: ctx, scripting: c.scriptOn)).utf8)
             } else {
-                got = Array(htmlTreeDump(htmlParse(c.data)).utf8)
+                got = Array(htmlTreeDump(htmlParse(c.data, scripting: c.scriptOn)).utf8)
             }
             var want = c.expected
             while got.last == 0x0a { got.removeLast() }
@@ -115,12 +114,12 @@ func html5libTests(_ t: Tests) {
     }
     _ = hostWriteFile("build/hosttest/html5lib-failures.txt", report)
     let rate = totalPass * 1000 / max(1, totalPass + totalFail)
-    print("html5lib tree construction: \(totalPass)/\(totalPass + totalFail) passed (\(rate / 10).\(rate % 10)%), \(totalSkip) skipped (scripting on)")
+    print("html5lib tree construction: \(totalPass)/\(totalPass + totalFail) passed (\(rate / 10).\(rate % 10)%), \(totalSkip) skipped")
     print("  fragment cases: \(fragPass)/\(fragPass + fragFail); template.dat: \(tplPass)/\(tplPass + tplFail)")
     t.check(totalPass >= html5libPassFloor, "html5lib pass count \(totalPass) >= floor \(html5libPassFloor)")
 }
 
-let html5libPassFloor = 1695
+let html5libPassFloor = 1703
 
 /// A fragment case's context: "td", "svg path", "math mi".
 func html5libContext(_ line: [UInt8], _ doc: HTMLNode) -> HTMLNode? {
