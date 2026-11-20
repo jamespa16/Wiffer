@@ -3749,7 +3749,7 @@ identical to DerivedCoreProperties.txt). Entry point:
   attributes, decorators and explicit resource management (`using`) are
   newer than ES2022 and not parsed.
 
-## Phase 9B: compiler, VM and GC (`lib/js`)
+## Phase 9B: compiler, VM and GC (`lib/js`) (done)
 
 - **Scope analysis:** var hoisting, function declarations, block scopes,
   closures (captured variables move to heap environments, the rest stay
@@ -3775,7 +3775,8 @@ identical to DerivedCoreProperties.txt). Entry point:
   host, the GC stress pass is clean, and the VM fuzz (random bytecode
   sequences from mutated sources) never traps.
 
-**Status: runtime data layer done (first half); compiler and VM to come.**
+**Status: done.** The runtime data layer (first half) is described first,
+then the compiler, VM and embedding API (second half).
 `./run.sh --hosttest js` (`jsCoreTests`, 372 checks). The API contract is
 documented at the top of each file:
 
@@ -3870,6 +3871,126 @@ documented at the top of each file:
   across an allocation without rooting) is the VM's responsibility, and
   `gcEveryAllocation` is the tool to find it.
 
+**As built (compiler, VM, embedding).** `./run.sh --hosttest js`
+(`jsVMTests` in `tests/jsvm_tests.swift`, 582 checks; the whole js suite
+2208 checks, 0 failures, about 6 s). Contracts are at the top of
+each file:
+
+- **`jsscope.swift`:** one iterative pass (an explicit task stack, so tree
+  height costs no Swift stack) builds the scope tree (script, eval,
+  function, block, catch, for-loop, switch, class, with, field-initializer
+  scopes), declares every binding (var hoisting, functions, let/const/class,
+  params, catch params, class and named-function-expression self names,
+  Annex B block functions, the `arguments` object, and pseudo bindings for
+  `this`, `new.target`, the home object and the active function, so arrows
+  resolve them lexically like variables), then resolves references.
+  Captured bindings go to heap environments, the rest to stack locals. A
+  function that contains `with` or direct `eval` (or encloses one) is
+  "all heap" with named environments; references that cross a `with`, a
+  sloppy direct eval or the top of eval code are dynamic (looked up by
+  name at run time). TDZ checks are emitted only where a reference may see
+  an uninitialized binding (textually before it, in a switch, from a
+  closure, or dynamic).
+- **`jsbytecode.swift`:** about 170 opcodes, byte-coded with little-endian
+  operands; per-function constant and key pools held by a GC'd code object
+  (its finalizer frees the Swift `JSCode`), line tables (pc to source
+  offset), handler tables (start, end, target, depth), `jsDisassemble`.
+  Frames are a region of one value stack: `[callee][this] locals |
+  operands`. Environments are heap objects: slot 0 parent, slot 1 scope
+  info (names to slots, for dynamic lookup), then the bindings.
+- **`jscompiler.swift`, `jscompiler_expr.swift`:** AST to bytecode. The
+  operand stack depth is tracked statically and checked at every label,
+  so a mismatch is an "internal compiler error" SyntaxError, never bad
+  code. Binary, member and call chains are walked iteratively along the
+  left spine; the rest recurses with a stack guard (the parser's budget).
+  break/continue/return route through `finally` blocks (a (value, kind)
+  pair and a `finallyDispatch` jump table) and close for-of iterators.
+  Implemented beyond ES5: let/const with TDZ and per-iteration loop
+  bindings, arrows, template literals (tagged, with cached template
+  objects), destructuring (declarations, assignment, params), default and
+  rest params, spread in arrays/calls/new, object spread and rest,
+  shorthand/computed properties, methods and accessors, `super`, classes
+  (extends, super calls and properties, static members, accessors,
+  instance and static fields, static blocks, `new.target`), for-of with
+  the iterator protocol, optional chaining, `??`, `**`, logical assignment.
+  Not yet (they compile to a runtime SyntaxError "not supported yet: X"
+  where they run): generators and async functions (when called), private
+  class members and computed field names (when the class is evaluated),
+  BigInt literals, `for await`, modules, `import()`; RegExp literals until
+  the RegExp agent sets `realm.regExpCreate`.
+- **`jsvm.swift`, `jsvm_ops.swift`:** the interpreter. JS-to-JS calls,
+  `new`, getters and setters found by property instructions, field
+  initializers and `Function.prototype.call/apply` all push a frame or
+  rewrite the stack: none recurse in Swift. Native-to-JS re-entry
+  (`realm.call`, ToPrimitive calling `valueOf`, ...) runs a nested loop,
+  capped at `maxNativeNesting` (64) and by a stack-address floor; JS call
+  depth is capped at `maxCallDepth` (10 000); both are RangeErrors.
+  Exceptions unwind frames through the handler tables; a termination skips
+  every handler. The interrupt budget counts down at backward jumps and
+  function entries (`interruptInterval`) and runs `heap.safePoint()`, the
+  heap-termination check and the embedder's `interruptHandler`. Abstract
+  operations: ToPrimitive (with @@toPrimitive), ToNumber, ToString,
+  ToPropertyKey, ToObject, `==`, `===`, relational comparison, `typeof`,
+  `instanceof` (@@hasInstance, bound functions), `in`, property get/set/
+  delete with prototype chains, accessors and attributes, array `length`
+  RangeErrors, name lookup through `with` (@@unscopables) and eval vars,
+  global var/let/const across scripts (one global lexical record per
+  realm), direct and indirect eval, for-in (snapshot, skips deleted keys),
+  fast array/string iteration when `Array.prototype[@@iterator]` /
+  `String.prototype[@@iterator]` are the intrinsics.
+  Suspension for 9E: a frame's whole state is its JSFrame, its stack
+  region and the env register.
+- **Embedding (`jsruntime.swift`, `jsrealm.swift`):** `JSRuntime(limits:)`
+  with `interruptHandler`, `makeRealm()`; `realm.evaluate(source:name:) ->
+  JSCompletion` (`.normal(v)`, `.exception(JSUncaughtException)` with
+  `message` and a V8-style `stack` string, `.terminated(reason)`);
+  `realm.call` / `construct` from Swift. **Native functions** are closures
+  `(JSRealm, JSArgs) throws(JSThrow) -> JSValue` in a per-realm table
+  (`registerNative`, `newNativeFunction`, `defineMethod`, `defineGetter`,
+  `defineConstructor`, `defineValue`, `defineGlobal`); errors via
+  `realm.throwTypeError(...)` etc. Built-in phases add a
+  `jsInstallXxx(realm)` line to `JSRealm.installBuiltins()` and intrinsic
+  slots to `JSIntrinsic`. Hooks: `regExpCreate`, `printHandler`,
+  `hostFinalizer`. `jsbuiltins_base.swift` installs the skeleton: the
+  prototypes, Object (a few statics), Function (call/apply/bind/toString,
+  `Function(...)`), Array (push, values/@@iterator), String/Number/Boolean
+  /Symbol basics, the Error types (message, cause, stack), globalThis,
+  eval, print.
+- **Results** (host, `-Osize`, Apple silicon): 270 script cases (each in a
+  fresh realm) cover operators, scopes, closures, control flow, finally
+  routing, exceptions, prototypes, accessors, destructuring, classes,
+  eval/with and limits; the same scripts pass again under
+  `gcEveryAllocation` (with a 300-node closure/class workload, 1000+ GCs),
+  about 280 ms. Stack traces, natives calling back into JS, nesting caps,
+  interrupt and heap-cap termination (uncatchable, `finally` skipped,
+  realm reusable afterwards), cross-script let/const, and 12 deep-nesting
+  shapes (2000-term `+` chains, 2000-link member and call chains, 300
+  nested parentheses, 150 nested functions, ...) on a 512 KiB thread. VM
+  fuzz: 20 000 mutants of the case scripts compiled and run under
+  `JSLimits.small` with a tiny interrupt budget never trap.
+
+  | Script | Time |
+  | --- | --- |
+  | fib(25) (250k calls) | 45 ms |
+  | 1M closure calls (in a function) | 150 ms |
+  | 1M property get/set loop (locals) | 185 ms |
+  | the same loop on global variables | 790 ms |
+  | 1M array index reads | 57 ms |
+  | 300k method calls + `new` | 275 ms |
+  | 100k `s += 'x'` | 1.4 s (quadratic: no ropes yet) |
+
+- **Known gaps:** arguments objects are unmapped (no aliasing of sloppy
+  parameters). Getters reached through method calls (`o.m()`), primitives,
+  `super`, `with` or globals, and every ToPrimitive, run as nested
+  (native-nesting) calls.
+  Global variable access is a property lookup each time (4x slower than a
+  local; inline caches are 9J). String `+=` in a loop is quadratic (ropes
+  are a stretch). Iterator close is not called when destructuring throws
+  half-way. `delete` of a super reference, compound assignment to
+  `super[x]`, spread arguments to direct eval, object rest after computed
+  keys are "not supported yet". Array, Object, String and Number
+  methods beyond the skeleton are 9C.
+
 ## Phase 9C: built-ins (`lib/js`)
 
 - **Core, ES5.1 level:** `Object` (keys, defineProperty, create, freeze,
@@ -3939,10 +4060,45 @@ documented at the top of each file:
     a SyntaxError. No first-character set or Boyer-Moore beyond a literal
     first unit. Regexp modifiers and duplicate named groups (post-ES2024)
     are not parsed.
+- **String, RegExp, Symbol and Date objects (done, `jsbuiltins_string.swift`,
+  `jsbuiltins_regexp.swift`, `jsbuiltins_symbol.swift`,
+  `jsbuiltins_date.swift`, `jsstringunicode.swift`).** Spec-level ES2023:
+  every String.prototype method (incl. Annex B), GetSubstitution with
+  `$<name>`, linear-time search (KMP past 8 units), full Unicode case
+  mapping (SpecialCasing, Final_Sigma) and NFC/NFD/NFKC/NFKD from
+  `jsstringtables.swift` (140 KB, generated by `tools/gen_js_string_tables.py`
+  from Python's Unicode 17 data; Hangul is algorithmic; language-sensitive
+  tr/az/lt mappings are not applied and `localeCompare` is NFC code-unit
+  order). RegExp: constructor/IsRegExp/copy, program cache, exec with
+  `groups` and `d` indices, flag getters, escaped `source`, `compile`,
+  Symbol.match/matchAll/replace/search/split (species split) and the RegExp
+  String Iterator; `realm.regExpCreate` is set, `.stepLimit` terminates with
+  `.regexSteps`, `.stackLimit` is a RangeError. Replace/match/split have
+  spec-equivalent fast paths for unmodified RegExps (no result array per
+  match). Symbol: `for`/`keyFor` (registry object is an intrinsic, so the GC
+  keeps symbols), `description`, `valueOf`, @@toPrimitive. Date: all
+  constructor forms, parse, UTC, local/UTC getters and setters, to*String,
+  toJSON, @@toPrimitive, getYear/setYear; time from `realm.nowMs` (0 when
+  unset) and zone from `realm.dateZone` (UTC). Hooks added to jsrealm.swift:
+  `nowMs`, `dateZone`, the `b2` state (regexp program table, freed by the GC
+  finalizer), 3 intrinsics. Not done: legacy `RegExp.$1`-style statics.
+  - **Tests:** `tests/jsbuiltins2_tests.swift` (about 95 scripts, each also
+    under `gcEveryAllocation`; surrogates, empty matches in unicode mode,
+    replace patterns and functions, split edge cases, Date setter overflow,
+    NaN dates, ReDoS termination, `nowMs`). The GC stress pass found and
+    fixed an unrooted-string bug.
+  - **test262** (full run, before the Object/Array/Math built-ins from the
+    parallel phases are merged; most remaining failures are `Math`, `Reflect`
+    or Array methods missing from the harness path): String 1065 pass / 148
+    fail, RegExp 981 / 126 (772 skipped: `regExpUtils.js` code point sweeps
+    are skipped as "slow", each takes seconds; the engine's property sets were
+    already checked exactly in 9C), Date 439 / 160, Symbol 39 / 38,
+    annexB String 56, RegExp 27, Date 17. Floors raised in
+    `test262-floor.txt`.
 - **Tests:** 9D's test262 subsets for these built-ins, with pass-count
   floors.
 
-## Phase 9D: test262 runner (`lib/js/tests`, `tests/test262.py`)
+## Phase 9D: test262 runner (`lib/js/tests`) (runner done; floors rise with 9C/9E)
 
 - **Vendoring:** a pinned test262 commit, with only the directories in
   scope copied into `lib/js/fixtures/test262/` (BSD license file
@@ -3964,6 +4120,152 @@ documented at the top of each file:
 - **Speed:** the subset must finish in the `--hosttest` budget. If the
   full in-scope set gets too slow, `--hosttest` runs a fixed sample and
   `./run.sh --test262` runs everything.
+
+**Results (runner done, floors set at the numbers below).**
+`lib/js/tests/jstest262_run.swift` (runner), `jstest262_skip.swift` (the
+one skip list: feature tags and `$262` needs), `test262-floor.txt`
+(floors), `tools/fetch_test262.sh` (now fetches all of test/built-ins and
+test/annexB/built-ins plus harness/ at the pinned commit 2e58f87; not
+vendored, in build/test262).
+
+- **Runs** test/built-ins, test/annexB/built-ins, test/language and
+  test/annexB/language, each test in a fresh realm (harness assert.js,
+  sta.js, `includes`, doneprintHandle.js for async), sloppy and strict
+  (the whole concatenation behind `"use strict";`) as the flags say,
+  negative tests by phase and error type. `$262` has `evalScript`,
+  `gc` and `global`; tests needing `createRealm`, `agent` or
+  `detachArrayBuffer` are skipped with that reason. A 4 s CPU budget per
+  test through `interruptHandler` makes a hang a failure (none seen).
+- **Async and modules:** async tests are "skip: async" (288 in the
+  sample) and module tests "skip: module". The hook is
+  `jsTest262DrainJobs` in jstest262_run.swift: when Promise and the
+  microtask queue land, set it to a closure that drains the realm's jobs
+  and it takes effect (the runner already collects `print` output and
+  checks `Test262:AsyncTestComplete`).
+- **Speed:** `--hosttest js` runs a fixed sample (every 16th test of each
+  directory in sorted order, 1/16 of 49 000 tests): about 1.6 s, plus a
+  0.4 s GC-stress rerun (`gcEveryAllocation`) of the 118 sampled tests that
+  pass, which must still pass. `./run.sh --test262` runs everything in
+  about 23 s (fetches test262 first).
+- **Reports:** `build/hosttest/test262-results.txt` (pass fail skip per
+  directory, skip reasons), `build/hosttest/test262-failures.txt`
+  (`path: [mode] message`). Env: `WIFFER_TEST262_FILTER=Array/prototype`
+  runs only matching paths (no floor check), `WIFFER_TEST262_STRIDE=n`
+  changes the sample.
+- **Floors:** `test262-floor.txt` has `<dir> <full> <sample>` lines (plus
+  `TOTAL`); the run fails if a directory's pass count is below its floor
+  (full column for `--test262`, sample column for `--hosttest`).
+  **To raise them** after a phase lands: delete the feature tags it
+  implements from `jstest262_skip.swift`, run `./run.sh --test262` and
+  `./run.sh --hosttest js`, copy each directory's pass count from
+  test262-results.txt into the matching column (the sample numbers come
+  from the second run's file), commit with the numbers in the message.
+  A new directory needs a new line.
+- **Table** (full run at master after 9B, before the 9C/9E built-ins; the
+  skips are Temporal, Atomics, async, BigInt, modules and the other tags in
+  the skip list):
+
+| Directory | Pass | Fail | Skip |
+| --- | ---: | ---: | ---: |
+| annexB/built-ins/Date | 0 | 24 | 0 |
+| annexB/built-ins/Function | 6 | 0 | 0 |
+| annexB/built-ins/RegExp | 0 | 35 | 27 |
+| annexB/built-ins/String | 2 | 103 | 6 |
+| annexB/built-ins/escape | 0 | 15 | 1 |
+| annexB/built-ins/unescape | 0 | 18 | 1 |
+| annexB/language/comments | 8 | 0 | 0 |
+| annexB/language/eval-code | 143 | 326 | 0 |
+| annexB/language/expressions | 5 | 4 | 17 |
+| annexB/language/function-code | 85 | 74 | 0 |
+| annexB/language/global-code | 51 | 102 | 0 |
+| annexB/language/literals | 0 | 8 | 0 |
+| annexB/language/statements | 13 | 0 | 9 |
+| built-ins/AggregateError | 0 | 24 | 1 |
+| built-ins/Array | 272 | 2616 | 195 |
+| built-ins/ArrayBuffer | 0 | 79 | 142 |
+| built-ins/ArrayIteratorPrototype | 13 | 13 | 1 |
+| built-ins/AsyncFromSyncIteratorPrototype | 0 | 1 | 37 |
+| built-ins/AsyncFunction | 5 | 12 | 1 |
+| built-ins/AsyncGeneratorFunction | 1 | 14 | 8 |
+| built-ins/AsyncGeneratorPrototype | 0 | 13 | 35 |
+| built-ins/AsyncIteratorPrototype | 0 | 4 | 9 |
+| built-ins/BigInt | 0 | 1 | 76 |
+| built-ins/Boolean | 38 | 12 | 1 |
+| built-ins/DataView | 0 | 315 | 245 |
+| built-ins/Date | 0 | 599 | 11 |
+| built-ins/Error | 29 | 49 | 15 |
+| built-ins/FinalizationRegistry | 0 | 46 | 1 |
+| built-ins/Function | 365 | 130 | 14 |
+| built-ins/GeneratorFunction | 1 | 20 | 2 |
+| built-ins/GeneratorPrototype | 6 | 55 | 0 |
+| built-ins/Infinity | 3 | 3 | 0 |
+| built-ins/Iterator | 2 | 147 | 535 |
+| built-ins/JSON | 0 | 138 | 28 |
+| built-ins/Map | 0 | 168 | 36 |
+| built-ins/MapIteratorPrototype | 0 | 11 | 0 |
+| built-ins/Math | 0 | 312 | 15 |
+| built-ins/NaN | 4 | 2 | 0 |
+| built-ins/NativeErrors | 38 | 50 | 6 |
+| built-ins/Number | 170 | 167 | 3 |
+| built-ins/Object | 930 | 2462 | 19 |
+| built-ins/Promise | 0 | 272 | 460 |
+| built-ins/Proxy | 0 | 273 | 38 |
+| built-ins/Reflect | 0 | 153 | 0 |
+| built-ins/RegExp | 192 | 1496 | 191 |
+| built-ins/RegExpStringIteratorPrototype | 0 | 17 | 0 |
+| built-ins/Set | 0 | 194 | 189 |
+| built-ins/SetIteratorPrototype | 0 | 11 | 0 |
+| built-ins/String | 162 | 1053 | 8 |
+| built-ins/StringIteratorPrototype | 4 | 3 | 0 |
+| built-ins/Symbol | 16 | 61 | 21 |
+| built-ins/ThrowTypeError | 0 | 13 | 1 |
+| built-ins/TypedArray | 0 | 708 | 745 |
+| built-ins/TypedArrayConstructors | 0 | 338 | 400 |
+| built-ins/WeakMap | 0 | 101 | 40 |
+| built-ins/WeakRef | 0 | 28 | 1 |
+| built-ins/WeakSet | 0 | 84 | 1 |
+| built-ins/decodeURI | 1 | 54 | 0 |
+| built-ins/decodeURIComponent | 1 | 55 | 0 |
+| built-ins/encodeURI | 1 | 30 | 0 |
+| built-ins/encodeURIComponent | 1 | 30 | 0 |
+| built-ins/eval | 7 | 3 | 0 |
+| built-ins/global | 18 | 11 | 0 |
+| built-ins/isFinite | 0 | 15 | 0 |
+| built-ins/isNaN | 0 | 15 | 0 |
+| built-ins/parseFloat | 1 | 53 | 0 |
+| built-ins/parseInt | 1 | 54 | 0 |
+| built-ins/undefined | 6 | 2 | 0 |
+| language/arguments-object | 73 | 130 | 60 |
+| language/asi | 102 | 0 | 0 |
+| language/block-scope | 145 | 0 | 0 |
+| language/comments | 47 | 4 | 1 |
+| language/computed-property-names | 31 | 17 | 0 |
+| language/destructuring | 17 | 1 | 1 |
+| language/directive-prologue | 62 | 0 | 0 |
+| language/eval-code | 229 | 65 | 53 |
+| language/expressions | 4750 | 3394 | 3012 |
+| language/function-code | 211 | 6 | 0 |
+| language/future-reserved-words | 55 | 0 | 0 |
+| language/global-code | 32 | 10 | 0 |
+| language/identifier-resolution | 12 | 2 | 0 |
+| language/identifiers | 208 | 60 | 0 |
+| language/keywords | 25 | 0 | 0 |
+| language/line-terminators | 41 | 0 | 0 |
+| language/literals | 349 | 45 | 142 |
+| language/punctuators | 11 | 0 | 0 |
+| language/reserved-words | 26 | 0 | 1 |
+| language/rest-parameters | 11 | 0 | 0 |
+| language/source-text | 0 | 1 | 0 |
+| language/statementList | 64 | 16 | 0 |
+| language/statements | 3876 | 2847 | 2676 |
+| language/types | 98 | 13 | 2 |
+| language/white-space | 42 | 25 | 0 |
+| **Total** | **13118** | **19935** | **15744** |
+
+- **Known gaps:** most failures are missing built-ins (Math, JSON, Map,
+  Proxy, typed arrays, Promise...), generators, private class members and
+  RegExp literals not wired in this snapshot. Only a sample is run under
+  `gcEveryAllocation`, not the whole set.
 
 ## Phase 9E: ES2015+ runtime (`lib/js`)
 

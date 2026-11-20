@@ -6,4 +6,7 @@ func libTests(_ t: Tests) {
     jsCoreTests(t)
     jsDateTests(t)
     jsRegExpTests(t)
+    jsVMTests(t)
+    jsBuiltins2Tests(t)
+    jsTest262RunTests(t)
 }
