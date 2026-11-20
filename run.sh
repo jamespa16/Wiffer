@@ -16,11 +16,20 @@
 #                      main session boots without its scratch disk too
 #   ./run.sh --hosttest [lib...]   build and run the lib/ host tests (no QEMU;
 #                      see hosttest/hosttest.sh); must be the first option
+#   ./run.sh --test262   the full test262 execution run for lib/js (fetches the
+#                      pinned test262 if needed; ~1 min; writes
+#                      build/hosttest/test262-results.txt and -failures.txt;
+#                      floors in lib/js/tests/test262-floor.txt); first option
 # Options may be given in any order.
 set -euo pipefail
 cd "$(dirname "$0")"
 
 if [[ "${1:-}" == "--hosttest" ]]; then shift; exec hosttest/hosttest.sh "$@"; fi
+if [[ "${1:-}" == "--test262" ]]; then
+  shift
+  lib/js/tools/fetch_test262.sh
+  WIFFER_TEST262=full WIFFER_HOSTTEST_MAX_SECS="${WIFFER_HOSTTEST_MAX_SECS:-1800}" exec hosttest/hosttest.sh js "$@"
+fi
 
 TEST=0 UEFI=0 NODESKTOP=0 NOGRAPHIC=0 NODISK=0 NONET=0 PCAP=0
 SMP="${WIFFER_SMP:-4}"
