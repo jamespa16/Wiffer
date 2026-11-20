@@ -201,7 +201,7 @@ let jsVMCases: [(String, String)] = [
     ("function* g() {} String(g())", "[object Generator]"),
     ("async function g() {} typeof g", "function"),
     ("/x/", "/x/"),
-    ("10n", "Uncaught SyntaxError: not supported yet: BigInt"),
+    ("10n", "10"),
     ("var o = {f() { return 1 }}; o?.f() + (o.g?.() === undefined) + (null?.x === undefined)", "3"),
     ("var o = null; o?.a.b.c", "undefined"),
     ("var tag = (s, ...v) => s.raw[0] + s[1] + v[0]; tag`a\\n${5}b`", "a\\nb5"),

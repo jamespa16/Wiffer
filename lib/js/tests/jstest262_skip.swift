@@ -19,7 +19,6 @@ let jsTest262RunSkipFeatures: [String] = [
     "iterator-helpers", "json-parse-with-source",
     "await-dictionary", "nonextensible-applies-to-private", "Symbol.dispose", "Symbol.asyncDispose",
     // Not implemented yet: delete the tag when the phase lands.
-    "BigInt",                       // placeholder cell only (9E stretch)
 ]
 
 /// Source substrings that need a `$262` feature the embedding API cannot

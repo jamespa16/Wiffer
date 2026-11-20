@@ -110,6 +110,10 @@ public final class JSHeap {
     var bigints: [JSBigIntCell] = []
     var stringLive: [UInt64] = [], symbolLive: [UInt64] = [], objectLive: [UInt64] = [], bigintLive: [UInt64] = []
     var stringMarks: [UInt64] = [], symbolMarks: [UInt64] = [], objectMarks: [UInt64] = [], bigintMarks: [UInt64] = []
+    /// Ring of BigInts that typed-array reads made recently (kept as roots so a
+    /// read result survives the next few allocations; see typedArrayElement).
+    var recentBigInts: [JSValue] = [JSValue](repeating: .undefined, count: 16)
+    var recentBigIntNext = 0
     var stringFree: [JSHandle] = [], symbolFree: [JSHandle] = [], objectFree: [JSHandle] = [], bigintFree: [JSHandle] = []
     var markStack: [JSHandle] = []
     /// ArrayBuffer data blocks (see jsbuiltins_typedarray.swift).
@@ -402,6 +406,7 @@ public final class JSHeap {
         // Sentinels and pinned values.
         markValue(.string(0)); markValue(.symbol(0)); markValue(.object(0)); markValue(.bigint(0))
         for v in pinned { markValue(v) }
+        for v in recentBigInts { markValue(v) }
         for v in persistent { markValue(v) }
         for v in rootStack { markValue(v) }
         for p in rootProviders { p.fn(self) }

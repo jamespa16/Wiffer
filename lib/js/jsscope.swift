@@ -567,9 +567,11 @@ final class JSScopeAnalysis {
             if let b = scopes[i].names[JSWord.arguments] {
                 let k = bindings[Int(b)].kind
                 if k == .var_ { bindings[Int(b)].isArgumentsVar = true }
+                if k == .var_ || k == .arguments { markMappedParams(i) }
                 continue
             }
             declare(JSWord.arguments, .arguments, in: id, end: 0)
+            markMappedParams(i)
         }
         // Named function expressions see their own name.
         for i in 0..<scopes.count where scopes[i].kind == .function {
@@ -578,6 +580,23 @@ final class JSScopeAnalysis {
                   fnode.flags & JSNodeFlags.declaration == 0 || fnode.flags & JSNodeFlags.expression != 0 else { continue }
             let name = ast[fnode.a].a
             if scopes[i].names[name] == nil { declare(name, .calleeName, in: Int32(i), end: 0) }
+        }
+    }
+
+    /// Mapped arguments objects (jsarguments.swift): a sloppy function with
+    /// only simple parameters and an `arguments` object keeps its parameters
+    /// in heap environment slots (as if captured) so the arguments object
+    /// can alias them for as long as it lives.
+    private func markMappedParams(_ i: Int) {
+        let sc = scopes[i]
+        guard !sc.strict, sc.node >= 0 else { return }
+        let node = ast[sc.node]
+        guard node.kind == .function else { return }
+        let params = ast.list(node.b, node.c)
+        if params.isEmpty { return }
+        for p in params where ast.kind(p) != .identifier { return }
+        for p in params {
+            if let b = sc.names[ast[p].a], bindings[Int(b)].kind == .param { bindings[Int(b)].captured = true }
         }
     }
 

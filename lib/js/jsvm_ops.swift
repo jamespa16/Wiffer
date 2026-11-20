@@ -318,7 +318,7 @@ extension JSRealm {
             guard let r = heap.concat(sa, sb) else { throw throwRangeError("Invalid string length") }
             return r
         }
-        return .number(try toNumber(pa) + toNumber(pb))
+        return try addNumeric(pa, pb)
     }
 
     func compareOp(_ op: JSOp, _ a: JSValue, _ b: JSValue) throws(JSThrow) -> Bool {
@@ -329,6 +329,18 @@ extension JSRealm {
         let pb = try toPrimitive(b, hint: .number)
         if pa.isString && pb.isString {
             let c = heap.compareStrings(pa, pb)
+            switch op {
+            case .lt: return c < 0
+            case .gt: return c > 0
+            case .le: return c <= 0
+            default: return c >= 0
+            }
+        }
+        if pa.isBigInt || pb.isBigInt {
+            // BigInt against anything: exact comparison (2 = unordered, always false).
+            _ = heap.root(pb)
+            let c = try bigintCompare(pa, pb)
+            if c == 2 { return false }
             switch op {
             case .lt: return c < 0
             case .gt: return c > 0
@@ -356,6 +368,9 @@ extension JSRealm {
             if x.isNullish || y.isNullish { return false }
             if x.isNumber && y.isString { return x.numberValue == heap.stringToNumber(y) }
             if x.isString && y.isNumber { return heap.stringToNumber(x) == y.numberValue }
+            if x.isBigInt && (y.isNumber || y.isString) || y.isBigInt && (x.isNumber || x.isString) {
+                return try bigintLooseEquals(x, y)
+            }
             if x.isBool { x = .number(x.boolValue ? 1 : 0); continue }
             if y.isBool { y = .number(y.boolValue ? 1 : 0); continue }
             if x.isObject && !y.isObject {

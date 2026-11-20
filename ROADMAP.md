@@ -4499,6 +4499,41 @@ each file:
   sample now takes ~2 min of the 240 s hosttest budget, almost all in two
   decodeURI tests (9C/9D should drop them from the stress sample).
 
+**9E tail (mapped arguments, BigInt, Intl; done).** Results: test262 full run 38 711 passed (was 37 299), sample 2 441; hosttest js 4 214 checks, 0 failures. Contracts at the top of
+each file:
+
+- **Mapped `arguments`** (`jsarguments.swift`): sloppy functions with only
+  simple parameters and an `arguments` object keep their parameters in heap
+  environment slots (`markMappedParams` in jsscope.swift); the compiler emits
+  `mapArg i slot` and the arguments object becomes exotic with a handler
+  (get/getOwnProperty read the env, defineOwnProperty and delete unmap, per
+  ES 10.4.4). Strict `callee` is now the %ThrowTypeError% accessor.
+  language/arguments-object 263/263; `15.2.3.6-4-292-1` and friends pass.
+- **BigInt** (`jsbigint.swift` limb arithmetic: Karatsuba multiply, Knuth D
+  division, two's complement bitwise, correctly rounded Double conversion;
+  `jsbigint_ops.swift` heap and operator glue; `jsbuiltins_bigint.swift`).
+  Literals (incl. `{1n: x}` keys), all operators with the TypeError on
+  mixing, mixed comparisons and `==`, `BigInt()`, `asIntN/asUintN`,
+  `toString(radix)`, Map/Set keys, BigInt64Array/BigUint64Array and DataView
+  get/setBigInt64/BigUint64. `JSLimits.maxBigIntBits` (default 2^18, small
+  2^14): `2n ** 10000000n` is a RangeError. Typed-array reads of BigInts
+  keep the last 16 results rooted (ring in JSHeap). Tested against 5006
+  Python-generated vectors (`tools/gen_bigint_vectors.py`) plus ~110 script
+  cases, also under gcEveryAllocation. test262 BigInt 76/76; BigInt removed
+  from the skip list.
+- **Intl** (`jsintl*.swift`, en-US only; stays in the test262 skip list):
+  NumberFormat (decimal/percent/currency/unit, compact/scientific, digit
+  options, signDisplay, formatToParts/Range), PluralRules, DateTimeFormat
+  (styles and components, hour12, UTC/offset zones and a table of common
+  IANA zones with US/EU/AU/NZ DST), RelativeTimeFormat, Collator
+  (NFD-based three-level compare, numeric, sensitivity), ListFormat, a stub
+  Locale, `supportedLocalesOf`, `resolvedOptions`. Number/BigInt/Date
+  `toLocale*String` and `localeCompare` go through them.
+- **Gaps:** `structuredClone` and getters-as-frames were not started;
+  BigInt keys in class bodies use the same path as object literals but are
+  lightly tested; Intl has no non-English data, no era/dayPeriod, and unknown
+  IANA zones are a RangeError; TypedArray `with` shrink-coercion cases fail.
+
 ## Phase 9F: embedding and a shell (`lib/js`, `user/js`)
 
 - **Host objects:** native classes with internal slots (a host handle

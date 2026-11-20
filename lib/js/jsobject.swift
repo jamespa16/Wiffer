@@ -830,8 +830,8 @@ extension JSHeap {
                 // sees an invalid index as done, a valid one as a writable
                 // data property (OrdinarySet below).
                 if cur == receiver {
-                    guard let d = toPrimitiveNumber(v) else { return .exotic(cur) }
-                    typedArraySetElement(i, x, d)
+                    if typedArrayNeedsRealm(cur, v) { return .exotic(cur) }
+                    typedArraySetElementValue(i, x, v)
                     return .done
                 }
                 if !typedArrayValidIndex(i, x) { return .done }
@@ -847,7 +847,7 @@ extension JSHeap {
             if steps > JSHeap.maxProtoChain { break }
         }
         guard receiver.isObject else { return .failed }
-        if kind(receiver) == .typedArray && typedArrayNumericIndex(k) != nil && toPrimitiveNumber(v) == nil {
+        if kind(receiver) == .typedArray && typedArrayNumericIndex(k) != nil && typedArrayNeedsRealm(receiver, v) {
             return .exotic(o)
         }
         if let existing = getOwnProperty(receiver, k) {
@@ -862,12 +862,14 @@ extension JSHeap {
     public func strictEquals(_ a: JSValue, _ b: JSValue) -> Bool {
         if a.isNumber && b.isNumber { return a.numberValue == b.numberValue }
         if a.isString && b.isString { return stringsEqual(a, b) }
+        if a.isBigInt && b.isBigInt { return bigintsEqual(a, b) }
         return a.bits == b.bits && !a.isDouble
     }
 
     public func sameValue(_ a: JSValue, _ b: JSValue) -> Bool {
         if a.isNumber && b.isNumber { return jsSameValueNumber(a.numberValue, b.numberValue) }
         if a.isString && b.isString { return stringsEqual(a, b) }
+        if a.isBigInt && b.isBigInt { return bigintsEqual(a, b) }
         return a.bits == b.bits
     }
 
@@ -932,6 +934,7 @@ extension JSHeap {
         if v.isUndefined { return .string(names.undefined.handle) }
         if v.isNull { return .string(names.null.handle) }
         if v.isBool { return .string((v.boolValue ? names.true_ : names.false_).handle) }
+        if v.isBigInt { return bigintToString(v) }
         return nil
     }
 }
