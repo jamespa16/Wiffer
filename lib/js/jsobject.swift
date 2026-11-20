@@ -74,7 +74,9 @@ public enum JSObjectKind: UInt8 {
     case free, dead, ordinary, array, function, boundFunction, nativeFunction, arguments, error,
          booleanWrapper, numberWrapper, stringWrapper, symbolWrapper, bigintWrapper, date, regexp,
          map, set, weakMap, weakSet, weakRef, promise, proxy, generator, asyncGenerator, iterator,
-         arrayBuffer, typedArray, dataView, environment, host, internalObject
+         arrayBuffer, typedArray, dataView, environment, host, internalObject,
+         // Phase 9E
+         mapIterator, setIterator, finalizationRegistry
 }
 
 public struct JSObjectFlags: OptionSet {

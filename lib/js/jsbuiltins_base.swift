@@ -93,16 +93,16 @@ func jsInstallBaseBuiltins(_ realm: JSRealm) {
     realm.defineMethod(op, "hasOwnProperty", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
         let k = try realm.toPropertyKey(args[0])
         let o = try realm.toObject(args.this)
-        return .bool(realm.heap.hasOwnProperty(o, k))
+        return .bool((try realm.objGetOwnProperty(o, k)) != nil)
     }
     realm.defineMethod(op, "isPrototypeOf", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
         guard args[0].isObject else { return .false }
         let o = try realm.toObject(args.this)
-        var p = realm.heap.getPrototypeOf(args[0])
+        var p = try realm.objGetPrototypeOf(args[0])
         var n = 0
         while p.isObject && n < JSHeap.maxProtoChain {
             if p == o { return .true }
-            p = realm.heap.getPrototypeOf(p)
+            p = try realm.objGetPrototypeOf(p)
             n += 1
         }
         return .false
@@ -110,7 +110,7 @@ func jsInstallBaseBuiltins(_ realm: JSRealm) {
     realm.defineMethod(op, "propertyIsEnumerable", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
         let k = try realm.toPropertyKey(args[0])
         let o = try realm.toObject(args.this)
-        return .bool(realm.heap.getOwnProperty(o, k)?.enumerable ?? false)
+        return .bool((try realm.objGetOwnProperty(o, k))?.enumerable ?? false)
     }
     let objectCtor = realm.defineConstructor("Object", length: 1, prototype: op) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
         if args.isConstruct && args.newTarget != args.callee {
@@ -123,13 +123,13 @@ func jsInstallBaseBuiltins(_ realm: JSRealm) {
     realm.setIntrinsic(.objectConstructor, objectCtor)
     realm.defineMethod(objectCtor, "getPrototypeOf", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
         let o = try realm.toObject(args[0])
-        return realm.heap.getPrototypeOf(o)
+        return try realm.objGetPrototypeOf(o)
     }
     realm.defineMethod(objectCtor, "setPrototypeOf", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
         let o = args[0], p = args[1]
         if o.isNullish { throw realm.throwTypeError("Object.setPrototypeOf called on null or undefined") }
         guard p.isObject || p.isNull else { throw realm.throwTypeError("Object prototype may only be an Object or null") }
-        if o.isObject && !realm.heap.setPrototypeOf(o, p) { throw realm.throwTypeError("Cyclic or non-extensible prototype") }
+        if o.isObject, !(try realm.objSetPrototypeOf(o, p)) { throw realm.throwTypeError("Cyclic or non-extensible prototype") }
         return o
     }
     realm.defineMethod(objectCtor, "create", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
@@ -141,8 +141,8 @@ func jsInstallBaseBuiltins(_ realm: JSRealm) {
             defer { realm.heap.popRoots(to: r.slot) }
             let props = try realm.toObject(args[1])
             _ = realm.heap.root(props)
-            for k in realm.heap.ownKeys(props) {
-                guard let pr = realm.heap.getOwnProperty(props, k), pr.enumerable else { continue }
+            for k in try realm.objOwnKeys(props) {
+                guard let pr = try realm.objGetOwnProperty(props, k), pr.enumerable else { continue }
                 let d = try realm.toPropertyDescriptor(try realm.getV(props, k))
                 if !realm.heap.defineOwnProperty(o, k, d) { throw realm.throwTypeError("Cannot define property " + realm.keyDisplay(k)) }
             }
@@ -154,7 +154,7 @@ func jsInstallBaseBuiltins(_ realm: JSRealm) {
         guard o.isObject else { throw realm.throwTypeError("Object.defineProperty called on non-object") }
         let k = try realm.toPropertyKey(args[1])
         let d = try realm.toPropertyDescriptor(args[2])
-        if !realm.heap.defineOwnProperty(o, k, d) { throw realm.throwTypeError("Cannot redefine property: " + realm.keyDisplay(k)) }
+        if !(try realm.objDefineOwnProperty(o, k, d)) { throw realm.throwTypeError("Cannot redefine property: " + realm.keyDisplay(k)) }
         return o
     }
     realm.defineMethod(objectCtor, "keys", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
@@ -163,8 +163,8 @@ func jsInstallBaseBuiltins(_ realm: JSRealm) {
         defer { realm.heap.popRoots(to: r.slot) }
         let a = realm.heap.newArray(proto: realm.arrayPrototype)
         _ = realm.heap.root(a)
-        for k in realm.heap.ownKeys(o) where !k.isSymbol {
-            guard let p = realm.heap.getOwnProperty(o, k), p.enumerable else { continue }
+        for k in try realm.objOwnKeys(o) where !k.isSymbol {
+            guard let p = try realm.objGetOwnProperty(o, k), p.enumerable else { continue }
             _ = realm.heap.createDataProperty(a, .index(realm.heap.arrayLength(a)), realm.heap.keyValue(k))
         }
         return a
@@ -265,7 +265,7 @@ func jsInstallBaseBuiltins(_ realm: JSRealm) {
     }
     realm.setIntrinsic(.arrayConstructor, arrayCtor)
     realm.defineMethod(arrayCtor, "isArray", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
-        .bool(realm.heap.kind(args[0]) == .array)
+        .bool(try realm.isArray(args[0]))
     }
     realm.defineMethod(ap, "push", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
         let h = realm.heap
