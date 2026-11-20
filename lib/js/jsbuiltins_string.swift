@@ -172,8 +172,7 @@ extension JSRealm {
 
     /// ToString, keeping the result rooted until the enclosing b2Rooted native returns.
     func b2Str(_ v: JSValue) throws(JSThrow) -> JSValue {
-        if v.isString { return v }
-        let s = try toStringValue(v)
+        let s = v.isString ? v : try toStringValue(v)
         _ = heap.root(s)
         return s
     }
