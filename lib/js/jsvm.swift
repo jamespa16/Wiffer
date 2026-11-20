@@ -286,7 +286,8 @@ extension JSRealm {
         try ensureStack(max(argc, np) + nl + code.maxStack + 16)
         var argsObj: JSValue = .undefined, rest: JSValue = .undefined
         if code.argumentsLocal >= 0 {
-            push(makeArguments(base: base, argc: argc, callee: f, strict: code.strict))
+            push(makeArguments(base: base, argc: argc, callee: f, strict: code.strict,
+                               mapped: code.mappedArguments ? min(argc, np) : 0))
         }
         if code.restLocal >= 0 {
             var vals: [JSValue] = []
@@ -305,19 +306,31 @@ extension JSRealm {
         env = heap.slot(f, 1)
     }
 
-    func makeArguments(base: Int, argc: Int, callee: JSValue, strict: Bool) -> JSValue {
+    func makeArguments(base: Int, argc: Int, callee: JSValue, strict: Bool, mapped: Int = 0) -> JSValue {
         var vals: [JSValue] = []
         vals.reserveCapacity(argc)
         for i in 0..<argc { vals.append(stack[base + i]) }
         let a = heap.newObject(proto: objectPrototype, kind: .arguments)
         let r = heap.root(a)
+        if mapped > 0 {
+            // Mapped arguments (jsarguments.swift): slot 0 = env, slot 1 + i = env slot of arg i or -1.
+            var ms: [JSValue] = [.undefined]
+            for _ in 0..<mapped { ms.append(.int32(-1)) }
+            heap.setSlots(a, ms)
+        }
         for (i, v) in vals.enumerated() { _ = heap.createDataProperty(a, .index(UInt32(i)), v) }
         _ = heap.defineOwnProperty(a, heap.names.length, .data(.number(argc), [.writable, .configurable]))
         let it = intrinsic(.arrayValues)
         if it.isObject {
             _ = heap.defineOwnProperty(a, .symbol(heap.symbolsWellKnown.iterator.handle), .data(it, [.writable, .configurable]))
         }
-        if !strict { _ = heap.defineOwnProperty(a, heap.names.callee, .data(callee, [.writable, .configurable])) }
+        if !strict {
+            _ = heap.defineOwnProperty(a, heap.names.callee, .data(callee, [.writable, .configurable]))
+        } else {
+            // Strict arguments: callee is a %ThrowTypeError% accessor, not configurable.
+            let tte = intrinsic(.throwTypeError)
+            _ = heap.defineOwnProperty(a, heap.names.callee, .accessor(get: tte, set: tte, []))
+        }
         heap.popRoots(to: r.slot)
         return a
     }
@@ -675,36 +688,43 @@ extension JSRealm {
                         if a.isInt32 && b.isInt32 {
                             let (r, o) = a.asInt32.subtractingReportingOverflow(b.asInt32)
                             stack[sp - 2] = o ? .double(Double(a.asInt32) - Double(b.asInt32)) : .int32(r)
+                        } else if a.isNumber && b.isNumber {
+                            stack[sp - 2] = .number(a.numberValue - b.numberValue)
                         } else {
-                            let x = try toNumber(a), y = try toNumber(b)
-                            stack[sp - 2] = .number(x - y)
+                            stack[sp - 2] = try numericOp(.sub, a, b)
                         }
                         sp -= 1; pc += 1
                     case .mul, .div, .mod, .exp:
                         let a = stack[sp - 2], b = stack[sp - 1]
-                        let x = a.isNumber ? a.numberValue : try toNumber(a)
-                        let y = b.isNumber ? b.numberValue : try toNumber(stack[sp - 1])
-                        let r: Double
-                        switch op {
-                        case .mul: r = x * y
-                        case .div: r = x / y
-                        case .mod: r = jsFmod(x, y)
-                        default: r = jsPowNumber(x, y)
+                        if a.isNumber && b.isNumber {
+                            let x = a.numberValue, y = b.numberValue
+                            let r: Double
+                            switch op {
+                            case .mul: r = x * y
+                            case .div: r = x / y
+                            case .mod: r = jsFmod(x, y)
+                            default: r = jsPowNumber(x, y)
+                            }
+                            stack[sp - 2] = .number(r)
+                        } else {
+                            stack[sp - 2] = try numericOp(op, a, b)
                         }
-                        stack[sp - 2] = .number(r)
                         sp -= 1; pc += 1
                     case .shl, .sar, .shr, .bitAnd, .bitOr, .bitXor:
                         let a = stack[sp - 2], b = stack[sp - 1]
-                        let x = a.isInt32 ? a.asInt32 : jsToInt32(try toNumber(a))
-                        let y = b.isInt32 ? b.asInt32 : jsToInt32(try toNumber(stack[sp - 1]))
                         let r: JSValue
-                        switch op {
-                        case .shl: r = .int32(x << (y & 31))
-                        case .sar: r = .int32(x >> (y & 31))
-                        case .shr: r = .number(Double(UInt32(bitPattern: x) >> UInt32(y & 31)))
-                        case .bitAnd: r = .int32(x & y)
-                        case .bitOr: r = .int32(x | y)
-                        default: r = .int32(x ^ y)
+                        if a.isInt32 && b.isInt32 {
+                            let x = a.asInt32, y = b.asInt32
+                            switch op {
+                            case .shl: r = .int32(x << (y & 31))
+                            case .sar: r = .int32(x >> (y & 31))
+                            case .shr: r = .number(Double(UInt32(bitPattern: x) >> UInt32(y & 31)))
+                            case .bitAnd: r = .int32(x & y)
+                            case .bitOr: r = .int32(x | y)
+                            default: r = .int32(x ^ y)
+                            }
+                        } else {
+                            r = try numericOp(op, a, b)
                         }
                         stack[sp - 2] = r
                         sp -= 1; pc += 1
@@ -744,17 +764,22 @@ extension JSRealm {
                     case .neg:
                         let a = stack[sp - 1]
                         if a.isInt32 && a.asInt32 != 0 && a.asInt32 != Int32.min { stack[sp - 1] = .int32(-a.asInt32) }
-                        else { stack[sp - 1] = .number(-(try toNumber(a))) }
+                        else if a.isNumber { stack[sp - 1] = .number(-a.numberValue) }
+                        else { stack[sp - 1] = try numericUnary(.neg, a) }
                         pc += 1
-                    case .plus, .toNumeric:
+                    case .plus:
                         let a = stack[sp - 1]
                         if !a.isNumber { stack[sp - 1] = .number(try toNumber(a)) }
+                        pc += 1
+                    case .toNumeric:
+                        let a = stack[sp - 1]
+                        if !a.isNumber { stack[sp - 1] = try toNumeric(a) }
                         pc += 1
                     case .not:
                         stack[sp - 1] = .bool(!heap.toBoolean(stack[sp - 1])); pc += 1
                     case .bitNot:
                         let a = stack[sp - 1]
-                        stack[sp - 1] = .int32(~(a.isInt32 ? a.asInt32 : jsToInt32(try toNumber(a)))); pc += 1
+                        stack[sp - 1] = a.isInt32 ? .int32(~a.asInt32) : try numericUnary(.bitNot, a); pc += 1
                     case .typeOf:
                         stack[sp - 1] = heap.typeOf(stack[sp - 1]); pc += 1
                     case .inc, .dec:
@@ -762,9 +787,11 @@ extension JSRealm {
                         if a.isInt32 {
                             let (r, o) = op == .inc ? a.asInt32.addingReportingOverflow(1) : a.asInt32.subtractingReportingOverflow(1)
                             stack[sp - 1] = o ? .double(Double(a.asInt32) + (op == .inc ? 1 : -1)) : .int32(r)
-                        } else {
-                            let x = try toNumber(a)
+                        } else if a.isNumber {
+                            let x = a.numberValue
                             stack[sp - 1] = .number(op == .inc ? x + 1 : x - 1)
+                        } else {
+                            stack[sp - 1] = try numericUnary(op, a)
                         }
                         pc += 1
                     case .toStringOp:
@@ -1263,6 +1290,9 @@ extension JSRealm {
                         stack[sp - 1] = try dynamicImport(stack[sp - 1], referrer: code.source?.name ?? "")
                     case .importMeta:
                         throw throwSyntaxError("import.meta outside a module")
+                    case .mapArg:
+                        mapArgument(stack[sp - 1], index: jsReadU32(bc, pc + 1), envSlot: jsReadU32(bc, pc + 5))
+                        pc += 9
                     }
                 }
             } catch {

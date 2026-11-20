@@ -124,10 +124,10 @@ public enum JSIntrinsic: Int {
     case typedArrayPrototype, typedArrayConstructor, typedArrayValues
     case int8ArrayPrototype, uint8ArrayPrototype, uint8ClampedArrayPrototype, int16ArrayPrototype
     case uint16ArrayPrototype, int32ArrayPrototype, uint32ArrayPrototype, float32ArrayPrototype
-    case float64ArrayPrototype, float16ArrayPrototype
+    case float64ArrayPrototype, float16ArrayPrototype, bigInt64ArrayPrototype, bigUint64ArrayPrototype
     case int8ArrayConstructor, uint8ArrayConstructor, uint8ClampedArrayConstructor, int16ArrayConstructor
     case uint16ArrayConstructor, int32ArrayConstructor, uint32ArrayConstructor, float32ArrayConstructor
-    case float64ArrayConstructor, float16ArrayConstructor
+    case float64ArrayConstructor, float16ArrayConstructor, bigInt64ArrayConstructor, bigUint64ArrayConstructor
     case count
 }
 
@@ -260,6 +260,8 @@ public final class JSRealm {
         jsInstallPromise(self)
         jsInstallGenerators(self)
         jsInstallModules(self)
+        jsInstallBigInt(self)
+        jsInstallIntl(self)
     }
 
     func markRoots(_ h: JSHeap) {

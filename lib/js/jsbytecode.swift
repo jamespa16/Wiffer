@@ -99,6 +99,10 @@ enum JSOp: UInt8 {
     case dup3, objectRestDynamic, directEvalArray, getterThisSwap
     // Phase 9E: modules (jsmodule.swift).
     case importMeta, dynamicImport, getModuleBinding
+    // Phase 9E: mapped arguments (jsarguments.swift): mapArg paramIndex envSlot
+    // peeks the arguments object and aliases that parameter to a slot of the
+    // current (function) environment.
+    case mapArg
 }
 
 /// Operand layouts.
@@ -129,7 +133,7 @@ enum JSOpFormat {
          .defineField, .closure, .templateObject, .objectRest, .newArray, .getModuleBinding:
         return .u32
     case .pushInt: return .i32
-    case .getLocalChecked, .putLocalChecked: return .u32u32
+    case .getLocalChecked, .putLocalChecked, .mapArg: return .u32u32
     case .getEnv, .putEnv, .setEnv: return .env
     case .getEnvChecked, .putEnvChecked: return .envKey
     case .declareLex, .defineMethod, .newClass, .newPrivateName: return .keyU8
@@ -233,6 +237,8 @@ final class JSCode {
     var maxStack = 0
     /// Local receiving the arguments object, or -1.
     var argumentsLocal = -1
+    /// The arguments object aliases the parameters (sloppy, simple parameter list).
+    var mappedArguments = false
     /// Local receiving the rest-parameter array, or -1.
     var restLocal = -1
     /// Function `length`.
@@ -506,6 +512,7 @@ func jsOpName(_ op: JSOp) -> String {
     case .directEvalArray: return "directEvalArray"
     case .getterThisSwap: return "getterThisSwap"
     case .importMeta: return "importMeta"
+    case .mapArg: return "mapArg"
     case .dynamicImport: return "dynamicImport"
     case .getModuleBinding: return "getModuleBinding"
     }
@@ -570,7 +577,7 @@ func jsDisassemble(_ code: JSCode, heap: JSHeap, codes: (JSValue) -> JSCode?, de
             }
         case .jump: line += " -> \(pc + len + jsReadI32(p, pc + 1))"
         case .jump2: line += " -> \(pc + len + jsReadI32(p, pc + 1)), \(pc + len + jsReadI32(p, pc + 5))"
-        case .u32u32: line += " \(jsReadU32(p, pc + 1)) " + key(jsReadU32(p, pc + 5))
+        case .u32u32: line += " \(jsReadU32(p, pc + 1)) " + (op == .mapArg ? String(jsReadU32(p, pc + 5)) : key(jsReadU32(p, pc + 5)))
         case .u32u32Const: line += " " + const_(jsReadU32(p, pc + 1)) + " " + const_(jsReadU32(p, pc + 5))
         case .env: line += " \(jsReadU16(p, pc + 1)):\(jsReadU32(p, pc + 3))"
         case .envKey: line += " \(jsReadU16(p, pc + 1)):\(jsReadU32(p, pc + 3)) " + key(jsReadU32(p, pc + 7))

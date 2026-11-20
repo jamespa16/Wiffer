@@ -13,5 +13,6 @@ func libTests(_ t: Tests) {
     jsEmbedTests(t)
     jsHostTests(t)
     jsBuiltins3Tests(t)
+    jsBuiltins4Tests(t)
     jsTest262RunTests(t)
 }
