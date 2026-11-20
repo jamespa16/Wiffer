@@ -734,6 +734,23 @@ final class JSCompiler {
             try emitU32(.getLocal, i, 1)
             try emitPutBinding(b, initialize: true)
         }
+        // Mapped arguments (sloppy, simple parameters): alias each parameter's
+        // environment slot from the arguments object (jsarguments.swift).
+        if argsBinding >= 0 && !code.strict && np > 0 && !hasRest && code.argumentsLocal >= 0
+            && params.allSatisfy({ ast.kind($0) == .identifier }) {
+            var pairs: [(Int, Int)] = []
+            for (b, i) in simple where sa.bindings[Int(b)].inEnv { pairs.append((i, Int(sa.bindings[Int(b)].slot))) }
+            if !pairs.isEmpty {
+                code.mappedArguments = true
+                pairs.sort { $0.0 < $1.0 }
+                try emitU32(.getLocal, code.argumentsLocal, 1)
+                for (i, slot) in pairs {
+                    try emit(.mapArg, 0)
+                    put32(i); put32(slot)
+                }
+                try emit(.pop, -1)
+            }
+        }
         // Patterns, defaults and the rest parameter.
         fs.inParams = fkind != .arrow
         defer { fs.inParams = false }

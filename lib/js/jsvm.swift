@@ -286,7 +286,8 @@ extension JSRealm {
         try ensureStack(max(argc, np) + nl + code.maxStack + 16)
         var argsObj: JSValue = .undefined, rest: JSValue = .undefined
         if code.argumentsLocal >= 0 {
-            push(makeArguments(base: base, argc: argc, callee: f, strict: code.strict))
+            push(makeArguments(base: base, argc: argc, callee: f, strict: code.strict,
+                               mapped: code.mappedArguments ? min(argc, np) : 0))
         }
         if code.restLocal >= 0 {
             var vals: [JSValue] = []
@@ -305,19 +306,31 @@ extension JSRealm {
         env = heap.slot(f, 1)
     }
 
-    func makeArguments(base: Int, argc: Int, callee: JSValue, strict: Bool) -> JSValue {
+    func makeArguments(base: Int, argc: Int, callee: JSValue, strict: Bool, mapped: Int = 0) -> JSValue {
         var vals: [JSValue] = []
         vals.reserveCapacity(argc)
         for i in 0..<argc { vals.append(stack[base + i]) }
         let a = heap.newObject(proto: objectPrototype, kind: .arguments)
         let r = heap.root(a)
+        if mapped > 0 {
+            // Mapped arguments (jsarguments.swift): slot 0 = env, slot 1 + i = env slot of arg i or -1.
+            var ms: [JSValue] = [.undefined]
+            for _ in 0..<mapped { ms.append(.int32(-1)) }
+            heap.setSlots(a, ms)
+        }
         for (i, v) in vals.enumerated() { _ = heap.createDataProperty(a, .index(UInt32(i)), v) }
         _ = heap.defineOwnProperty(a, heap.names.length, .data(.number(argc), [.writable, .configurable]))
         let it = intrinsic(.arrayValues)
         if it.isObject {
             _ = heap.defineOwnProperty(a, .symbol(heap.symbolsWellKnown.iterator.handle), .data(it, [.writable, .configurable]))
         }
-        if !strict { _ = heap.defineOwnProperty(a, heap.names.callee, .data(callee, [.writable, .configurable])) }
+        if !strict {
+            _ = heap.defineOwnProperty(a, heap.names.callee, .data(callee, [.writable, .configurable]))
+        } else {
+            // Strict arguments: callee is a %ThrowTypeError% accessor, not configurable.
+            let tte = intrinsic(.throwTypeError)
+            _ = heap.defineOwnProperty(a, heap.names.callee, .accessor(get: tte, set: tte, []))
+        }
         heap.popRoots(to: r.slot)
         return a
     }
@@ -1263,6 +1276,9 @@ extension JSRealm {
                         stack[sp - 1] = try dynamicImport(stack[sp - 1], referrer: code.source?.name ?? "")
                     case .importMeta:
                         throw throwSyntaxError("import.meta outside a module")
+                    case .mapArg:
+                        mapArgument(stack[sp - 1], index: jsReadU32(bc, pc + 1), envSlot: jsReadU32(bc, pc + 5))
+                        pc += 9
                     }
                 }
             } catch {

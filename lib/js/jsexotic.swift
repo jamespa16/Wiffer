@@ -95,6 +95,8 @@ public struct JSExoticHandler {
 public final class JSRealmTables {
     var exoticHandlers: [JSExoticHandler] = []
     var exoticDepth = 0
+    /// Handler id of mapped arguments objects (jsarguments.swift), -1 until used.
+    var argumentsHandler = -1
     /// Proxy trap names (pinned atoms), in JSProxyTrap order.
     var trapKeys: [JSPropertyKey] = []
     // Map / Set hash indexes (jsbuiltins_collections.swift).
