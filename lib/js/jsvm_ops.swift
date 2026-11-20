@@ -502,7 +502,7 @@ extension JSRealm {
     // MARK: Globals
 
     func getGlobal(_ k: JSPropertyKey, orUndefined: Bool) throws(JSThrow) -> JSValue {
-        if let p = heap.getOwnProperty(globalLex, k) {
+        if globalLexCount > 0, let p = heap.getOwnProperty(globalLex, k) {
             if p.value.isHole { throw tdz(k) }
             return p.value
         }
@@ -516,7 +516,7 @@ extension JSRealm {
     }
 
     func putGlobal(_ k: JSPropertyKey, _ v: JSValue, strict: Bool) throws(JSThrow) {
-        if let p = heap.getOwnProperty(globalLex, k) {
+        if globalLexCount > 0, let p = heap.getOwnProperty(globalLex, k) {
             if p.value.isHole { throw tdz(k) }
             if !p.writable { throw throwTypeError("Assignment to constant variable.") }
             _ = heap.setProperty(globalLex, k, v, receiver: globalLex)
@@ -582,6 +582,7 @@ extension JSRealm {
         if heap.hasOwnProperty(globalLex, k) { throw alreadyDeclared(k) }
         if let p = heap.getOwnProperty(global, k), !p.configurable { throw alreadyDeclared(k) }
         _ = heap.defineOwnProperty(globalLex, k, .data(.hole, isConst ? [.writable, .enumerable] : [.writable]))
+        globalLexCount += 1
     }
 
     func initLex(_ k: JSPropertyKey, _ v: JSValue) {

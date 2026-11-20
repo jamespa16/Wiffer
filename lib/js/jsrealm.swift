@@ -179,6 +179,7 @@ public final class JSRealm {
     var intrinsics: [JSValue]
     public private(set) var global: JSValue = .undefined
     var globalLex: JSValue = .undefined
+    var globalLexCount = 0
     var natives: [JSNativeEntry] = []
     var codes: [JSCode?] = []
     var freeCodes: [Int] = []
@@ -383,7 +384,7 @@ public final class JSRealm {
     /// Update a constant (template objects are made on first use).
     func setConstant(_ code: JSCode, _ i: Int, _ v: JSValue) {
         guard i >= 0 && i < code.constants.count else { return }
-        code.constants[i] = v
+        code.setConstant(i, v)
         heap.setSlot(code.codeObject, i, v)
     }
 

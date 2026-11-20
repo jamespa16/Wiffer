@@ -233,6 +233,53 @@ let jsVMCases: [(String, String)] = [
     ("Array(3).length + Array(1, 2).length", "5"),
     ("var a = [1]; a.push(2, 3); a.length + a[2]", "6"),
     ("Array.isArray([]) && !Array.isArray({})", "true"),
+    // More control flow through finally and iterators.
+    ("function f() { for (const x of [1, 2, 3]) { try { if (x == 2) return x * 10 } finally { s += x } } } var s = ''; f() + s", "2012"),
+    ("var s = ''; a: for (const x of [1, 2]) { for (const y of [3, 4]) { s += x + '' + y; continue a } } s", "1323"),
+    ("function f() { try { throw 1 } catch (e) { return 'c' } finally { s = 'f' } } var s; f() + s", "cf"),
+    ("var s = ''; try { for (var i = 0; i < 3; i++) { try { throw i } catch (e) { s += e; if (e == 1) break } } } finally { s += 'F' } s", "01F"),
+    ("var r = ''; for (let i = 0; i < 3; i++) { switch (i) { case 1: continue; default: r += i } } r", "02"),
+    ("function d(n) { return n ? d.call(null, n - 1) + 1 : 0 } d(5000)", "5000"),
+    ("function d(n) { return n ? d.apply(null, [n - 1]) + 1 : 0 } d(3000)", "3000"),
+    ("var o = { get g() { throw new Error('getter') } }; try { o.g } catch (e) { e.message }", "getter"),
+    ("var log = ''; var o = { set s(v) { log += v } }; o.s = 1; (o.s = 2) + log", "212"),
+    ("var o = {b: 1, a: 2, 1: 'x', 0: 'y'}; var s = ''; for (var k in o) s += k; s", "01ba"),
+    ("class A { static who() { return 'A' } } class B extends A { static who() { return super.who() + 'B' } } B.who()", "AB"),
+    ("class A { get v() { return 1 } } class B extends A { get v() { return super.v + 1 } } new B().v", "2"),
+    ("class A { constructor() { return {custom: 1} } } new A().custom", "1"),
+    ("class A {} class B extends A { constructor() { return {o: 2} } } new B().o", "2"),
+    ("class B extends null {} typeof B", "function"),
+    ("class B extends 5 {}", "Uncaught TypeError: Class extends value 5 is not a constructor or null"),
+    ("function F() { this.t = new.target === F; return 1 } new F().t + ',' + F()", "true,1"),
+    ("var x = 'g'; (function () { var x = 'l'; return [1].map ? 0 : typeof x })()", "string"),
+    ("var a = [3, 4]; var [p, q] = a; var {0: z} = a; p + q + z", "10"),
+    ("var o = {a: {b: {c: 5}}}; var {a: {b: {c}}} = o; c", "5"),
+    ("function f([a, b] = [1, 2], {c} = {c: 3}) { return a + b + c } f()", "6"),
+    ("var it = 0; var obj = { [Symbol.iterator]() { return { next() { it++; return {done: it > 2, value: it} } } } }; var [a, b, c] = obj; a + ',' + b + ',' + c", "1,2,undefined"),
+    ("var x = 10; { let x = 1; { let x = 2; } x }", "1"),
+    ("let f = () => { let v = 1; return () => v++ }; var g = f(); g(); g()", "2"),
+    ("var o = {n: 0, inc() { this.n++; return this }}; o.inc().inc().inc().n", "3"),
+    ("var a = []; a[2] = 'c'; a[0] = 'a'; a.length + a[0] + a[1] + a[2]", "3aundefinedc"),
+    ("var s = 0; for (var i = 0, j = 10; i < j; i++, j--) s++; s", "5"),
+    ("var n = 0; for (;;) { if (++n > 4) break } n", "5"),
+    ("'abc'.foo", "undefined"),
+    ("(1).foo = 2", "2"),
+    ("'use strict'; (1).foo = 2", "Uncaught TypeError: Cannot assign to read only property 'foo' of 1"),
+    ("undefined.foo", "Uncaught TypeError: Cannot read properties of undefined (reading 'foo')"),
+    ("var a = [1, 2, 3]; a.length = 'x'", "Uncaught RangeError: Invalid array length"),
+    ("var a = [1, 2, 3]; a.length = '2'; a.length", "2"),
+    ("Object.prototype.toString.call(function () {}) + Object.prototype.toString.call(null)", "[object Function][object Null]"),
+    ("var o = {}; o[Symbol.toStringTag] = 'Mine'; '' + o", "[object Mine]"),
+    ("function f() { return typeof arguments } f()", "object"),
+    ("function f() { var arguments = 3; return arguments } f()", "3"),
+    ("function f() { var arguments; return typeof arguments } f()", "object"),
+    ("var s = ''; for (var v of (function () { return arguments })(1, 2)) s += v; s", "12"),
+    ("var v = [...new Array(2)]; v.length + String(v[0])", "2undefined"),
+    ("var x = 1; var r = delete x; r + ',' + typeof x", "false,number"),
+    ("globalThis.y = 1; delete y", "true"),
+    ("(function () { 'use strict'; return typeof this })()", "undefined"),
+    ("(function () { return typeof this }).call(5)", "object"),
+    ("(function () { 'use strict'; return typeof this }).call(5)", "number"),
     // Recursion.
     ("function fib(n) { return n < 2 ? n : fib(n - 1) + fib(n - 2) } fib(20)", "6765"),
     ("function d(n) { return n == 0 ? 0 : 1 + d(n - 1) } d(5000)", "5000"),
@@ -424,6 +471,7 @@ func jsVMDeepTests(_ t: Tests) {
     for (i, w) in want.enumerated() where i < jsVMDeepResults.count {
         let got = jsVMDeepResults[i]
         t.check(got == w || jsHas(got, "nesting too deep"), "deep case \(i)", got)
+        if got != w { print("js vm: deep case \(i): \(got)") }
     }
 }
 
@@ -458,7 +506,7 @@ func jsVMFuzz(_ t: Tests) {
     rt.interruptHandler = { _ in budget += 1; return budget > 3 }
     let realm = rt.makeRealm()
     var n = 0
-    t.fuzz("vm", seeds: seeds, iterations: 6000) { m in
+    t.fuzz("vm", seeds: seeds, iterations: 20000) { m in
         budget = 0
         n += 1
         if n % 500 == 0 { _ = rt; realm.heap.collectGarbage() }
@@ -480,9 +528,10 @@ func jsVMPerf(_ t: Tests) {
         print("js vm perf: \(name) \(ms) ms")
     }
     run("fib(25)", "function fib(n) { return n < 2 ? n : fib(n - 1) + fib(n - 2) } fib(25)", "75025")
-    run("closure loop 1M", "function mk() { var c = 0; return () => ++c } var f = mk(); for (var i = 0; i < 1000000; i++) f(); f()", "1000001")
-    run("property loop 1M", "var o = {a: 1, b: 2}; var s = 0; for (var i = 0; i < 1000000; i++) { o.a = i; s += o.a + o.b } s", "500001500000")
-    run("array loop 1M", "var a = []; for (var i = 0; i < 1000; i++) a[i] = i; var s = 0; for (var j = 0; j < 1000; j++) for (var i = 0; i < 1000; i++) s += a[i]; s", "499500000")
-    run("method calls 300k", "class V { constructor(x) { this.x = x } add(o) { return new V(this.x + o.x) } } var v = new V(0), one = new V(1); for (var i = 0; i < 300000; i++) v = v.add(one); v.x", "300000")
-    run("string concat 100k", "var s = ''; for (var i = 0; i < 100000; i++) s += 'x'; s.length", "100000")
+    run("closure calls 1M", "(function () { function mk() { var c = 0; return () => ++c } var f = mk(); for (var i = 0; i < 1000000; i++) f(); return f() })()", "1000001")
+    run("property get/set 1M", "(function () { var o = {a: 1, b: 2}; var s = 0; for (var i = 0; i < 1000000; i++) { o.a = i; s += o.a + o.b } return s })()", "500001500000")
+    run("property loop 1M, globals", "var o = {a: 1, b: 2}; var s = 0; for (var i = 0; i < 1000000; i++) { o.a = i; s += o.a + o.b } s", "500001500000")
+    run("array index 1M", "(function () { var a = []; for (var i = 0; i < 1000; i++) a[i] = i; var s = 0; for (var j = 0; j < 1000; j++) for (var i = 0; i < 1000; i++) s += a[i]; return s })()", "499500000")
+    run("method calls + new 300k", "(function () { class V { constructor(x) { this.x = x } add(o) { return new V(this.x + o.x) } } var v = new V(0), one = new V(1); for (var i = 0; i < 300000; i++) v = v.add(one); return v.x })()", "300000")
+    run("string += 100k", "(function () { var s = ''; for (var i = 0; i < 100000; i++) s += 'x'; return s.length })()", "100000")
 }

@@ -274,12 +274,21 @@ extension JSHeap {
         return objects[i].slots.count
     }
     public func slot(_ o: JSValue, _ n: Int) -> JSValue {
-        guard let i = objectIndex(o), n >= 0, n < objects[i].slots.count else { return .undefined }
-        return objects[i].slots[n]
+        let i = Int(o.handle)
+        guard o.isObject, i > 0, n >= 0 else { return .undefined }
+        // Borrow the cell in place (no copy of the cell's arrays).
+        return objects.withUnsafeBufferPointer { b -> JSValue in
+            guard i < b.count else { return .undefined }
+            return b[i].slots.withUnsafeBufferPointer { s in n < s.count ? s[n] : .undefined }
+        }
     }
     public func setSlot(_ o: JSValue, _ n: Int, _ v: JSValue) {
-        guard let i = objectIndex(o), n >= 0, n < objects[i].slots.count else { return }
-        objects[i].slots[n] = v
+        let i = Int(o.handle)
+        guard o.isObject, i > 0, n >= 0 else { return }
+        objects.withUnsafeMutableBufferPointer { b in
+            guard i < b.count, b[i].kind != .free else { return }
+            b[i].slots.withUnsafeMutableBufferPointer { s in if n < s.count { s[n] = v } }
+        }
     }
     /// Replaces the internal slots (counted as growth; false if refused).
     @discardableResult

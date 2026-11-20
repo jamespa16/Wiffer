@@ -312,9 +312,12 @@ extension JSRealm {
 
     /// Run from the top frame (an entry frame) until it returns.
     func execute() throws(JSThrow) -> JSValue {
+        let heap = self.heap
         var t = frames.count - 1
         var code = frames[t].code
         var bc = UnsafePointer(code.code)
+        var consts = UnsafePointer(code.constPtr)
+        var keys = UnsafePointer(code.keyPtr)
         var pc = frames[t].pc
         var base = frames[t].base
         var opPC = pc
@@ -357,7 +360,7 @@ extension JSRealm {
                     case .pushInt:
                         push(.int32(Int32(truncatingIfNeeded: jsReadI32(bc, pc + 1)))); pc += 5
                     case .pushConst:
-                        push(code.constants[jsReadU32(bc, pc + 1)]); pc += 5
+                        push(consts[jsReadU32(bc, pc + 1)]); pc += 5
                     case .getLocal:
                         push(stack[base + jsReadU32(bc, pc + 1)]); pc += 5
                     case .putLocal:
@@ -392,7 +395,7 @@ extension JSRealm {
                         heap.setSlot(e, s, stack[sp - 1])
                         if op != .setEnv { sp -= 1 }
                     case .pushEnv:
-                        env = newEnvironment(parent: env, info: code.constants[jsReadU32(bc, pc + 1)])
+                        env = newEnvironment(parent: env, info: consts[jsReadU32(bc, pc + 1)])
                         pc += 5
                     case .popEnv:
                         env = heap.slot(env, 0); pc += 1
@@ -408,39 +411,39 @@ extension JSRealm {
                         env = newWithEnvironment(parent: env, object: o)
                         sp -= 1; pc += 1
                     case .getName, .getNameOrUndef:
-                        push(try getName(code.keys[jsReadU32(bc, pc + 1)], orUndefined: op == .getNameOrUndef))
+                        push(try getName(keys[jsReadU32(bc, pc + 1)], orUndefined: op == .getNameOrUndef))
                         pc += 5
                     case .putName:
-                        try putName(code.keys[jsReadU32(bc, pc + 1)], stack[sp - 1], strict: code.strict)
+                        try putName(keys[jsReadU32(bc, pc + 1)], stack[sp - 1], strict: code.strict)
                         sp -= 1; pc += 5
                     case .getNameForCall:
-                        let (f, th) = try getNameForCall(code.keys[jsReadU32(bc, pc + 1)])
+                        let (f, th) = try getNameForCall(keys[jsReadU32(bc, pc + 1)])
                         push(f); push(th); pc += 5
                     case .deleteName:
-                        push(.bool(try deleteName(code.keys[jsReadU32(bc, pc + 1)]))); pc += 5
+                        push(.bool(try deleteName(keys[jsReadU32(bc, pc + 1)]))); pc += 5
                     case .getGlobal, .getGlobalOrUndef:
-                        push(try getGlobal(code.keys[jsReadU32(bc, pc + 1)], orUndefined: op == .getGlobalOrUndef))
+                        push(try getGlobal(keys[jsReadU32(bc, pc + 1)], orUndefined: op == .getGlobalOrUndef))
                         pc += 5
                     case .getGlobalForCall:
-                        push(try getGlobal(code.keys[jsReadU32(bc, pc + 1)], orUndefined: false))
+                        push(try getGlobal(keys[jsReadU32(bc, pc + 1)], orUndefined: false))
                         push(.undefined); pc += 5
                     case .putGlobal:
-                        try putGlobal(code.keys[jsReadU32(bc, pc + 1)], stack[sp - 1], strict: code.strict)
+                        try putGlobal(keys[jsReadU32(bc, pc + 1)], stack[sp - 1], strict: code.strict)
                         sp -= 1; pc += 5
                     case .declareVar:
-                        try declareVar(code.keys[jsReadU32(bc, pc + 1)], isEval: code.kind == .eval)
+                        try declareVar(keys[jsReadU32(bc, pc + 1)], isEval: code.kind == .eval)
                         pc += 5
                     case .declareFunc:
-                        try declareFunc(code.keys[jsReadU32(bc, pc + 1)], stack[sp - 1], isEval: code.kind == .eval)
+                        try declareFunc(keys[jsReadU32(bc, pc + 1)], stack[sp - 1], isEval: code.kind == .eval)
                         sp -= 1; pc += 5
                     case .declareLex:
-                        try declareLex(code.keys[jsReadU32(bc, pc + 1)], isConst: bc[pc + 5] != 0)
+                        try declareLex(keys[jsReadU32(bc, pc + 1)], isConst: bc[pc + 5] != 0)
                         pc += 6
                     case .initLex:
-                        initLex(code.keys[jsReadU32(bc, pc + 1)], stack[sp - 1])
+                        initLex(keys[jsReadU32(bc, pc + 1)], stack[sp - 1])
                         sp -= 1; pc += 5
                     case .getField:
-                        let k = code.keys[jsReadU32(bc, pc + 1)]
+                        let k = keys[jsReadU32(bc, pc + 1)]
                         pc += 5
                         let o = stack[sp - 1]
                         if o.isObject {
@@ -451,7 +454,7 @@ extension JSRealm {
                                 push(o)
                                 frames[t].pc = pc
                                 if try dispatchCall(0, mode: JSFrameMode.normal) {
-                                    t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code)
+                                    t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr)
                                     pc = 0; base = frames[t].base
                                 }
                             }
@@ -459,11 +462,11 @@ extension JSRealm {
                             stack[sp - 1] = try getPrimitive(o, k)
                         }
                     case .putField:
-                        let k = code.keys[jsReadU32(bc, pc + 1)]
+                        let k = keys[jsReadU32(bc, pc + 1)]
                         pc += 5
                         frames[t].pc = pc
                         if try putProperty(stack[sp - 2], k, strict: code.strict) {
-                            t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code)
+                            t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr)
                             pc = 0; base = frames[t].base
                         }
                     case .getElem:
@@ -485,7 +488,7 @@ extension JSRealm {
                                 push(o)
                                 frames[t].pc = pc
                                 if try dispatchCall(0, mode: JSFrameMode.normal) {
-                                    t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code)
+                                    t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr)
                                     pc = 0; base = frames[t].base
                                 }
                             }
@@ -508,12 +511,12 @@ extension JSRealm {
                         sp -= 1
                         frames[t].pc = pc
                         if try putProperty(stack[sp - 2], k, strict: code.strict) {
-                            t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code)
+                            t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr)
                             pc = 0; base = frames[t].base
                         }
                     case .getFieldForCall:
                         let o = stack[sp - 1]
-                        stack[sp - 1] = try getV(o, code.keys[jsReadU32(bc, pc + 1)])
+                        stack[sp - 1] = try getV(o, keys[jsReadU32(bc, pc + 1)])
                         push(o); pc += 5
                     case .getElemForCall:
                         let o = stack[sp - 2]
@@ -521,7 +524,7 @@ extension JSRealm {
                         stack[sp - 2] = try getV(o, k)
                         stack[sp - 1] = o; pc += 1
                     case .deleteField:
-                        stack[sp - 1] = .bool(try deleteProperty(stack[sp - 1], code.keys[jsReadU32(bc, pc + 1)],
+                        stack[sp - 1] = .bool(try deleteProperty(stack[sp - 1], keys[jsReadU32(bc, pc + 1)],
                                                                  strict: code.strict))
                         pc += 5
                     case .deleteElem:
@@ -530,7 +533,7 @@ extension JSRealm {
                         stack[sp - 1] = .bool(try deleteProperty(stack[sp - 1], k, strict: code.strict))
                         pc += 1
                     case .getSuperField:
-                        let v = try superGet(this: stack[sp - 2], home: stack[sp - 1], code.keys[jsReadU32(bc, pc + 1)])
+                        let v = try superGet(this: stack[sp - 2], home: stack[sp - 1], keys[jsReadU32(bc, pc + 1)])
                         sp -= 1; stack[sp - 1] = v; pc += 5
                     case .getSuperElem:
                         let k = try toPropertyKey(stack[sp - 1])
@@ -538,7 +541,7 @@ extension JSRealm {
                         sp -= 2; stack[sp - 1] = v; pc += 1
                     case .putSuperField:
                         let v = stack[sp - 1]
-                        try superSet(this: stack[sp - 3], home: stack[sp - 2], code.keys[jsReadU32(bc, pc + 1)], v,
+                        try superSet(this: stack[sp - 3], home: stack[sp - 2], keys[jsReadU32(bc, pc + 1)], v,
                                      strict: code.strict)
                         sp -= 2; stack[sp - 1] = v; pc += 5
                     case .putSuperElem:
@@ -551,7 +554,7 @@ extension JSRealm {
                     case .newArray:
                         push(heap.newArray(proto: arrayPrototype)); pc += 5
                     case .defineField:
-                        let k = code.keys[jsReadU32(bc, pc + 1)]
+                        let k = keys[jsReadU32(bc, pc + 1)]
                         if !heap.createDataProperty(stack[sp - 2], k, stack[sp - 1]) {
                             throw throwTypeError("Cannot define property " + keyDisplay(k))
                         }
@@ -563,7 +566,7 @@ extension JSRealm {
                         }
                         sp -= 2; pc += 1
                     case .defineMethod:
-                        let k = code.keys[jsReadU32(bc, pc + 1)]
+                        let k = keys[jsReadU32(bc, pc + 1)]
                         try defineMethodProperty(stack[sp - 2], k, stack[sp - 1], flags: bc[pc + 5])
                         sp -= 1; pc += 6
                     case .defineMethodElem:
@@ -587,25 +590,25 @@ extension JSRealm {
                     case .objectRest:
                         let o = heap.newObject(proto: objectPrototype)
                         push(o)
-                        try copyDataProperties(into: o, from: stack[sp - 2], excluding: code.constants[jsReadU32(bc, pc + 1)])
+                        try copyDataProperties(into: o, from: stack[sp - 2], excluding: consts[jsReadU32(bc, pc + 1)])
                         sp -= 1; stack[sp - 1] = o; pc += 5
                     case .setProto:
                         let p = stack[sp - 1]
                         if p.isObject || p.isNull { _ = heap.setPrototypeOf(stack[sp - 2], p) }
                         sp -= 1; pc += 1
                     case .closure:
-                        let co = code.constants[jsReadU32(bc, pc + 1)]
+                        let co = consts[jsReadU32(bc, pc + 1)]
                         guard let c = self.code(ofCodeObject: co) else { throw throwTypeError("bad closure") }
                         push(makeClosure(c, env: env)); pc += 5
                     case .newRegExp:
-                        let p = code.constants[jsReadU32(bc, pc + 1)], fl = code.constants[jsReadU32(bc, pc + 5)]
+                        let p = consts[jsReadU32(bc, pc + 1)], fl = consts[jsReadU32(bc, pc + 5)]
                         guard let make = regExpCreate else { throw throwSyntaxError("not supported yet: RegExp") }
                         push(try make(self, p, fl)); pc += 9
                     case .templateObject:
                         let i = jsReadU32(bc, pc + 1)
                         push(try templateObject(code, i)); pc += 5
                     case .newClass:
-                        let co = code.constants[jsReadU32(bc, pc + 1)]
+                        let co = consts[jsReadU32(bc, pc + 1)]
                         try newClass(co, hasHeritage: bc[pc + 5] != 0)
                         pc += 6
                     case .setHomeObject:
@@ -781,7 +784,7 @@ extension JSRealm {
                         frames[t].pc = pc
                         let pushed = op == .call ? try dispatchCall(argc, mode: JSFrameMode.normal) : try dispatchConstruct(argc)
                         if pushed {
-                            t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code)
+                            t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr)
                             pc = 0; base = frames[t].base
                         }
                     case .callArray, .constructArray, .superCallArray:
@@ -796,7 +799,7 @@ extension JSRealm {
                             pushed = try dispatchConstruct(argc)
                         }
                         if pushed {
-                            t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code)
+                            t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr)
                             pc = 0; base = frames[t].base
                         }
                     case .superCall:
@@ -805,7 +808,7 @@ extension JSRealm {
                         frames[t].pc = pc
                         try prepareSuperCall(argc)
                         if try dispatchConstruct(argc) {
-                            t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code)
+                            t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr)
                             pc = 0; base = frames[t].base
                         }
                     case .directEval:
@@ -813,7 +816,7 @@ extension JSRealm {
                         pc += 3
                         frames[t].pc = pc
                         if try directEval(argc, strict: code.strict) {
-                            t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code)
+                            t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr)
                             pc = 0; base = frames[t].base
                         }
                     case .ret, .retUndefined, .retDerived:
@@ -833,14 +836,14 @@ extension JSRealm {
                         if f.mode == JSFrameMode.construct && !r.isObject { r = f.this }
                         if f.entry { return r }
                         if f.mode != JSFrameMode.discard { push(r) }
-                        t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code)
+                        t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr)
                         pc = frames[t].pc; base = frames[t].base
                     case .throwOp:
                         exception = pop()
                         throw JSThrow()
                     case .throwError:
                         let kind = JSErrorKind(rawValue: bc[pc + 1]) ?? .error
-                        let m = code.constants[jsReadU32(bc, pc + 2)]
+                        let m = consts[jsReadU32(bc, pc + 2)]
                         exception = makeErrorObject(kind, message: m, proto: .undefined)
                         throw JSThrow()
                     // Iteration.
@@ -918,7 +921,7 @@ extension JSRealm {
                             stack[sp - 2] = fi
                             frames[t].pc = pc
                             if try dispatchCall(0, mode: JSFrameMode.discard) {
-                                t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code)
+                                t = frames.count - 1; code = frames[t].code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr)
                                 pc = 0; base = frames[t].base
                             }
                         } else {
@@ -962,7 +965,7 @@ extension JSRealm {
                         push(exception)
                         exception = .undefined
                         trace = []
-                        code = f.code; bc = UnsafePointer(code.code)
+                        code = f.code; bc = UnsafePointer(code.code); consts = UnsafePointer(code.constPtr); keys = UnsafePointer(code.keyPtr)
                         pc = Int(h.target); base = f.base
                         break
                     }

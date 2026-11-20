@@ -805,7 +805,11 @@ final class JSCompiler {
     func emitFinalReturn() throws(JSCompileError) {
         if fs.isDerivedCtor {
             let b = pseudoBinding(JSPseudoName.this_)
-            if b >= 0 { try emitGetBinding(b, checked: false) } else { try emit(.pushHole, 1) }
+            if b >= 0 && (sa.bindings[Int(b)].inEnv || sa.bindings[Int(b)].slot >= 0) {
+                try emitGetBinding(b, checked: false)
+            } else {
+                try emit(.pushHole, 1)
+            }
             try emit(.retDerived, -2)
         } else {
             try emit(.ret, -1)

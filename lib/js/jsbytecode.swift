@@ -241,8 +241,23 @@ final class JSCode {
     /// realm.codes index.
     var id = -1
 
-    init() { code = UnsafeMutablePointer<UInt8>.allocate(capacity: 1); code.initialize(to: 0) }
-    deinit { code.deallocate() }
+    /// Stable copies of `constants` and `keys` for the VM (no ARC traffic).
+    private(set) var constPtr: UnsafeMutablePointer<JSValue>
+    private(set) var keyPtr: UnsafeMutablePointer<JSPropertyKey>
+
+    init() {
+        code = UnsafeMutablePointer<UInt8>.allocate(capacity: 1)
+        code.initialize(to: 0)
+        constPtr = UnsafeMutablePointer<JSValue>.allocate(capacity: 1)
+        constPtr.initialize(to: .undefined)
+        keyPtr = UnsafeMutablePointer<JSPropertyKey>.allocate(capacity: 1)
+        keyPtr.initialize(to: .index(0))
+    }
+    deinit {
+        code.deallocate()
+        constPtr.deallocate()
+        keyPtr.deallocate()
+    }
 
     func finish() {
         code.deallocate()
@@ -251,6 +266,20 @@ final class JSCode {
         code.initialize(repeating: 0, count: n)
         for i in 0..<bytes.count { code[i] = bytes[i] }
         codeCount = bytes.count
+        constPtr.deallocate()
+        constPtr = UnsafeMutablePointer<JSValue>.allocate(capacity: max(1, constants.count))
+        constPtr.initialize(repeating: .undefined, count: max(1, constants.count))
+        for i in 0..<constants.count { constPtr[i] = constants[i] }
+        keyPtr.deallocate()
+        keyPtr = UnsafeMutablePointer<JSPropertyKey>.allocate(capacity: max(1, keys.count))
+        keyPtr.initialize(repeating: .index(0), count: max(1, keys.count))
+        for i in 0..<keys.count { keyPtr[i] = keys[i] }
+    }
+
+    func setConstant(_ i: Int, _ v: JSValue) {
+        guard i >= 0 && i < constants.count else { return }
+        constants[i] = v
+        constPtr[i] = v
     }
 
     var isArrowLike: Bool { kind == .arrow }
