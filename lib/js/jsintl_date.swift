@@ -532,6 +532,9 @@ func jsInstallIntlDate(_ realm: JSRealm, _ intl: JSValue) {
     realm.defineMethod(dfp, "resolvedOptions", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
         let res = try realm.intlThis(args.this, .dateTimeFormat, "Intl.DateTimeFormat.prototype.resolvedOptions")
         let copy = realm.intlCopyOptions(res)
+        let d = realm.heap.rootDepth
+        defer { realm.heap.popRoots(to: d) }
+        _ = realm.heap.root(copy)
         _ = realm.heap.deleteProperty(copy, realm.heap.key("_realmZone"))
         return copy
     }
