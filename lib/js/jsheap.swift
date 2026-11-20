@@ -59,6 +59,9 @@
 //                                entries whose key is not isLive). The
 //                                processor must not allocate.
 //     isLive(v) during a weak processor: marked this cycle.
+//   ArrayBuffer bytes (9E): byte stores owned by .arrayBuffer objects
+//     (internalInt = store index + 1), freed when the buffer is swept and
+//     counted in liveBytes; API in jsbuiltins_typedarray.swift.
 //   Host objects: objects with flag .hasFinalizer get `finalizer(handle,
 //   internalInt)` called when swept (free the host table slot; must not
 //   touch the heap).
@@ -109,6 +112,9 @@ public final class JSHeap {
     var stringMarks: [UInt64] = [], symbolMarks: [UInt64] = [], objectMarks: [UInt64] = [], bigintMarks: [UInt64] = []
     var stringFree: [JSHandle] = [], symbolFree: [JSHandle] = [], objectFree: [JSHandle] = [], bigintFree: [JSHandle] = []
     var markStack: [JSHandle] = []
+    /// ArrayBuffer data blocks (see jsbuiltins_typedarray.swift).
+    var byteStores: [[UInt8]] = []
+    var byteStoreFree: [Int] = []
 
     // Atoms.
     var atomTable: [JSHandle] = []
@@ -427,10 +433,12 @@ public final class JSHeap {
             if jsBitTest(objectLive, i) {
                 if jsBitTest(objectMarks, i) {
                     live += JSHeap.objectBytes(objects[i])
+                    if objects[i].kind == .arrayBuffer { live += byteStoreSize(objects[i].internalInt) }
                 } else {
                     if objects[i].flags.contains(.hasFinalizer), let f = finalizer {
                         f(JSHandle(i), objects[i].internalInt)
                     }
+                    if objects[i].kind == .arrayBuffer { releaseByteStore(objects[i].internalInt) }
                     objects[i] = JSObjectCell()
                     jsBitClear(&objectLive, i)
                     objectFree.append(JSHandle(i))
