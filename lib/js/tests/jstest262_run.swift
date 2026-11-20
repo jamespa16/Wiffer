@@ -7,8 +7,8 @@
 // and sta.js, the test's `includes`, then the test itself, once sloppy and
 // once strict unless a flag says otherwise (strict = the whole concatenation
 // behind a "use strict" directive, as the official runner does). A
-// `$262` host object gives evalScript, gc and global; tests that need
-// createRealm, agent or detachArrayBuffer are skipped with that reason
+// `$262` host object gives evalScript, gc, global, detachArrayBuffer and
+// clearKeptObjects; tests that need createRealm or agent are skipped with that reason
 // (jstest262_skip.swift). A per-test budget (interruptHandler) makes a hang
 // a failure.
 //
@@ -91,7 +91,6 @@ final class JSTest262Runner {
         for f in meta.features where jsTest262RunSkipFeatures.contains(f) { return "feature " + f }
         if meta.module { return "module" }
         if meta.async && jsTest262DrainJobs == nil { return "async" }
-        for inc in meta.includes where inc == "detachArrayBuffer.js" { return "$262.detachArrayBuffer" }
         let text = String(decoding: src, as: UTF8.self)
         for entry in jsTest262RunSkipSource where jsTestHas(text, entry.needle) { return entry.reason }
         return nil
@@ -149,8 +148,8 @@ final class JSTest262Runner {
         }
     }
 
-    /// `$262`: evalScript, gc, global (createRealm, agent and
-    /// detachArrayBuffer are skip-tagged).
+    /// `$262`: evalScript, gc, global, detachArrayBuffer (9E),
+    /// clearKeptObjects (createRealm and agent are skip-tagged).
     func installHost(_ realm: JSRealm) {
         let o = realm.heap.newObject(proto: realm.objectPrototype)
         let r = realm.heap.root(o)
@@ -158,6 +157,14 @@ final class JSTest262Runner {
         realm.defineValue(o, "global", realm.global, [.writable, .configurable])
         realm.defineMethod(o, "gc", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             realm.heap.collectGarbage()
+            return .undefined
+        }
+        realm.defineMethod(o, "detachArrayBuffer", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            if !realm.detachArrayBuffer(args[0]) { throw realm.throwTypeError("not an ArrayBuffer") }
+            return .null
+        }
+        realm.defineMethod(o, "clearKeptObjects", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            realm.clearKeptObjects()
             return .undefined
         }
         realm.defineMethod(o, "evalScript", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
@@ -285,8 +292,14 @@ func jsTest262RunTests(_ t: Tests) {
         var diff = 0
         let s0 = hostMillis()
         for path in sampled {
+            // The URI code-point sweeps take about a minute each with a GC per
+            // allocation; they still run in the normal pass above.
+            let parts = path.split(separator: "/")
+            if parts.contains("decodeURI") || parts.contains("decodeURIComponent") || parts.contains("encodeURI") || parts.contains("encodeURIComponent") { continue }
             guard let src = hostReadFile(path) else { continue }
+            let t0 = hostMillis()
             let r = runner.run(path: path, src: src, meta: jsTest262Meta(src))
+            if hostMillis() - t0 > 2000 { print("test262 gc stress: slow \(path) \(hostMillis() - t0) ms") }
             if r.status != .pass {
                 diff += 1
                 print("FAIL test262 gcEveryAllocation \(path): \(r.message)")

@@ -113,6 +113,17 @@ public enum JSIntrinsic: Int {
     case eval, arrayValues, stringIterator, throwTypeError
     case symbolRegistry, regExpExecFn, regExpStringIteratorPrototype
     case arrayJoinStack, mathObject
+    // Phase 9E
+    case mapPrototype, setPrototype, mapConstructor, setConstructor, mapIteratorPrototype, setIteratorPrototype
+    case weakMapPrototype, weakSetPrototype, weakRefPrototype, finalizationRegistryPrototype
+    case arrayBufferPrototype, arrayBufferConstructor, dataViewPrototype
+    case typedArrayPrototype, typedArrayConstructor, typedArrayValues
+    case int8ArrayPrototype, uint8ArrayPrototype, uint8ClampedArrayPrototype, int16ArrayPrototype
+    case uint16ArrayPrototype, int32ArrayPrototype, uint32ArrayPrototype, float32ArrayPrototype
+    case float64ArrayPrototype, float16ArrayPrototype
+    case int8ArrayConstructor, uint8ArrayConstructor, uint8ClampedArrayConstructor, int16ArrayConstructor
+    case uint16ArrayConstructor, int32ArrayConstructor, uint32ArrayConstructor, float32ArrayConstructor
+    case float64ArrayConstructor, float16ArrayConstructor
     case count
 }
 
@@ -202,6 +213,9 @@ public final class JSRealm {
     /// Finalizer for host objects (embedder; called during GC sweep, must
     /// not touch the heap).
     public var hostFinalizer: ((JSHandle, Int64) -> Void)? = nil
+    /// Phase 9E state: Map/Set indexes, weak tables, finalization
+    /// registries, exotic-object handlers (jsexotic.swift).
+    public let tables = JSRealmTables()
 
     init(runtime: JSRuntime) {
         self.runtime = runtime
@@ -230,6 +244,7 @@ public final class JSRealm {
         jsInstallRegExp(self)
         jsInstallSymbol(self)
         jsInstallDate(self)
+        jsInstallES2015Runtime(self)
     }
 
     func markRoots(_ h: JSHeap) {
