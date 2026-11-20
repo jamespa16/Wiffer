@@ -4855,8 +4855,8 @@ Results:
   vendored from dom/nodes, dom/events, dom/collections, dom/lists and
   html/dom/documents/dom-tree-accessors at wpt@f004511
   (`tools/vendor_wpt.py`, LICENSE.md included), run in document order on a
-  virtual clock: **WPTPASS subtests pass, floor WPTPASS** (WPTTIME s on
-  the host).
+  virtual clock: **8540/9720 subtests pass (254/356 files clean), floor 8540** (26 s on
+  the host). Page setup costs about 2 ms on the host (3400 natives, 3600 objects).
 - **Gaps:** no Range / TreeWalker / NodeIterator, no XML parser (DOMParser
   parses every type as HTML), no window named properties (`window.myId`),
   no CSSStyleSheet objects (`style.sheet` is null), Attr is not a node
