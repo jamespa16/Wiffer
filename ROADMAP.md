@@ -4522,8 +4522,26 @@ each file:
   that the time budget terminates, a heap bomb that
   hits the cap) and the desktop stays responsive throughout.
 
-**Status, part 1 (/bin/js, console, event loop): done.** Part 2 (host
-objects) follows.
+**Status: done.** Part 1 (/bin/js, console, event loop) and part 2 (host
+objects).
+- Part 2, `lib/js/jshost.swift`: `JSHostClass<T: AnyObject>` (generic, no
+  `any`): a prototype built from `define(methods:accessors:)` tables
+  (`JSHostMethod`, `JSHostAccessor`; `this` is unwrapped or TypeError),
+  `exposeConstructor`, `wrap(obj)` (a per-class identity cache: one live
+  wrapper per Swift object), `unwrap`, `pin`, and `shouldRoot` (a
+  caller-decided GC-root condition evaluated at every collection; an
+  unreachable, unrooted wrapper is collected and its table entry freed by
+  the host finalizer). `JSHostExotic<T>` gives indexed getters (NodeList)
+  and named properties (document.forms) through jsexotic.swift. Tests in
+  jshost_tests.swift (toy classes, also under GC stress). Found and fixed a
+  GC hole: `jsFromDescriptor` did not root a fresh value from an exotic
+  hook.
+- Event loop now runs the VM job queue in the checkpoint (`realm.runJobs`),
+  reports unhandled rejections (`reportRejection`, "Uncaught (in promise)
+  ..."), calls `clearKeptObjects` per checkpoint and runs
+  FinalizationRegistry cleanups as a task. `js file.mjs` / `--module` runs
+  an ES module through a file-backed loader (also used by `import()`).
+  Inspect prints Map, Set and Promise.
 - `lib/js/jsconsole.swift`: `jsInstallConsole(realm, now:, sink:)` (log,
   info, debug, warn, error, trace, dir, table, assert, count, time*,
   group*), `jsInspect` (Node-style util.inspect: depth 2, 80-column
