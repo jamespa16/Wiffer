@@ -84,6 +84,60 @@ struct LayoutElement: CSSElement {
         for c in p.children where c.kind == .element { n += 1 }
         return n
     }
+
+    // Shadow DOM.
+    var cssTreeScope: CSSTreeScope { layoutTreeScope(node) }
+    var cssShadowHost: LayoutElement? {
+        guard node.documentHasShadowTrees, let h = node.rootNode.host else { return nil }
+        return LayoutElement(h, state)
+    }
+    var cssShadowRootScope: Int? {
+        guard let s = node.attachedShadowRoot else { return nil }
+        return layoutScopeID(s)
+    }
+    var cssAssignedSlot: LayoutElement? {
+        guard let s = node.assignedSlotIncludingClosed else { return nil }
+        return LayoutElement(s, state)
+    }
+    var cssPartNames: [String] {
+        guard let p = node.attribute("part") else { return [] }
+        return htmlSplitWhitespace(p)
+    }
+    var cssExportParts: [(String, String)] {
+        guard let p = node.attribute("exportparts") else { return [] }
+        return cssParseExportParts(p)
+    }
+    var cssIsDefined: Bool { node.isDefined }
+}
+
+/// The CSS scope id of a shadow root (stable while it lives).
+func layoutScopeID(_ root: HTMLNode) -> Int {
+    Int(bitPattern: UInt(bitPattern: ObjectIdentifier(root)))
+}
+
+/// The tree scope of a node: the document (id 0) or its shadow root, and
+/// how many shadow roots deep that is.
+func layoutTreeScope(_ n: HTMLNode) -> CSSTreeScope {
+    guard n.documentHasShadowTrees else { return CSSTreeScope() }
+    let root = n.rootNode
+    guard root.isShadowRoot else { return CSSTreeScope() }
+    var depth = 1
+    var h = root.host
+    var k = 0
+    while let x = h, k < 4096 {
+        guard let r = x.rootNode.host else { break }
+        depth += 1
+        h = r
+        k += 1
+    }
+    return CSSTreeScope(id: layoutScopeID(root), depth: depth)
+}
+
+/// The parent to walk for rendering: the flat-tree parent, a shadow root's
+/// host, and (for nodes outside the flat tree, which have no boxes) nil.
+func layoutFlatParent(_ n: HTMLNode) -> HTMLNode? {
+    if n.isShadowRoot { return n.host }
+    return n.flatTreeParent
 }
 
 // MARK: - Presentational hints

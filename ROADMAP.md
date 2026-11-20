@@ -4260,6 +4260,69 @@ mostly empty `<some-widget>` boxes, even with a working engine.
   a click, and a server-rendered page using declarative Shadow DOM
   renders the same with JavaScript off.
 
+**Status: engine-independent groundwork done** (lib/html, lib/css,
+lib/layout; custom element definitions/reactions, JS event dispatch,
+`adoptedStyleSheets` bindings, WPT testharness subsets and the Lit page
+wait for the JS bindings). Results:
+- **lib/html (HTMLShadow.swift):** `attachShadow(mode:delegatesFocus:
+  slotAssignment:clonable:serializable:customElementShadowDisabled:)`
+  with the DOM's checks (HTML namespace, valid shadow host name, reuse of
+  a declarative root of the same mode); the ShadowRoot is a fragment
+  owned by its host (`attachedShadowRoot`, `shadowRoot` open only,
+  `host`), in the host's document and arena, freed iteratively.
+  `isConnected` and `rootNode(composed:)` are shadow-including; queries
+  and getElementById stop at the boundary; host-including ancestry, adopt
+  and import follow the spec. Slots: named and manual assignment (the DOM's
+  find a slot / find slottables / assign slottables (for a tree)) run
+  eagerly from insert, remove, `slot`/`name` attribute changes and
+  `assign()`; `assignedNodes/Elements(flatten:)`, `assignedSlot`. Two
+  deliberate deviations, matching engines: a manually assigned node that
+  returns to its host is taken again, and a slot that loses nodes to
+  `assign()` in another tree updates at once. Mutation records gain three
+  engine-only kinds: `.slotchange` (the DOM's "signal a slot change"),
+  `.shadowRootAttached`, `.customElementState`. Flat tree helpers
+  (`flatTreeChildren`, `flatTreeParent`, `isInFlatTree`), `retargeted
+  (against:)`, `walkShadowIncluding`. Declarative shadow DOM in the tree
+  builder (shadowrootmode open/closed, delegatesfocus, clonable,
+  serializable; on for `htmlParse`, off for innerHTML, on for
+  `setHTMLUnsafe`/`htmlParseFragment(declarativeShadowRoots:)`, including
+  the context element itself), `getHTML(serializableShadowRoots:
+  shadowRoots:)`, clonable roots in cloneNode, custom element state with
+  the valid custom element name check. 262 html checks (135 new),
+  html5lib unchanged at 1695/1701; a random shadow-mutation fuzz checks
+  stored assignments against from-scratch "find slottables".
+- **lib/css:** `:host`, `:host(<compound>)` (featureless host), 
+  `::slotted(<compound>)` (through nested slots), `::part()` with
+  `exportparts`, `:defined`; `:host-context()` parses and never matches.
+  `CSSElement` gained `cssTreeScope`, `cssShadowHost`,
+  `cssShadowRootScope`, `cssAssignedSlot`, `cssPartNames`,
+  `cssExportParts`, `cssIsDefined` (all defaulted). The resolver keeps a
+  rule set per shadow root (`setScopeSheets`); the cascade's
+  shadow-tree context step sits after origin/importance and before the
+  style attribute (outer wins for normal, inner for !important). 42 new
+  css checks. Cost: Wikipedia style pass about 5% slower on the host
+  (128 → 134 ms) from the generalized cascade sort.
+- **lib/layout:** the box builder walks the flat tree; shadow trees'
+  `<style>`/`<link>` become scoped sources (`LayoutStyleSource.scope`, so
+  the browser's fetch loop is unchanged); `setAdoptedStyleSheets(_:for:)`
+  for documents and shadow roots; hover chains, hit testing and link
+  lookup follow the flat tree; `LayoutHit.documentNode` is the hit node
+  retargeted against the document. Incremental restyle follows slot
+  changes, attachShadow and shadow-tree mutations (rebuild roots walk the
+  flat tree); two fixes found by the extended fuzz (a boxless
+  display:contents element's restyle, siblings of unrendered nodes).
+  Fixtures `shadow` and `shadowstyle`; the incremental fuzz adds
+  attachShadow, slot renames, slot attributes and slotted inserts, plus a
+  shadow page (745 checks by default, 0 failures).
+- **Harness:** tests/web/layout/shadow.html (declarative shadow DOM) is
+  compared pixel by pixel with shadow-light.html, on the host and in
+  tests/serial_session.py.
+- **Gaps:** no slotchange during parsing (slots are assigned after the
+  parse), `::slotted()::before` and `::part()` followed by pseudo-classes
+  are not supported, focus/delegatesFocus and `:focus-within` need the
+  event layer, a document-level `adoptedStyleSheets` change restyles
+  everything.
+
 ## Phase 9J: tests, performance and target sites
 
 - **Harness pages** in `tests/web/js/`, served by tests/web_server.py:

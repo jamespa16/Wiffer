@@ -24,11 +24,19 @@ struct LayoutStyleSource {
     var text: String
     var media: String
     unowned(unsafe) var node: HTMLNode
+    /// The shadow root whose tree the element is in, or nil for the document.
+    /// Scoped sheets only style that shadow tree (see CSSStyleResolver.setScopeSheets).
+    unowned(unsafe) var scope: HTMLNode? = nil
 }
 
 struct LayoutHit {
-    /// The deepest element under the point.
+    /// The deepest element under the point: a flat-tree node, so possibly
+    /// inside a shadow tree (or a host's slotted light child).
     var node: HTMLNode? = nil
+    /// `node` retargeted against the document (the outermost shadow host
+    /// it is inside, or `node` itself), what document-level code sees. Event
+    /// dispatch builds the composed path from `node` (assignedSlot / host).
+    var documentNode: HTMLNode? = nil
     /// The nearest `<a href>` (or `<area href>`) ancestor and its href (as written).
     var link: HTMLNode? = nil
     var href: String? = nil
@@ -67,6 +75,11 @@ final class LayoutEngine {
     private(set) var styleSources: [LayoutStyleSource] = []
     var slots: [[CSSStylesheet]] = []
     private var extraSheets: [CSSStylesheet] = []
+    /// adoptedStyleSheets per document / shadow root (see setAdoptedStyleSheets).
+    var adoptedSheets: [ObjectIdentifier: (root: HTMLNode, sheets: [CSSStylesheet])] = [:]
+    /// Shadow roots that were attached since the last update (their style
+    /// sources are checked then).
+    var pendingShadowHosts: [HTMLNode] = []
     private(set) var hasHoverRules = false
     var hoverCompoundList: [CSSCompound] = []
     var pendingHover: [HTMLNode] = []
@@ -144,6 +157,9 @@ final class LayoutEngine {
             case .attributes: me.noteAttributeChanged(m.target, name: m.attributeName)
             case .childList: me.noteChildrenChanged(m.target, added: m.addedNodes, removed: m.removedNodes)
             case .characterData: if m.target.kind == .text { me.noteTextChanged(m.target) }
+            case .slotchange: me.noteSlotChanged(m.target)
+            case .shadowRootAttached: me.noteShadowRootAttached(m.target)
+            case .customElementState: me.noteAttributeChanged(m.target, name: "")
             }
         }
     }
@@ -161,11 +177,17 @@ final class LayoutEngine {
         styleSources = []
         slots = []
         var t: String? = nil
-        document.walk { n in
-            guard n.kind == .element else { return true }
-            if n.name == "title" && t == nil && n.namespace == .html { t = layoutCollapseSpaces(n.textContent) }
+        // Document order, shadow-including: each shadow tree's <style> and
+        // <link> elements style that tree only.
+        var stack: [(HTMLNode, HTMLNode?)] = [(document, nil)]
+        while let (n, scope) = stack.popLast() {
+            var i = n.children.count - 1
+            while i >= 0 { stack.append((n.children[i], scope)); i -= 1 }
+            if let s = n.attachedShadowRoot { stack.append((s, s)) }
+            guard n.kind == .element else { continue }
+            if scope == nil && n.name == "title" && t == nil && n.namespace == .html { t = layoutCollapseSpaces(n.textContent) }
             if n.name == "style" && n.namespace == .html {
-                styleSources.append(LayoutStyleSource(href: nil, text: n.textContent, media: n.attribute("media") ?? "", node: n))
+                styleSources.append(LayoutStyleSource(href: nil, text: n.textContent, media: n.attribute("media") ?? "", node: n, scope: scope))
             } else if n.name == "link", let rel = n.attribute("rel"), let href = n.attribute("href") {
                 var isSheet = false, alternate = false
                 htmlForEachToken(layoutLowerASCII(rel)) { w in
@@ -173,10 +195,9 @@ final class LayoutEngine {
                     if w == "alternate" { alternate = true }
                 }
                 if isSheet && !alternate {
-                    styleSources.append(LayoutStyleSource(href: href, text: "", media: n.attribute("media") ?? "", node: n))
+                    styleSources.append(LayoutStyleSource(href: href, text: "", media: n.attribute("media") ?? "", node: n, scope: scope))
                 }
             }
-            return true
         }
         title = t ?? ""
         for s in styleSources {
@@ -205,6 +226,46 @@ final class LayoutEngine {
         rebuildResolver()
     }
 
+    /// `adoptedStyleSheets` of the document or a shadow root (the JS layer's
+    /// constructable CSSStyleSheets, parsed). They follow the tree's own
+    /// `<style>`/`<link>` sheets. A shadow root's list restyles only its
+    /// host's subtree; the document's restyles everything.
+    func setAdoptedStyleSheets(_ sheets: [CSSStylesheet], for root: HTMLNode) {
+        let k = ObjectIdentifier(root)
+        if sheets.isEmpty { adoptedSheets[k] = nil } else { adoptedSheets[k] = (root: root, sheets: sheets) }
+        if root.isShadowRoot, let host = root.host {
+            applyScopeSheets(root)
+            if host.isConnected { pendingChildren.append(host) }
+        } else {
+            rebuildResolver()
+        }
+    }
+
+    /// The author sheets of one shadow root scope: its <style>/<link>
+    /// sources, then its adopted sheets.
+    func scopeSheetList(_ root: HTMLNode) -> [CSSStylesheet] {
+        let c = cssContext()
+        var list: [CSSStylesheet] = []
+        for (i, s) in styleSources.enumerated() where s.scope === root {
+            if !s.media.isEmpty && !cssParseMediaQueryList(s.media).matches(c) { continue }
+            list.append(contentsOf: slots[i])
+        }
+        if let a = adoptedSheets[ObjectIdentifier(root)] { list.append(contentsOf: a.sheets) }
+        return list
+    }
+
+    /// Refresh one scope's rules in the current resolver (no full restyle).
+    func applyScopeSheets(_ root: HTMLNode) {
+        let list = scopeSheetList(root)
+        resolver.setScopeSheets(layoutScopeID(root), list)
+        if list.isEmpty { return }
+        let r = CSSStyleResolver(ctx: cssContext(), noUserAgent: true)
+        r.setScopeSheets(1, list)
+        hasHoverRules = hasHoverRules || LayoutEngine.scanHover(r)
+        hoverCompoundList.append(contentsOf: LayoutEngine.hoverCompounds(r))
+        hasSiblingRules = hasSiblingRules || LayoutEngine.scanSiblingCombinators(r)
+    }
+
     private func cssContext() -> CSSContext {
         var c = CSSContext()
         c.viewportWidth = viewportWidth
@@ -216,28 +277,42 @@ final class LayoutEngine {
         let c = cssContext()
         let r = CSSStyleResolver(ctx: c)
         if quirksMode { r.addStyleSheet(layoutQuirksSheet, origin: .userAgent) }
+        var scopes: [HTMLNode] = []
         for (i, s) in styleSources.enumerated() {
+            if let sc = s.scope {
+                if !scopes.contains(where: { $0 === sc }) { scopes.append(sc) }
+                continue
+            }
             if !s.media.isEmpty && !cssParseMediaQueryList(s.media).matches(c) { continue }
             for sh in slots[i] { r.addStyleSheet(sh) }
         }
+        if let a = adoptedSheets[ObjectIdentifier(document)] { for sh in a.sheets { r.addStyleSheet(sh) } }
         for sh in extraSheets { r.addStyleSheet(sh) }
+        for (_, a) in adoptedSheets where a.root.isShadowRoot && a.root.isConnected {
+            if !scopes.contains(where: { $0 === a.root }) { scopes.append(a.root) }
+        }
         resolver = r
+        for sc in scopes { r.setScopeSheets(layoutScopeID(sc), scopeSheetList(sc)) }
         hasHoverRules = LayoutEngine.scanHover(r)
         hoverCompoundList = LayoutEngine.hoverCompounds(r)
         hasSiblingRules = LayoutEngine.scanSiblingCombinators(r)
         needsStyle = true
     }
 
-    private static func scanHover(_ r: CSSStyleResolver) -> Bool {
+    static func scanHover(_ r: CSSStyleResolver) -> Bool {
         func compoundHas(_ c: CSSCompound, _ depth: Int) -> Bool {
             if c.pseudos.contains(.hover) { return true }
             if depth > 4 { return false }
+            if let h = c.hostArgs { for k in h where compoundHas(k, depth + 1) { return true } }
             for s in c.negations { for k in s.compounds where compoundHas(k, depth + 1) { return true } }
             for l in c.anyOf { for s in l { for k in s.compounds where compoundHas(k, depth + 1) { return true } } }
             return false
         }
-        for e in r.ruleSet.entries {
-            for c in e.selector.compounds where compoundHas(c, 0) { return true }
+        for rs in r.allRuleSets {
+            for e in rs.entries {
+                for c in e.selector.compounds where compoundHas(c, 0) { return true }
+                if let sl = e.selector.slotted { for c in sl where compoundHas(c, 0) { return true } }
+            }
         }
         return false
     }
@@ -272,7 +347,8 @@ final class LayoutEngine {
         var set: Set<ObjectIdentifier> = []
         var p = node
         var k = 0
-        while let n = p, k < 4096 { if n.kind == .element { set.insert(ObjectIdentifier(n)) }; p = n.parent; k += 1 }
+        // The hover chain follows the flat tree (through slots to hosts).
+        while let n = p, k < 4096 { if n.kind == .element { set.insert(ObjectIdentifier(n)) }; p = layoutFlatParent(n) ?? n.parent; k += 1 }
         state.hovered = set
         if !hasHoverRules || needsStyle { return hasHoverRules }
         let affected = hoverAffected(old, set, oldNode, node)
@@ -437,16 +513,18 @@ final class LayoutEngine {
         var hit = LayoutHit()
         guard let b = display.hit(x: x, y: y, scrollX: scrollX, scrollY: scrollY) else { return hit }
         hit.node = b.element
+        hit.documentNode = b.element?.retargeted(against: document)
         hit.cursor = b.style.cursor
         var p = hit.node
         var k = 0
+        // Flat-tree ancestors: a link around a slot, or inside a shadow tree, counts.
         while let n = p, k < 4096 {
             if n.kind == .element {
                 if hit.link == nil && (n.name == "a" || n.name == "area"), let h = n.attribute("href") { hit.link = n; hit.href = h }
                 if hit.control == nil && (n.name == "input" || n.name == "select" || n.name == "textarea" || n.name == "button") { hit.control = n }
                 if hit.title == nil, let t = n.attribute("title") { hit.title = t }
             }
-            p = n.parent
+            p = layoutFlatParent(n) ?? n.parent
             k += 1
         }
         if hit.link != nil && hit.cursor == "auto" { hit.cursor = "pointer" }

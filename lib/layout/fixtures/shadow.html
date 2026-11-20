@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<style>
+body { margin: 0; font: 16px sans-serif }
+.card { border: 2px solid #000; margin: 4px }
+</style>
+<div class=card id=c1><template shadowrootmode=open><div class=head><slot name=title>Untitled</slot></div><div class=body><slot></slot></div><slot name=foot><i>no footer</i></slot></template><b slot=title>Card one</b><p>First paragraph</p>loose text<span slot=nowhere>hidden: no such slot</span></div>
+<div class=card id=c2><template shadowrootmode=open><div class=head><slot name=title>Untitled</slot></div><div class=body><slot></slot></div></template></div>
+<div id=nest><template shadowrootmode=open><div class=outer><span id=inner-host><template shadowrootmode=open>[<slot></slot>]</template><slot></slot></span></div></template><em>forwarded</em></div>
+<div id=closed><template shadowrootmode=closed><ul><li><slot></slot></li></ul></template>closed root content</div>
+<div id=plain>light only (no shadow root)</div>

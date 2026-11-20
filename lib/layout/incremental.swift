@@ -56,19 +56,17 @@ extension LayoutEngine {
 
     var hasPendingDOMChanges: Bool {
         pendingRescan || !pendingAttr.isEmpty || !pendingAttrRebuild.isEmpty || !pendingChildren.isEmpty || !pendingText.isEmpty
+            || !pendingShadowHosts.isEmpty
     }
 
     var hasPendingWork: Bool { needsStyle || needsLayout || !pendingHover.isEmpty || hasPendingDOMChanges }
 
+    /// In this document (shadow-including) and in its flat tree (so it may
+    /// have boxes). A shadow root counts as its host.
     private func connected(_ n: HTMLNode) -> Bool {
-        var p: HTMLNode? = n
-        var k = 0
-        while let q = p, k < 4096 {
-            if q === document { return true }
-            p = q.parent
-            k += 1
-        }
-        return false
+        if n.ownerDocument !== document && n !== document { return false }
+        if n.isShadowRoot { return n.host.map { connected($0) } ?? false }
+        return n.isConnected && n.isInFlatTree
     }
 
     private func overflowPending() {
@@ -79,7 +77,22 @@ extension LayoutEngine {
         }
     }
 
-    /// An attribute was set, changed or removed.
+    /// A slot's assigned nodes changed, or its fallback did while it has none
+    /// (lib/html's slotchange record): the boxes under the slot are rebuilt.
+    func noteSlotChanged(_ slot: HTMLNode) {
+        pendingChildren.append(slot)
+        overflowPending()
+    }
+
+    /// A shadow root was attached: the host's boxes now come from it.
+    func noteShadowRootAttached(_ host: HTMLNode) {
+        pendingShadowHosts.append(host)
+        pendingChildren.append(host)
+        overflowPending()
+    }
+
+    /// An attribute was set, changed or removed ("" for a custom element
+    /// state change, which only `:defined` sees).
     func noteAttributeChanged(_ node: HTMLNode, name: String) {
         guard node.kind == .element else { return }
         if name == "class" { state.classes.removeValue(forKey: ObjectIdentifier(node)) }
@@ -99,7 +112,7 @@ extension LayoutEngine {
         for n in added { if layoutSubtreeHasSource(n) { pendingRescan = true } }
         for n in removed { if layoutSubtreeHasSource(n) { pendingRescan = true } }
         if parent.kind == .element && parent.name == "title" { refreshTitle() }
-        pendingChildren.append(parent)
+        pendingChildren.append(parent.isShadowRoot ? (parent.host ?? parent) : parent)
         overflowPending()
     }
 
@@ -142,7 +155,7 @@ extension LayoutEngine {
         guard node.kind == .element else { return nil }
         flushForQuery()
         if let b = box(for: node) { return b.style }
-        guard let p = node.parent, p.kind == .element else {
+        guard let p = layoutFlatParent(node) ?? node.parent, p.kind == .element else {
             return resolver.computeStyle(LayoutElement(node, state), parent: nil, hints: layoutHints(node))
         }
         var pb = box(for: p)
@@ -189,7 +202,13 @@ extension LayoutEngine {
     /// (called by update()).
     func processDOMChanges() {
         let attrs = pendingAttr, rebuildAttrs = pendingAttrRebuild, kids = pendingChildren, texts = pendingText
-        let rescan = pendingRescan
+        var rescan = pendingRescan
+        // A newly attached shadow root (declarative ones arrive filled) may bring style sheets.
+        for h in pendingShadowHosts {
+            if let s = h.attachedShadowRoot, layoutSubtreeHasSource(s) { rescan = true }
+            if h.attachedShadowRoot.map({ adoptedSheets[ObjectIdentifier($0)] != nil }) == true { rescan = true }
+        }
+        pendingShadowHosts = []
         pendingAttr = []; pendingAttrRebuild = []; pendingChildren = []; pendingText = []; pendingRescan = false
         stats.domBatches += 1
         if rescan { rescanSources() }
@@ -198,25 +217,25 @@ extension LayoutEngine {
 
         // Structural changes: rebuild box subtrees.
         var starts: [HTMLNode] = kids
-        for t in texts { if let p = t.parent { starts.append(p) } }
+        for t in texts { if let p = t.flatTreeParent { starts.append(p) } }
         starts.append(contentsOf: rebuildAttrs)
         var any = false
         if !starts.isEmpty {
             var cands: [HTMLNode] = []
             var seen: Set<ObjectIdentifier> = []
             for s in starts where connected(s) {
-                guard let (r, _) = rebuildRoot(from: s) else { needsStyle = true; return }
+                guard let (r, _) = rebuildRoot(from: s.isShadowRoot ? s.host : s) else { needsStyle = true; return }
                 if seen.insert(ObjectIdentifier(r)).inserted { cands.append(r) }
             }
             // Drop candidates nested under another one.
             var outer: [HTMLNode] = []
             for c in cands {
                 var nested = false
-                var p = c.parent
+                var p = layoutFlatParent(c)
                 var k = 0
                 while let q = p, k < 4096 {
                     if seen.contains(ObjectIdentifier(q)) { nested = true; break }
-                    p = q.parent
+                    p = layoutFlatParent(q)
                     k += 1
                 }
                 if !nested { outer.append(c) }
@@ -229,12 +248,12 @@ extension LayoutEngine {
 
         // Style-only changes: restyle in place.
         var roots: [HTMLNode] = []
-        for d in attrs where connected(d) {
-            roots.append(d)
+        for d in attrs where d.isConnected && d.ownerDocument === document {
+            if connected(d) { roots.append(d) }
             if hasSiblingRules, let p = d.parent {
                 var after = false
                 for c in p.children where c.kind == .element {
-                    if after { roots.append(c) } else if c === d { after = true }
+                    if after { if connected(c) { roots.append(c) } } else if c === d { after = true }
                 }
             }
         }
@@ -258,9 +277,14 @@ extension LayoutEngine {
                 needsStyle = true
                 return
             } else {
-                for d in attrs where connected(d) {
-                    let start: HTMLNode? = hasSiblingRules ? (d.parent?.kind == .element ? d.parent : d) : d
-                    guard let (r, _) = rebuildRoot(from: start), rebuildAround(r) else { needsStyle = true; return }
+                // Rebuild around each root (siblings share their parent's rebuild root).
+                var done: Set<ObjectIdentifier> = []
+                for d in roots where connected(d) {
+                    let fp = layoutFlatParent(d)
+                    let start: HTMLNode? = hasSiblingRules ? (fp?.kind == .element ? fp : d) : d
+                    guard let (r, _) = rebuildRoot(from: start) else { needsStyle = true; return }
+                    if !done.insert(ObjectIdentifier(r)).inserted { continue }
+                    guard rebuildAround(r) else { needsStyle = true; return }
                     any = true
                 }
             }
@@ -296,7 +320,7 @@ extension LayoutEngine {
         while let e = cur, k < 4096 {
             k += 1
             if e.kind == .element, let b = nodeBoxes[ObjectIdentifier(e)], b.node === e, layoutCanRebuild(b, e) { return (e, b) }
-            cur = e.parent
+            cur = layoutFlatParent(e)
         }
         return nil
     }
@@ -309,7 +333,7 @@ extension LayoutEngine {
             tries += 1
             guard let (e, old) = rebuildRoot(from: c) else { return false }
             if spliceRebuilt(e, old) { stats.subtreeRebuilds += 1; return true }
-            cur = e.parent
+            cur = layoutFlatParent(e)
         }
         return false
     }
@@ -362,7 +386,8 @@ extension LayoutEngine {
 /// in-place restyle is enough (anything else rebuilds the element's boxes).
 func layoutAttributeIsStyleOnly(_ name: String) -> Bool {
     switch name {
-    case "class", "id", "style", "title", "hidden", "lang", "dir", "href", "role", "tabindex", "disabled", "checked", "selected": return true
+    case "class", "id", "style", "title", "hidden", "lang", "dir", "href", "role", "tabindex", "disabled", "checked", "selected",
+         "part", "exportparts", "slot", "": return true
     default:
         return name.hasPrefix("data-") || name.hasPrefix("aria-")
     }
@@ -370,7 +395,7 @@ func layoutAttributeIsStyleOnly(_ name: String) -> Bool {
 
 /// Can this box be replaced on its own (a block-level, in-flow block in a block container)?
 func layoutCanRebuild(_ b: LayoutBox, _ e: HTMLNode) -> Bool {
-    guard let p = b.parent, !p.anonymous, p.node != nil, p.node === e.parent,
+    guard let p = b.parent, !p.anonymous, p.node != nil, p.node === layoutFlatParent(e),
           p.kind == .block || p.kind == .cell || p.kind == .caption else { return false }
     return layoutCanRebuildResult(b)
 }
@@ -392,11 +417,11 @@ func layoutInsideSource(_ n: HTMLNode) -> Bool {
     return false
 }
 
-/// Does this subtree contain a <style> or stylesheet <link>?
+/// Does this subtree (shadow trees included) contain a <style> or stylesheet <link>?
 func layoutSubtreeHasSource(_ n: HTMLNode) -> Bool {
     var found = false
     var steps = 0
-    n.walk { x in
+    n.walkShadowIncluding { x in
         steps += 1
         if steps > 20_000 || found { return false }
         if x.kind == .element && x.namespace == .html && (x.name == "style" || x.name == "link") { found = true; return false }
@@ -427,7 +452,9 @@ extension LayoutEngine {
             }
             return false
         }
-        for e in r.ruleSet.entries where sel(e.selector, 0) { return true }
+        for rs in r.allRuleSets {
+            for e in rs.entries where sel(e.selector, 0) { return true }
+        }
         return false
     }
 }

@@ -51,13 +51,18 @@ extension LayoutEngine {
         func has(_ c: CSSCompound, _ depth: Int) -> Bool {
             if c.pseudos.contains(.hover) { return true }
             if depth > 4 { return false }
+            if let h = c.hostArgs { for k in h where has(k, depth + 1) { return true } }
             for s in c.negations { for k in s.compounds where has(k, depth + 1) { return true } }
             for l in c.anyOf { for s in l { for k in s.compounds where has(k, depth + 1) { return true } } }
             return false
         }
-        for e in r.ruleSet.entries {
-            for c in e.selector.compounds where has(c, 0) {
-                if out.count < 2000 { out.append(c) }
+        for rs in r.allRuleSets {
+            for e in rs.entries {
+                for c in e.selector.compounds where has(c, 0) {
+                    // `:host(:hover)` is matched against the host itself.
+                    if out.count < 2000 { out.append(c.hostArgs?.first ?? c) }
+                }
+                if let sl = e.selector.slotted { for c in sl where has(c, 0) { if out.count < 2000 { out.append(c) } } }
             }
         }
         return out
@@ -73,7 +78,7 @@ extension LayoutEngine {
             var k = 0
             while let e = p, k < 4096 {
                 if e.kind == .element && !other.contains(ObjectIdentifier(e)) { changed.append(e) }
-                p = e.parent
+                p = layoutFlatParent(e) ?? e.parent
                 k += 1
             }
         }
@@ -100,12 +105,17 @@ extension LayoutEngine {
     func restyleInPlace(_ roots: [HTMLNode], widen: Bool = true) -> Bool {
         var done: Set<ObjectIdentifier> = []
         for r0 in roots {
-            let r = widen && r0.parent?.kind == .element ? r0.parent! : r0
+            var r = r0
+            if widen, let fp = layoutFlatParent(r0), fp.kind == .element { r = fp }
             if done.contains(ObjectIdentifier(r)) { continue }
             done.insert(ObjectIdentifier(r))
+            if !r.isInFlatTree { continue }   // not rendered (an unslotted light child): no boxes to fix
             if !widen && box(for: r) == nil {
+                // A boxless element with flat-tree children may be display: contents
+                // (a slot, say) whose children are rendered: rebuild instead.
+                if !r.flatTreeChildren.isEmpty { return false }
                 // No box: fine if the element (or its parent) stays unrendered.
-                guard let pn = r.parent, pn.kind == .element else { return false }
+                guard let pn = layoutFlatParent(r), pn.kind == .element else { return false }
                 if let pb = box(for: pn) {
                     let sp = styleParent(pb)
                     let s = resolver.computeStyle(LayoutElement(r, state), parent: sp?.style, hints: layoutHints(r))
@@ -126,17 +136,17 @@ extension LayoutEngine {
                     if s.display != .none { return false }
                     continue
                 }
-                // Style inherits through the DOM parent. An element whose DOM parent has no
-                // box (display: contents) cannot be restyled in place from the box tree.
+                // Style inherits through the flat-tree parent. An element whose parent has no
+                // box (display: contents, a slot) cannot be restyled in place from the box tree.
                 var parentStyleBox: LayoutBox? = nil
-                if let dp = n.parent, dp.kind == .element {
+                if let dp = layoutFlatParent(n), dp.kind == .element {
                     guard let pb = box(for: dp), pb.node === dp else { return false }
                     parentStyleBox = styleParent(pb)
                 }
                 if n !== r || b.parent != nil || !widen {
                     if !restyleOne(b, n, parentStyleBox) { return false }
                 }
-                for c in n.children.reversed() where c.kind == .element { stack.append((c, b)) }
+                for c in n.flatTreeChildren.reversed() where c.kind == .element { stack.append((c, b)) }
             }
             if restyleDecoChanged { restyleDecoChanged = false; if !widen || !refreshDecorations(rb) { return false } }
         }
@@ -145,7 +155,7 @@ extension LayoutEngine {
 
     /// An element without a box whose own display is none (computed against its parent's box).
     func unrenderedNode(_ n: HTMLNode) -> Bool {
-        guard box(for: n) == nil, let gp = n.parent, gp.kind == .element, let gb = box(for: gp) else { return false }
+        guard box(for: n) == nil, let gp = layoutFlatParent(n), gp.kind == .element, let gb = box(for: gp) else { return false }
         let s = resolver.computeStyle(LayoutElement(n, state), parent: styleParent(gb)?.style, hints: layoutHints(n))
         return s.display == .none
     }
@@ -177,7 +187,7 @@ extension LayoutEngine {
         if s.textDecoration != b.style.textDecoration || (s.textDecoration.rawValue != 0 && s.color != b.style.color) { restyleDecoChanged = true }
         b.style = s
         for c in b.children {
-            if c.kind == .text && (c.node?.parent === n || c.pseudo == .marker) { c.style = s }
+            if c.kind == .text && (c.node?.flatTreeParent === n || c.pseudo == .marker) { c.style = s }
             if c.pseudo == .before || c.pseudo == .after {
                 guard let ps = resolver.computePseudoStyle(LayoutElement(n, state), c.pseudo == .before ? .before : .after,
                                                            elementStyle: s) else { return false }
@@ -200,7 +210,7 @@ extension LayoutEngine {
         if layoutStyleAffectsLayout(c.style, anon) { return false }
         c.style = anon
         for t in c.children {
-            if t.kind == .text && t.node?.parent === n { t.style = s }
+            if t.kind == .text && t.node?.flatTreeParent === n { t.style = s }
             else if t.anonymous && t.kind != .text { if !restyleAnon(t, s, n) { return false } }
         }
         return true
