@@ -200,7 +200,7 @@ let jsVMCases: [(String, String)] = [
     ("(function foo() {}).toString()", "function foo() {}"),
     ("function* g() {} g()", "Uncaught SyntaxError: not supported yet: generator functions"),
     ("async function g() {} typeof g", "function"),
-    ("/x/", "Uncaught SyntaxError: not supported yet: RegExp"),
+    ("/x/", "/x/"),
     ("10n", "Uncaught SyntaxError: not supported yet: BigInt"),
     ("var o = {f() { return 1 }}; o?.f() + (o.g?.() === undefined) + (null?.x === undefined)", "3"),
     ("var o = null; o?.a.b.c", "undefined"),
