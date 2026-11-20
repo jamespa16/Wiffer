@@ -642,7 +642,7 @@ private func jsInstallStringRegExpMethods(_ realm: JSRealm, _ sp: JSValue) {
             let o = args.this
             if o.isNullish { throw realm.throwTypeError("String.prototype." + name + " called on null or undefined") }
             let rx = args[0]
-            if !rx.isNullish {
+            if rx.isObject {
                 if name == "matchAll", try realm.b2IsRegExp(rx) {
                     let flags = try realm.getV(rx, realm.b2.kFlags)
                     if flags.isNullish { throw realm.throwTypeError("flags is null or undefined") }
@@ -671,7 +671,7 @@ private func jsInstallStringRegExpMethods(_ realm: JSRealm, _ sp: JSValue) {
         let o = args.this
         if o.isNullish { throw realm.throwTypeError("String.prototype.split called on null or undefined") }
         let sepV = args[0], limitV = args[1]
-        if !sepV.isNullish {
+        if sepV.isObject {
             let splitter = try realm.b2GetMethod(sepV, splitSym)
             if !splitter.isUndefined { return try realm.call(splitter, this: sepV, args: [o, limitV]) }
         }
@@ -715,7 +715,7 @@ private func jsInstallStringRegExpMethods(_ realm: JSRealm, _ sp: JSValue) {
             if o.isNullish { throw realm.throwTypeError("String.prototype." + name + " called on null or undefined") }
             let searchV = args[0]
             var replaceV = args[1]
-            if !searchV.isNullish {
+            if searchV.isObject {
                 if all, try realm.b2IsRegExp(searchV) {
                     let flags = try realm.getV(searchV, realm.b2.kFlags)
                     if flags.isNullish { throw realm.throwTypeError("flags is null or undefined") }

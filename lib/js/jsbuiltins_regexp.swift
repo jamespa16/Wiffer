@@ -91,12 +91,12 @@ extension JSRealm {
             throw throwSyntaxError("Invalid regular expression: /" + heap.swiftString(p) + "/" + heap.swiftString(f)
                                    + ": " + error.message)
         }
-        try setV(o, heap.names.lastIndex, .int32(0), strict: true)
         let old = Int(heap.internalInt(o))
         if old >= 0 { b2.releaseRegExp(old) }
         heap.setInternalInt(o, Int64(b2.addProgram(prog)))
         heap.setSlot(o, 0, p)
         heap.setSlot(o, 1, f)
+        try setV(o, heap.names.lastIndex, .int32(0), strict: true)
         return o
     }
 
