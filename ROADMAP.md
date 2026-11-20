@@ -4063,7 +4063,7 @@ each file:
 - **Tests:** 9D's test262 subsets for these built-ins, with pass-count
   floors.
 
-## Phase 9D: test262 runner (`lib/js/tests`, `tests/test262.py`)
+## Phase 9D: test262 runner (`lib/js/tests`) (runner done; floors rise with 9C/9E)
 
 - **Vendoring:** a pinned test262 commit, with only the directories in
   scope copied into `lib/js/fixtures/test262/` (BSD license file
@@ -4085,6 +4085,152 @@ each file:
 - **Speed:** the subset must finish in the `--hosttest` budget. If the
   full in-scope set gets too slow, `--hosttest` runs a fixed sample and
   `./run.sh --test262` runs everything.
+
+**Results (runner done, floors set at the numbers below).**
+`lib/js/tests/jstest262_run.swift` (runner), `jstest262_skip.swift` (the
+one skip list: feature tags and `$262` needs), `test262-floor.txt`
+(floors), `tools/fetch_test262.sh` (now fetches all of test/built-ins and
+test/annexB/built-ins plus harness/ at the pinned commit 2e58f87; not
+vendored, in build/test262).
+
+- **Runs** test/built-ins, test/annexB/built-ins, test/language and
+  test/annexB/language, each test in a fresh realm (harness assert.js,
+  sta.js, `includes`, doneprintHandle.js for async), sloppy and strict
+  (the whole concatenation behind `"use strict";`) as the flags say,
+  negative tests by phase and error type. `$262` has `evalScript`,
+  `gc` and `global`; tests needing `createRealm`, `agent` or
+  `detachArrayBuffer` are skipped with that reason. A 4 s CPU budget per
+  test through `interruptHandler` makes a hang a failure (none seen).
+- **Async and modules:** async tests are "skip: async" (288 in the
+  sample) and module tests "skip: module". The hook is
+  `jsTest262DrainJobs` in jstest262_run.swift: when Promise and the
+  microtask queue land, set it to a closure that drains the realm's jobs
+  and it takes effect (the runner already collects `print` output and
+  checks `Test262:AsyncTestComplete`).
+- **Speed:** `--hosttest js` runs a fixed sample (every 16th test of each
+  directory in sorted order, 1/16 of 49 000 tests): about 1.6 s, plus a
+  0.4 s GC-stress rerun (`gcEveryAllocation`) of the 118 sampled tests that
+  pass, which must still pass. `./run.sh --test262` runs everything in
+  about 23 s (fetches test262 first).
+- **Reports:** `build/hosttest/test262-results.txt` (pass fail skip per
+  directory, skip reasons), `build/hosttest/test262-failures.txt`
+  (`path: [mode] message`). Env: `WIFFER_TEST262_FILTER=Array/prototype`
+  runs only matching paths (no floor check), `WIFFER_TEST262_STRIDE=n`
+  changes the sample.
+- **Floors:** `test262-floor.txt` has `<dir> <full> <sample>` lines (plus
+  `TOTAL`); the run fails if a directory's pass count is below its floor
+  (full column for `--test262`, sample column for `--hosttest`).
+  **To raise them** after a phase lands: delete the feature tags it
+  implements from `jstest262_skip.swift`, run `./run.sh --test262` and
+  `./run.sh --hosttest js`, copy each directory's pass count from
+  test262-results.txt into the matching column (the sample numbers come
+  from the second run's file), commit with the numbers in the message.
+  A new directory needs a new line.
+- **Table** (full run at master after 9B, before the 9C/9E built-ins; the
+  skips are Temporal, Atomics, async, BigInt, modules and the other tags in
+  the skip list):
+
+| Directory | Pass | Fail | Skip |
+| --- | ---: | ---: | ---: |
+| annexB/built-ins/Date | 0 | 24 | 0 |
+| annexB/built-ins/Function | 6 | 0 | 0 |
+| annexB/built-ins/RegExp | 0 | 35 | 27 |
+| annexB/built-ins/String | 2 | 103 | 6 |
+| annexB/built-ins/escape | 0 | 15 | 1 |
+| annexB/built-ins/unescape | 0 | 18 | 1 |
+| annexB/language/comments | 8 | 0 | 0 |
+| annexB/language/eval-code | 143 | 326 | 0 |
+| annexB/language/expressions | 5 | 4 | 17 |
+| annexB/language/function-code | 85 | 74 | 0 |
+| annexB/language/global-code | 51 | 102 | 0 |
+| annexB/language/literals | 0 | 8 | 0 |
+| annexB/language/statements | 13 | 0 | 9 |
+| built-ins/AggregateError | 0 | 24 | 1 |
+| built-ins/Array | 272 | 2616 | 195 |
+| built-ins/ArrayBuffer | 0 | 79 | 142 |
+| built-ins/ArrayIteratorPrototype | 13 | 13 | 1 |
+| built-ins/AsyncFromSyncIteratorPrototype | 0 | 1 | 37 |
+| built-ins/AsyncFunction | 5 | 12 | 1 |
+| built-ins/AsyncGeneratorFunction | 1 | 14 | 8 |
+| built-ins/AsyncGeneratorPrototype | 0 | 13 | 35 |
+| built-ins/AsyncIteratorPrototype | 0 | 4 | 9 |
+| built-ins/BigInt | 0 | 1 | 76 |
+| built-ins/Boolean | 38 | 12 | 1 |
+| built-ins/DataView | 0 | 315 | 245 |
+| built-ins/Date | 0 | 599 | 11 |
+| built-ins/Error | 29 | 49 | 15 |
+| built-ins/FinalizationRegistry | 0 | 46 | 1 |
+| built-ins/Function | 365 | 130 | 14 |
+| built-ins/GeneratorFunction | 1 | 20 | 2 |
+| built-ins/GeneratorPrototype | 6 | 55 | 0 |
+| built-ins/Infinity | 3 | 3 | 0 |
+| built-ins/Iterator | 2 | 147 | 535 |
+| built-ins/JSON | 0 | 138 | 28 |
+| built-ins/Map | 0 | 168 | 36 |
+| built-ins/MapIteratorPrototype | 0 | 11 | 0 |
+| built-ins/Math | 0 | 312 | 15 |
+| built-ins/NaN | 4 | 2 | 0 |
+| built-ins/NativeErrors | 38 | 50 | 6 |
+| built-ins/Number | 170 | 167 | 3 |
+| built-ins/Object | 930 | 2462 | 19 |
+| built-ins/Promise | 0 | 272 | 460 |
+| built-ins/Proxy | 0 | 273 | 38 |
+| built-ins/Reflect | 0 | 153 | 0 |
+| built-ins/RegExp | 192 | 1496 | 191 |
+| built-ins/RegExpStringIteratorPrototype | 0 | 17 | 0 |
+| built-ins/Set | 0 | 194 | 189 |
+| built-ins/SetIteratorPrototype | 0 | 11 | 0 |
+| built-ins/String | 162 | 1053 | 8 |
+| built-ins/StringIteratorPrototype | 4 | 3 | 0 |
+| built-ins/Symbol | 16 | 61 | 21 |
+| built-ins/ThrowTypeError | 0 | 13 | 1 |
+| built-ins/TypedArray | 0 | 708 | 745 |
+| built-ins/TypedArrayConstructors | 0 | 338 | 400 |
+| built-ins/WeakMap | 0 | 101 | 40 |
+| built-ins/WeakRef | 0 | 28 | 1 |
+| built-ins/WeakSet | 0 | 84 | 1 |
+| built-ins/decodeURI | 1 | 54 | 0 |
+| built-ins/decodeURIComponent | 1 | 55 | 0 |
+| built-ins/encodeURI | 1 | 30 | 0 |
+| built-ins/encodeURIComponent | 1 | 30 | 0 |
+| built-ins/eval | 7 | 3 | 0 |
+| built-ins/global | 18 | 11 | 0 |
+| built-ins/isFinite | 0 | 15 | 0 |
+| built-ins/isNaN | 0 | 15 | 0 |
+| built-ins/parseFloat | 1 | 53 | 0 |
+| built-ins/parseInt | 1 | 54 | 0 |
+| built-ins/undefined | 6 | 2 | 0 |
+| language/arguments-object | 73 | 130 | 60 |
+| language/asi | 102 | 0 | 0 |
+| language/block-scope | 145 | 0 | 0 |
+| language/comments | 47 | 4 | 1 |
+| language/computed-property-names | 31 | 17 | 0 |
+| language/destructuring | 17 | 1 | 1 |
+| language/directive-prologue | 62 | 0 | 0 |
+| language/eval-code | 229 | 65 | 53 |
+| language/expressions | 4750 | 3394 | 3012 |
+| language/function-code | 211 | 6 | 0 |
+| language/future-reserved-words | 55 | 0 | 0 |
+| language/global-code | 32 | 10 | 0 |
+| language/identifier-resolution | 12 | 2 | 0 |
+| language/identifiers | 208 | 60 | 0 |
+| language/keywords | 25 | 0 | 0 |
+| language/line-terminators | 41 | 0 | 0 |
+| language/literals | 349 | 45 | 142 |
+| language/punctuators | 11 | 0 | 0 |
+| language/reserved-words | 26 | 0 | 1 |
+| language/rest-parameters | 11 | 0 | 0 |
+| language/source-text | 0 | 1 | 0 |
+| language/statementList | 64 | 16 | 0 |
+| language/statements | 3876 | 2847 | 2676 |
+| language/types | 98 | 13 | 2 |
+| language/white-space | 42 | 25 | 0 |
+| **Total** | **13118** | **19935** | **15744** |
+
+- **Known gaps:** most failures are missing built-ins (Math, JSON, Map,
+  Proxy, typed arrays, Promise...), generators, private class members and
+  RegExp literals not wired in this snapshot. Only a sample is run under
+  `gcEveryAllocation`, not the whole set.
 
 ## Phase 9E: ES2015+ runtime (`lib/js`)
 
