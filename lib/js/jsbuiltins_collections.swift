@@ -70,6 +70,7 @@ extension JSRealm {
 
     func mapHash(_ k: JSValue) -> UInt32 {
         if k.isString, let i = heap.stringCell(k) { return heap.stringHash(i) }
+        if k.isBigInt { return UInt32(truncatingIfNeeded: heap.bigintHash(k)) }
         var x = k.bits &* 0x9E37_79B9_7F4A_7C15
         x ^= x >> 31
         return UInt32(truncatingIfNeeded: x)
@@ -86,7 +87,8 @@ extension JSRealm {
             if e == -1 { return -1 }
             if e >= 0 {
                 let stored = heap.slot(ix.owner, e * ix.stride)
-                if stored == k || (k.isString && stored.isString && heap.stringsEqual(stored, k)) { return e }
+                if stored == k || (k.isString && stored.isString && heap.stringsEqual(stored, k))
+                    || (k.isBigInt && stored.isBigInt && heap.bigintsEqual(stored, k)) { return e }
             }
             p = (p + 1) & mask
             n += 1
@@ -148,7 +150,8 @@ extension JSRealm {
             if e == -1 { return false }
             if e >= 0 {
                 let stored = heap.slot(ix.owner, e * ix.stride)
-                if stored == k || (k.isString && stored.isString && heap.stringsEqual(stored, k)) {
+                if stored == k || (k.isString && stored.isString && heap.stringsEqual(stored, k))
+                    || (k.isBigInt && stored.isBigInt && heap.bigintsEqual(stored, k)) {
                     ix.table[p] = -2
                     heap.setSlot(ix.owner, e * ix.stride, .hole)
                     if ix.stride == 2 { heap.setSlot(ix.owner, e * 2 + 1, .undefined) }

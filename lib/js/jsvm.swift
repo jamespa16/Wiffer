@@ -688,36 +688,43 @@ extension JSRealm {
                         if a.isInt32 && b.isInt32 {
                             let (r, o) = a.asInt32.subtractingReportingOverflow(b.asInt32)
                             stack[sp - 2] = o ? .double(Double(a.asInt32) - Double(b.asInt32)) : .int32(r)
+                        } else if a.isNumber && b.isNumber {
+                            stack[sp - 2] = .number(a.numberValue - b.numberValue)
                         } else {
-                            let x = try toNumber(a), y = try toNumber(b)
-                            stack[sp - 2] = .number(x - y)
+                            stack[sp - 2] = try numericOp(.sub, a, b)
                         }
                         sp -= 1; pc += 1
                     case .mul, .div, .mod, .exp:
                         let a = stack[sp - 2], b = stack[sp - 1]
-                        let x = a.isNumber ? a.numberValue : try toNumber(a)
-                        let y = b.isNumber ? b.numberValue : try toNumber(stack[sp - 1])
-                        let r: Double
-                        switch op {
-                        case .mul: r = x * y
-                        case .div: r = x / y
-                        case .mod: r = jsFmod(x, y)
-                        default: r = jsPowNumber(x, y)
+                        if a.isNumber && b.isNumber {
+                            let x = a.numberValue, y = b.numberValue
+                            let r: Double
+                            switch op {
+                            case .mul: r = x * y
+                            case .div: r = x / y
+                            case .mod: r = jsFmod(x, y)
+                            default: r = jsPowNumber(x, y)
+                            }
+                            stack[sp - 2] = .number(r)
+                        } else {
+                            stack[sp - 2] = try numericOp(op, a, b)
                         }
-                        stack[sp - 2] = .number(r)
                         sp -= 1; pc += 1
                     case .shl, .sar, .shr, .bitAnd, .bitOr, .bitXor:
                         let a = stack[sp - 2], b = stack[sp - 1]
-                        let x = a.isInt32 ? a.asInt32 : jsToInt32(try toNumber(a))
-                        let y = b.isInt32 ? b.asInt32 : jsToInt32(try toNumber(stack[sp - 1]))
                         let r: JSValue
-                        switch op {
-                        case .shl: r = .int32(x << (y & 31))
-                        case .sar: r = .int32(x >> (y & 31))
-                        case .shr: r = .number(Double(UInt32(bitPattern: x) >> UInt32(y & 31)))
-                        case .bitAnd: r = .int32(x & y)
-                        case .bitOr: r = .int32(x | y)
-                        default: r = .int32(x ^ y)
+                        if a.isInt32 && b.isInt32 {
+                            let x = a.asInt32, y = b.asInt32
+                            switch op {
+                            case .shl: r = .int32(x << (y & 31))
+                            case .sar: r = .int32(x >> (y & 31))
+                            case .shr: r = .number(Double(UInt32(bitPattern: x) >> UInt32(y & 31)))
+                            case .bitAnd: r = .int32(x & y)
+                            case .bitOr: r = .int32(x | y)
+                            default: r = .int32(x ^ y)
+                            }
+                        } else {
+                            r = try numericOp(op, a, b)
                         }
                         stack[sp - 2] = r
                         sp -= 1; pc += 1
@@ -757,17 +764,22 @@ extension JSRealm {
                     case .neg:
                         let a = stack[sp - 1]
                         if a.isInt32 && a.asInt32 != 0 && a.asInt32 != Int32.min { stack[sp - 1] = .int32(-a.asInt32) }
-                        else { stack[sp - 1] = .number(-(try toNumber(a))) }
+                        else if a.isNumber { stack[sp - 1] = .number(-a.numberValue) }
+                        else { stack[sp - 1] = try numericUnary(.neg, a) }
                         pc += 1
-                    case .plus, .toNumeric:
+                    case .plus:
                         let a = stack[sp - 1]
                         if !a.isNumber { stack[sp - 1] = .number(try toNumber(a)) }
+                        pc += 1
+                    case .toNumeric:
+                        let a = stack[sp - 1]
+                        if !a.isNumber { stack[sp - 1] = try toNumeric(a) }
                         pc += 1
                     case .not:
                         stack[sp - 1] = .bool(!heap.toBoolean(stack[sp - 1])); pc += 1
                     case .bitNot:
                         let a = stack[sp - 1]
-                        stack[sp - 1] = .int32(~(a.isInt32 ? a.asInt32 : jsToInt32(try toNumber(a)))); pc += 1
+                        stack[sp - 1] = a.isInt32 ? .int32(~a.asInt32) : try numericUnary(.bitNot, a); pc += 1
                     case .typeOf:
                         stack[sp - 1] = heap.typeOf(stack[sp - 1]); pc += 1
                     case .inc, .dec:
@@ -775,9 +787,11 @@ extension JSRealm {
                         if a.isInt32 {
                             let (r, o) = op == .inc ? a.asInt32.addingReportingOverflow(1) : a.asInt32.subtractingReportingOverflow(1)
                             stack[sp - 1] = o ? .double(Double(a.asInt32) + (op == .inc ? 1 : -1)) : .int32(r)
-                        } else {
-                            let x = try toNumber(a)
+                        } else if a.isNumber {
+                            let x = a.numberValue
                             stack[sp - 1] = .number(op == .inc ? x + 1 : x - 1)
+                        } else {
+                            stack[sp - 1] = try numericUnary(op, a)
                         }
                         pc += 1
                     case .toStringOp:

@@ -41,7 +41,48 @@ func jsBuiltins4Tests(_ t: Tests) {
         print("WIFFER_JS_EVAL4: " + realm.evaluateToString(String(decoding: src, as: UTF8.self)))
     }
     jsBuiltins4Scripts(t, stress: false)
+    jsBuiltins4Vectors(t, stress: false)
     jsBuiltins4Scripts(t, stress: true)
+    jsBuiltins4Vectors(t, stress: true)
+}
+
+/// Reference vectors computed by Python (tools/gen_bigint_vectors.py): every
+/// line is "op a b expected". Under gcEveryAllocation a sample runs.
+func jsBuiltins4Vectors(_ t: Tests, stress: Bool) {
+    t.section(stress ? "BigInt vectors (gcEveryAllocation sample)" : "BigInt vectors")
+    let realm = JSRuntime(limits: JSLimits()).makeRealm()
+    realm.heap.gcEveryAllocation = stress
+    let v = realm.heap.newString(jsBigIntVectors)
+    realm.defineValue(realm.global, "V", v, [])
+    let script = """
+        var lines = V.split("\\n"), bad = [], n = 0, step = \(stress ? 40 : 1);
+        for (var li = 0; li < lines.length; li += step) {
+            var l = lines[li], p = l.split(" "), op = p[0], a = BigInt(p[1]), want = p[3], got;
+            switch (op) {
+            case "+": got = String(a + BigInt(p[2])); break;
+            case "-": got = String(a - BigInt(p[2])); break;
+            case "*": got = String(a * BigInt(p[2])); break;
+            case "/": got = String(a / BigInt(p[2])); break;
+            case "%": got = String(a % BigInt(p[2])); break;
+            case "&": got = String(a & BigInt(p[2])); break;
+            case "|": got = String(a | BigInt(p[2])); break;
+            case "^": got = String(a ^ BigInt(p[2])); break;
+            case "<<": got = String(a << BigInt(p[2])); break;
+            case ">>": got = String(a >> BigInt(p[2])); break;
+            case "**": got = String(a ** BigInt(p[2])); break;
+            case "~": got = String(~a); break;
+            case "neg": got = String(-a); break;
+            case "str": got = a.toString(Number(p[2])); break;
+            case "asU": got = String(BigInt.asUintN(Number(p[2]), a)); break;
+            case "asI": got = String(BigInt.asIntN(Number(p[2]), a)); break;
+            case "num": got = String(Number(a) === Number(want)); want = "true"; break;
+            }
+            n++;
+            if (got !== want && bad.length < 5) bad.push(l.length > 80 ? l.slice(0, 80) + "..." : l);
+        }
+        bad.length + ":" + bad.join(" | ") + ":" + (n > 100)
+        """
+    t.equal(realm.evaluateToString(script), "0::true", "BigInt vectors vs Python")
 }
 
 func jsBuiltins4Scripts(_ t: Tests, stress: Bool) {

@@ -52,6 +52,10 @@ public struct JSLimits {
     /// The VM checks its interrupt budget at least every this many
     /// instructions (also at backward jumps and calls).
     public var interruptInterval: Int
+    /// Largest BigInt, in bits (RangeError past it: `2n ** 10000000n`).
+    /// Multiplication is Karatsuba, division and toString are quadratic, so
+    /// this also bounds the time one operation can take.
+    public var maxBigIntBits: Int
 
     public init(heapBytes: Int = 256 << 20,
                 maxStringLength: Int = (1 << 29) - 24,
@@ -65,7 +69,8 @@ public struct JSLimits {
                 maxASTHeight: Int = 2_000,
                 maxASTNodes: Int = 20_000_000,
                 maxRegexSteps: Int = 10_000_000,
-                interruptInterval: Int = 10_000) {
+                interruptInterval: Int = 10_000,
+                maxBigIntBits: Int = 1 << 18) {
         self.heapBytes = heapBytes
         self.maxStringLength = maxStringLength
         self.maxDenseArrayLength = maxDenseArrayLength
@@ -79,6 +84,7 @@ public struct JSLimits {
         self.maxASTNodes = maxASTNodes
         self.maxRegexSteps = maxRegexSteps
         self.interruptInterval = interruptInterval
+        self.maxBigIntBits = maxBigIntBits
     }
 
     /// Tight limits for tests and fuzzing.
@@ -87,7 +93,7 @@ public struct JSLimits {
                  maxArrayLength: 1 << 20, maxCallDepth: 500,
                  maxNativeNesting: 16, maxSourceBytes: 1 << 20, maxASTDepth: 200, maxASTHeight: 400,
                  maxASTNodes: 1 << 20,
-                 maxRegexSteps: 100_000, interruptInterval: 1_000)
+                 maxRegexSteps: 100_000, interruptInterval: 1_000, maxBigIntBits: 1 << 14)
     }
 }
 

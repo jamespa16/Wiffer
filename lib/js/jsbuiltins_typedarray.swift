@@ -14,8 +14,9 @@
 //   DataView     kind .dataView; slots [buffer, byteOffset, byteLength or
 //                -1 (tracking)].
 // Element types: Int8 Uint8 Uint8Clamped Int16 Uint16 Int32 Uint32 Float32
-// Float64 Float16. BigInt64Array / BigUint64Array (and DataView
-// get/setBig*) are not provided: BigInt is still a placeholder (9E stretch).
+// Float64 Float16 BigInt64 BigUint64 (the last two hold BigInts: elements
+// are read as heap bigints and written with ToBigInt; DataView has
+// get/setBigInt64 and get/setBigUint64).
 // SharedArrayBuffer is not provided (no threads).
 //
 // Embedding: realm.newArrayBuffer(bytes:), realm.arrayBufferBytes(buf),
@@ -23,14 +24,17 @@
 // realm.newTypedArray(type:length:).
 
 public enum JSTypedArrayType: Int {
-    case int8, uint8, uint8Clamped, int16, uint16, int32, uint32, float32, float64, float16
+    case int8, uint8, uint8Clamped, int16, uint16, int32, uint32, float32, float64, float16, bigInt64, bigUint64
+
+    /// BigInt64Array / BigUint64Array.
+    var isBigInt: Bool { self == .bigInt64 || self == .bigUint64 }
 
     public var size: Int {
         switch self {
         case .int8, .uint8, .uint8Clamped: return 1
         case .int16, .uint16, .float16: return 2
         case .int32, .uint32, .float32: return 4
-        case .float64: return 8
+        case .float64, .bigInt64, .bigUint64: return 8
         }
     }
     var name: String {
@@ -45,6 +49,8 @@ public enum JSTypedArrayType: Int {
         case .float32: return "Float32Array"
         case .float64: return "Float64Array"
         case .float16: return "Float16Array"
+        case .bigInt64: return "BigInt64Array"
+        case .bigUint64: return "BigUint64Array"
         }
     }
     var protoIntrinsic: JSIntrinsic {
@@ -53,7 +59,7 @@ public enum JSTypedArrayType: Int {
     var ctorIntrinsic: JSIntrinsic {
         JSIntrinsic(rawValue: JSIntrinsic.int8ArrayConstructor.rawValue + rawValue) ?? .typedArrayConstructor
     }
-    static let all: [JSTypedArrayType] = [.int8, .uint8, .uint8Clamped, .int16, .uint16, .int32, .uint32, .float32, .float64, .float16]
+    static let all: [JSTypedArrayType] = [.int8, .uint8, .uint8Clamped, .int16, .uint16, .int32, .uint32, .float32, .float64, .float16, .bigInt64, .bigUint64]
 }
 
 // MARK: Number conversions (no libm)
@@ -111,6 +117,7 @@ func jsElementBits(_ t: JSTypedArrayType, _ d: Double) -> UInt64 {
     case .float32: return UInt64(Float(d).bitPattern)
     case .float64: return d.bitPattern
     case .float16: return UInt64(jsDoubleToHalf(d))
+    case .bigInt64, .bigUint64: return 0   // BigInt arrays store through typedArraySetElementValue
     }
 }
 
@@ -125,6 +132,7 @@ func jsElementValue(_ t: JSTypedArrayType, _ b: UInt64) -> JSValue {
     case .float32: return .number(Double(Float(bitPattern: UInt32(truncatingIfNeeded: b))))
     case .float64: return .number(Double(bitPattern: b))
     case .float16: return .number(jsHalfToDouble(UInt16(truncatingIfNeeded: b)))
+    case .bigInt64, .bigUint64: return .undefined   // heap.typedArrayElement allocates the BigInt
     }
 }
 
@@ -242,7 +250,34 @@ extension JSHeap {
     /// Element x, or nil when x is not a valid integer index.
     func typedArrayElement(_ i: Int, _ x: Int) -> JSValue? {
         guard x >= 0, let v = typedArrayView(i), x < v.length else { return nil }
-        return jsElementValue(v.type, readBits(v.store, v.offset + x * v.type.size, v.type.size))
+        let bits = readBits(v.store, v.offset + x * v.type.size, v.type.size)
+        if v.type.isBigInt {
+            let b = newBigInt(jsBNFromBits64(bits, signed: v.type == .bigInt64))
+            recentBigInts[recentBigIntNext] = b
+            recentBigIntNext = (recentBigIntNext + 1) & 15
+            return b
+        }
+        return jsElementValue(v.type, bits)
+    }
+
+    /// Whether storing v into typed array o needs the realm (ToNumber /
+    /// ToBigInt may run JS or throw).
+    func typedArrayNeedsRealm(_ o: JSValue, _ v: JSValue) -> Bool {
+        guard let i = objectIndex(o), objects[i].kind == .typedArray else { return toPrimitiveNumber(v) == nil }
+        if typedArrayType(i).isBigInt { return !v.isBigInt }
+        return toPrimitiveNumber(v) == nil
+    }
+
+    /// Store a Number or BigInt v (already primitive, matching the element
+    /// kind; see typedArrayNeedsRealm) at index x.
+    func typedArraySetElementValue(_ i: Int, _ x: Int, _ v: JSValue) {
+        guard x >= 0, let view = typedArrayView(i), x < view.length else { return }
+        if view.type.isBigInt {
+            guard v.isBigInt else { return }
+            writeBits(view.store, view.offset + x * 8, 8, jsBNLow64(bigintValue(v)))
+        } else if let d = toPrimitiveNumber(v) {
+            writeBits(view.store, view.offset + x * view.type.size, view.type.size, jsElementBits(view.type, d))
+        }
     }
 
     /// TypedArraySetElement with the number already converted.
@@ -258,8 +293,8 @@ extension JSHeap {
         guard typedArrayValidIndex(i, x) else { return false }
         if d.configurable == false || d.enumerable == false || d.isAccessorDescriptor || d.writable == false { return false }
         if let v = d.value {
-            guard let n = toPrimitiveNumber(v) else { return false }
-            typedArraySetElement(i, x, n)
+            if typedArrayNeedsRealm(.object(JSHandle(i)), v) { return false }
+            typedArraySetElementValue(i, x, v)
         }
         return true
     }
@@ -270,9 +305,26 @@ extension JSHeap {
 extension JSRealm {
     /// TypedArraySetElement: ToNumber (may run JS), then store if valid.
     func typedArraySetElementJS(_ o: JSValue, _ x: Int, _ v: JSValue) throws(JSThrow) {
-        let d = try toNumber(v)
         guard let i = heap.objectIndex(o) else { return }
+        if heap.typedArrayType(i).isBigInt {
+            let b = try toBigInt(v)
+            heap.typedArraySetElementValue(i, x, b)
+            return
+        }
+        let d = try toNumber(v)
         heap.typedArraySetElement(i, x, d)
+    }
+
+    /// The element conversion of a typed array type: ToBigInt for the BigInt
+    /// arrays, ToNumber otherwise (as a number value).
+    func typedArrayConvert(_ t: JSTypedArrayType, _ v: JSValue) throws(JSThrow) -> JSValue {
+        if t.isBigInt { return try toBigInt(v) }
+        return .number(try toNumber(v))
+    }
+
+    /// TypeError when a BigInt array meets a Number array (content types).
+    func typedArrayCheckContent(_ a: JSTypedArrayType, _ b: JSTypedArrayType) throws(JSThrow) {
+        if a.isBigInt != b.isBigInt { throw throwTypeError("Cannot mix BigInt and other types, use explicit conversions") }
     }
 
     /// ToIndex.
@@ -394,7 +446,9 @@ extension JSRealm {
         let c = try speciesConstructor(exemplar, default: intrinsic(t.ctorIntrinsic))
         let r = heap.root(c)
         defer { heap.popRoots(to: r.slot) }
-        return try typedArrayCreate(c, args, fn)
+        let o = try typedArrayCreate(c, args, fn)
+        if let oi = heap.objectIndex(o) { try typedArrayCheckContent(t, heap.typedArrayType(oi)) }
+        return o
     }
 
     /// Copy elements src[srcStart..<srcStart+n] into dst at dstStart
@@ -405,7 +459,8 @@ extension JSRealm {
               let sv = heap.typedArrayView(si), let dv = heap.typedArrayView(di) else { return }
         let cnt = min(n, sv.length - srcStart, dv.length - dstStart)
         guard cnt > 0, srcStart >= 0, dstStart >= 0 else { return }
-        if sv.type == dv.type {
+        if sv.type.isBigInt != dv.type.isBigInt { return }   // callers throw the TypeError
+        if sv.type == dv.type || sv.type.isBigInt {
             let sz = sv.type.size
             let bytes = Array(heap.byteStores[sv.store][(sv.offset + srcStart * sz)..<(sv.offset + (srcStart + cnt) * sz)])
             let at = dv.offset + dstStart * sz
@@ -468,6 +523,7 @@ extension JSRealm {
             guard let si = heap.objectIndex(first), let sv = heap.typedArrayView(si) else {
                 throw throwTypeError("Cannot construct a typed array from a detached ArrayBuffer")
             }
+            try typedArrayCheckContent(type, sv.type)
             let o = try allocateTypedArray(proto: proto, type: type, length: sv.length)
             _ = heap.root(o)
             taCopy(first, 0, o, 0, sv.length)
@@ -516,21 +572,24 @@ extension JSRealm {
 
     /// (store, absolute byte offset) for a get/set of `size` at request
     /// index, after the spec's checks.
-    func viewAccess(_ view: JSValue, _ requestIndex: JSValue, size: Int, fn: String, value: JSValue?, littleEndian: JSValue)
-        throws(JSThrow) -> (Int, Int, Bool, Double) {
+    func viewAccess(_ view: JSValue, _ requestIndex: JSValue, size: Int, fn: String, value: JSValue?, littleEndian: JSValue,
+                    big: Bool = false) throws(JSThrow) -> (Int, Int, Bool, Double, UInt64) {
         guard heap.kind(view) == .dataView else {
             throw throwTypeError("Method DataView.prototype." + fn + " called on incompatible receiver " + describeForError(view))
         }
         let idx = try toIndex(requestIndex, "DataView index")
         var num = 0.0
-        if let v = value { num = try toNumber(v) }
+        var bigBits: UInt64 = 0
+        if let v = value {
+            if big { bigBits = jsBNLow64(heap.bigintValue(try toBigInt(v))) } else { num = try toNumber(v) }
+        }
         let le = heap.toBoolean(littleEndian)
         let buf = heap.slot(view, 0)
         guard let st = heap.bufferStore(buf) else { throw throwTypeError("Cannot perform DataView.prototype." + fn + " on a detached ArrayBuffer") }
         guard let (off, len) = dataViewBounds(view) else { throw throwTypeError("DataView is out of bounds") }
         _ = st
         if idx + size > len { throw throwRangeError("Offset is outside the bounds of the DataView") }
-        return (st, off + idx, le, num)
+        return (st, off + idx, le, num, bigBits)
     }
 
     /// (byteOffset, byteLength) of an in-bounds view, else nil.
@@ -732,12 +791,24 @@ func jsInstallTypedArrays(_ realm: JSRealm) {
         ("Int32", .int32), ("Uint32", .uint32), ("Float16", .float16), ("Float32", .float32), ("Float64", .float64)]
     for (name, t) in viewTypes {
         realm.defineMethod(dvp, "get" + name, length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
-            let (st, at, le, _) = try realm.viewAccess(args.this, args[0], size: t.size, fn: "get" + name, value: nil, littleEndian: args[1])
+            let (st, at, le, _, _) = try realm.viewAccess(args.this, args[0], size: t.size, fn: "get" + name, value: nil, littleEndian: args[1])
             return jsElementValue(t, realm.heap.readBits(st, at, t.size, littleEndian: le))
         }
         realm.defineMethod(dvp, "set" + name, length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
-            let (st, at, le, num) = try realm.viewAccess(args.this, args[0], size: t.size, fn: "set" + name, value: args[1], littleEndian: args[2])
+            let (st, at, le, num, _) = try realm.viewAccess(args.this, args[0], size: t.size, fn: "set" + name, value: args[1], littleEndian: args[2])
             realm.heap.writeBits(st, at, t.size, jsElementBits(t, num), littleEndian: le)
+            return .undefined
+        }
+    }
+    for (name, t) in [("BigInt64", JSTypedArrayType.bigInt64), ("BigUint64", JSTypedArrayType.bigUint64)] {
+        realm.defineMethod(dvp, "get" + name, length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            let (st, at, le, _, _) = try realm.viewAccess(args.this, args[0], size: 8, fn: "get" + name, value: nil, littleEndian: args[1])
+            let bits = realm.heap.readBits(st, at, 8, littleEndian: le)
+            return try realm.makeBigInt(jsBNFromBits64(bits, signed: t == .bigInt64))
+        }
+        realm.defineMethod(dvp, "set" + name, length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            let (st, at, le, _, bits) = try realm.viewAccess(args.this, args[0], size: 8, fn: "set" + name, value: args[1], littleEndian: args[2], big: true)
+            realm.heap.writeBits(st, at, 8, bits, littleEndian: le)
             return .undefined
         }
     }
@@ -1023,7 +1094,11 @@ func jsInstallTypedArrayPrototype(_ realm: JSRealm, _ tap: JSValue) {
         for k in 0..<len {
             if k > 0 { for u in sep { sb.append(unit: u) } }
             let v = realm.taGet(args.this, k)
-            if !v.isUndefined { sb.append(ascii: jsNumberToString(v.numberValue)) }
+            if v.isBigInt {
+                let bv = realm.heap.bigintValue(v)
+                if bv.negative { sb.append(unit: 0x2D) }
+                sb.append(ascii: jsBNMagToDigits(bv.mag, radix: 10))
+            } else if !v.isUndefined { sb.append(ascii: jsNumberToString(v.numberValue)) }
             if !realm.heap.canMakeString(length: sb.count) { throw realm.throwRangeError("Invalid string length") }
         }
         return realm.heap.newString(sb)
@@ -1059,23 +1134,28 @@ func jsInstallTypedArrayPrototype(_ realm: JSRealm, _ tap: JSValue) {
 
     // Mutation.
     realm.defineMethod(tap, "fill", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
-        let (_, len, _) = try realm.validateTypedArray(args.this, "fill")
-        let num = try realm.toNumber(args[0])
+        let (_, len, ft) = try realm.validateTypedArray(args.this, "fill")
+        let num = try realm.typedArrayConvert(ft, args[0])
+        let fr = realm.heap.root(num)
+        defer { realm.heap.popRoots(to: fr.slot) }
         let s = jsRelIndex(jsToIntegerOrInfinity(try realm.toNumber(args[1])), len)
         let e = args[2].isUndefined ? len : jsRelIndex(jsToIntegerOrInfinity(try realm.toNumber(args[2])), len)
         let (i, len2, _) = try realm.validateTypedArray(args.this, "fill")
         let end = min(e, len2)
-        if s < end { for k in s..<end { realm.heap.typedArraySetElement(i, k, num) } }
+        if s < end { for k in s..<end { realm.heap.typedArraySetElementValue(i, k, num) } }
         return args.this
     }
     realm.defineMethod(tap, "reverse", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
         let (i, len, _) = try realm.validateTypedArray(args.this, "reverse")
         var lo = 0, hi = len - 1
         while lo < hi {
-            let a = realm.heap.typedArrayElement(i, lo)?.numberValue ?? 0
-            let b = realm.heap.typedArrayElement(i, hi)?.numberValue ?? 0
-            realm.heap.typedArraySetElement(i, lo, b)
-            realm.heap.typedArraySetElement(i, hi, a)
+            if let v = realm.heap.typedArrayView(i) {
+                let sz = v.type.size
+                let a = realm.heap.readBits(v.store, v.offset + lo * sz, sz)
+                let b = realm.heap.readBits(v.store, v.offset + hi * sz, sz)
+                realm.heap.writeBits(v.store, v.offset + lo * sz, sz, b)
+                realm.heap.writeBits(v.store, v.offset + hi * sz, sz, a)
+            }
             lo += 1; hi -= 1
         }
         return args.this
@@ -1101,7 +1181,8 @@ func jsInstallTypedArrayPrototype(_ realm: JSRealm, _ tap: JSValue) {
         let (_, tlen, _) = try realm.validateTypedArray(args.this, "set")
         let src = args[0]
         if h.kind(src) == .typedArray {
-            let (_, slen, _) = try realm.validateTypedArray(src, "set")
+            let (_, slen, st) = try realm.validateTypedArray(src, "set")
+            if let ti = h.objectIndex(args.this) { try realm.typedArrayCheckContent(st, h.typedArrayType(ti)) }
             if off == .infinity || Double(slen) + off > Double(tlen) { throw realm.throwRangeError("offset is out of bounds") }
             realm.taCopy(src, 0, args.this, Int(off), slen)
             return .undefined
@@ -1163,6 +1244,7 @@ func jsInstallTypedArrayPrototype(_ realm: JSRealm, _ tap: JSValue) {
         let n = a.count
         func less(_ x: JSValue, _ y: JSValue) throws(JSThrow) -> Bool {   // y < x ?
             if cmp.isUndefined {
+                if x.isBigInt { return jsBNCmpSigned(realm.heap.bigintValue(y), realm.heap.bigintValue(x)) < 0 }
                 let p = x.numberValue, q = y.numberValue
                 if q.isNaN { return false }
                 if p.isNaN { return true }
@@ -1194,16 +1276,22 @@ func jsInstallTypedArrayPrototype(_ realm: JSRealm, _ tap: JSValue) {
     func snapshot(_ realm: JSRealm, _ o: JSValue, _ len: Int) -> [JSValue] {
         var v: [JSValue] = []
         v.reserveCapacity(len)
-        for k in 0..<len { v.append(realm.taGet(o, k)) }
+        for k in 0..<len {
+            let e = realm.taGet(o, k)
+            if e.isBigInt { _ = realm.heap.root(e) }   // BigInt snapshots stay rooted for the sort
+            v.append(e)
+        }
         return v
     }
     realm.defineMethod(tap, "sort", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
         let cmp = args[0]
         if !cmp.isUndefined && !realm.heap.isCallable(cmp) { throw realm.throwTypeError("The comparison function must be either a function or undefined") }
         let (_, len, _) = try realm.validateTypedArray(args.this, "sort")
+        let sd = realm.heap.rootDepth
+        defer { realm.heap.popRoots(to: sd) }
         let sorted = try sortValues(realm, snapshot(realm, args.this, len), cmp)
         if let i = realm.heap.objectIndex(args.this) {
-            for (k, v) in sorted.enumerated() { realm.heap.typedArraySetElement(i, k, v.numberValue) }
+            for (k, v) in sorted.enumerated() { realm.heap.typedArraySetElementValue(i, k, v) }
         }
         return args.this
     }
@@ -1216,14 +1304,14 @@ func jsInstallTypedArrayPrototype(_ realm: JSRealm, _ tap: JSValue) {
         let r = realm.heap.root(a)
         defer { realm.heap.popRoots(to: r.slot) }
         let sorted = try sortValues(realm, snapshot(realm, args.this, len), cmp)
-        if let ai = realm.heap.objectIndex(a) { for (k, v) in sorted.enumerated() { realm.heap.typedArraySetElement(ai, k, v.numberValue) } }
+        if let ai = realm.heap.objectIndex(a) { for (k, v) in sorted.enumerated() { realm.heap.typedArraySetElementValue(ai, k, v) } }
         return a
     }
     realm.defineMethod(tap, "toReversed", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
         let (_, len, t) = try realm.validateTypedArray(args.this, "toReversed")
         let a = try realm.newTypedArray(type: t, length: len)
         if let ai = realm.heap.objectIndex(a) {
-            for k in 0..<len { realm.heap.typedArraySetElement(ai, k, realm.taGet(args.this, len - 1 - k).numberValue) }
+            for k in 0..<len { realm.heap.typedArraySetElementValue(ai, k, realm.taGet(args.this, len - 1 - k)) }
         }
         return a
     }
@@ -1231,14 +1319,16 @@ func jsInstallTypedArrayPrototype(_ realm: JSRealm, _ tap: JSValue) {
         let (_, len, t) = try realm.validateTypedArray(args.this, "with")
         let rel = jsToIntegerOrInfinity(try realm.toNumber(args[0]))
         let actual = rel >= 0 ? rel : Double(len) + rel
-        let num = try realm.toNumber(args[1])
+        let num = try realm.typedArrayConvert(t, args[1])
+        let wr = realm.heap.root(num)
+        defer { realm.heap.popRoots(to: wr.slot) }
         guard let i = realm.heap.objectIndex(args.this), actual >= 0, actual < Double(realm.heap.typedArrayLength(i)) else {
             throw realm.throwRangeError("Invalid typed array index")
         }
         let ai = Int(actual)
         let a = try realm.newTypedArray(type: t, length: len)
         if let x = realm.heap.objectIndex(a) {
-            for k in 0..<len { realm.heap.typedArraySetElement(x, k, k == ai ? num : realm.taGet(args.this, k).numberValue) }
+            for k in 0..<len { realm.heap.typedArraySetElementValue(x, k, k == ai ? num : realm.taGet(args.this, k)) }
         }
         return a
     }

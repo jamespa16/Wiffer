@@ -232,7 +232,7 @@ extension JSRealm {
             if heap.kind(o) == .proxy { return try proxyDefineOwnProperty(o, k, d) }
             if let h = hostHandler(o)?.defineOwnProperty, let r = try h(self, o, k, d) { return r }
         }
-        if heap.kind(o) == .typedArray, let x = heap.typedArrayNumericIndex(k), let v = d.value, heap.toPrimitiveNumber(v) == nil {
+        if heap.kind(o) == .typedArray, let x = heap.typedArrayNumericIndex(k), let v = d.value, heap.typedArrayNeedsRealm(o, v) {
             // TypedArray [[DefineOwnProperty]] with a value that needs ToNumber.
             guard let i = heap.objectIndex(o), heap.typedArrayValidIndex(i, x) else { return false }
             if d.configurable == false || d.enumerable == false || d.isAccessorDescriptor || d.writable == false { return false }

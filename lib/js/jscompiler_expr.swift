@@ -58,8 +58,14 @@ extension JSCompiler {
             put32(addConst(atom(node.a)))
             put32(addConst(atom(node.b)))
         case .bigint:
-            try notSupported("BigInt")
-            try adjust(1)
+            // The literal's text (prefix kept, `n` and separators removed) parsed at compile time.
+            var tooBig = false
+            guard let b = jsBNParseString(Array(ast.str(node.a)), maxBits: heap.limits.maxBigIntBits, tooBig: &tooBig) else {
+                throw fail(tooBig ? "BigInt literal too large" : "invalid BigInt literal", n)
+            }
+            let bv = heap.newBigInt(b)
+            _ = heap.root(bv)
+            try emitU32(.pushConst, addConst(bv), 1)
         case .array:
             try emitArrayLiteral(n)
         case .object:
@@ -786,6 +792,11 @@ extension JSCompiler {
             if pk.isString { _ = heap.root(.string(pk.handle)) }
             _ = r
             return addKey(pk)
+        case .bigint:
+            let s = bigintKeyString(kn)
+            let pk = heap.propertyKey(s) ?? .atom(0)
+            if pk.isString { _ = heap.root(.string(pk.handle)) }
+            return addKey(pk)
         default: return nil
         }
     }
@@ -802,8 +813,23 @@ extension JSCompiler {
             let d = i >= 0 && i < ast.numbers.count ? ast.numbers[i] : 0
             let s = heap.swiftString(heap.numberToString(d))
             return atomValue(prefix + s)
+        case .bigint:
+            return atomValue(prefix + heap.swiftString(bigintKeyString(kn)))
         default: return .string(0)
         }
+    }
+
+    /// The property key text of a BigInt literal key (`{1n: x}` is "1").
+    func bigintKeyString(_ kn: JSNode) -> JSValue {
+        var tooBig = false
+        guard let b = jsBNParseString(Array(ast.str(kn.a)), maxBits: heap.limits.maxBigIntBits, tooBig: &tooBig) else {
+            return .string(0)
+        }
+        let v = heap.newBigInt(b)
+        _ = heap.root(v)
+        let s = heap.bigintToString(v)
+        _ = heap.root(s)
+        return s
     }
 
     func emitObjectLiteral(_ n: Int32) throws(JSCompileError) {
@@ -820,8 +846,8 @@ extension JSCompiler {
             guard pn.kind == .property else { throw fail("unexpected property", p) }
             let computed = pn.flags & JSNodeFlags.computed != 0
             let pkind = JSPropertyKind(rawValue: pn.op) ?? .initializer
-            if ast.kind(pn.a) == .bigint || ast.kind(pn.a) == .privateName {
-                try notSupported("BigInt property keys")
+            if ast.kind(pn.a) == .privateName {
+                try notSupported("private names in object literals")
                 continue
             }
             if pkind == .initializer {
@@ -1038,11 +1064,6 @@ extension JSCompiler {
         for m in members {
             let mn = ast[m]
             guard mn.kind == .property else { continue }
-            if ast.kind(mn.a) == .bigint {
-                try notSupported("BigInt property keys")
-                try adjust(1)
-                return
-            }
         }
         try enterScope(cs)
         // Private names: one fresh record per class evaluation.

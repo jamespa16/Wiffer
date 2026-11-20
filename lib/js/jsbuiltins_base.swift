@@ -358,7 +358,11 @@ func jsInstallBaseBuiltins(_ realm: JSRealm) {
 
     // ----------------------------------------------- Number and Boolean
     let numberCtor = realm.defineConstructor("Number", length: 1, prototype: np) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
-        let n: JSValue = args.count > 0 ? .number(try realm.toNumber(args[0])) : .int32(0)
+        var n: JSValue = .int32(0)
+        if args.count > 0 {
+            let p = try realm.toNumeric(args[0])
+            n = p.isBigInt ? .number(jsBNToDouble(realm.heap.bigintValue(p))) : p
+        }
         if !args.isConstruct { return n }
         let p = try realm.prototype(forNewTarget: args.newTarget, default: .numberPrototype)
         let o = realm.heap.newObject(proto: p, kind: .numberWrapper)
