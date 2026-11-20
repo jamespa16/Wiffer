@@ -391,7 +391,7 @@ extension JSRealm {
     // MARK: Environments
 
     func newEnvironment(parent: JSValue, info: JSValue) -> JSValue {
-        var flags: JSObjectFlags = []
+        var flags: JSObjectFlags = [.extensible]
         if heap.internalInt(info) & 1 != 0 { flags.insert(.user1) }
         let e = heap.newObject(proto: .null, kind: .environment, flags: flags)
         var slots: [JSValue] = [parent, info]

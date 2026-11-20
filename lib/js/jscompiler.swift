@@ -345,7 +345,7 @@ final class JSCompiler {
     func scopeInfo(_ s: Int32) -> JSValue {
         if let v = scopeInfos[s] { return v }
         let sc = sa.scopes[Int(s)]
-        let info = heap.newObject(proto: .null, kind: .internalObject, flags: [])
+        let info = heap.newObject(proto: .null, kind: .internalObject, flags: [.extensible])
         _ = heap.root(info)
         var template = [JSValue](repeating: .undefined, count: max(0, Int(sc.envCount) - 2))
         for b in sc.bindings {
@@ -364,7 +364,7 @@ final class JSCompiler {
         }
         heap.setSlots(info, template)
         var flags: Int64 = 0
-        if sc.isFunctionLike { flags |= 1 }
+        if sc.isFunctionLike && !(sc.kind == .eval && !sc.strict) { flags |= 1 }
         heap.setInternalInt(info, flags)
         scopeInfos[s] = info
         return info
