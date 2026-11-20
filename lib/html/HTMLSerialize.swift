@@ -41,7 +41,21 @@ func htmlIsRawTextParent(_ n: HTMLNode?) -> Bool {
     }
 }
 
-func htmlSerializeInto(_ out: inout [UInt8], _ node: HTMLNode, includeSelf: Bool) {
+/// Which shadow roots getHTML writes out.
+struct HTMLSerializeShadows {
+    var serializable = false
+    var roots: [HTMLNode] = []
+
+    func includes(_ host: HTMLNode) -> HTMLNode? {
+        guard let s = host.attachedShadowRoot else { return nil }
+        if serializable && s.serializable { return s }
+        for r in roots where r === s { return s }
+        return nil
+    }
+}
+
+func htmlSerializeInto(_ out: inout [UInt8], _ node: HTMLNode, includeSelf: Bool,
+                       shadows: HTMLSerializeShadows = HTMLSerializeShadows()) {
     func put(_ s: StaticString) {
         let p = s.utf8Start
         var i = 0
@@ -51,20 +65,43 @@ func htmlSerializeInto(_ out: inout [UInt8], _ node: HTMLNode, includeSelf: Bool
         if let t = n.templateContents { return t.children }
         return n.children
     }
-    // (node, closing): closing entries write an element's end tag.
-    var stack: [(HTMLNode, Bool)] = []
-    if includeSelf {
-        stack.append((node, false))
-    } else {
-        let kids = childList(node)
+    let anyShadows = shadows.serializable || !shadows.roots.isEmpty
+    // (node, step): 0 = start, 1 = end tag, 2 = a shadow root's template
+    // start (node = the shadow root), 3 = its end tag.
+    var stack: [(HTMLNode, UInt8)] = []
+    func pushChildren(_ n: HTMLNode) {
+        let kids = childList(n)
         var i = kids.count - 1
-        while i >= 0 { stack.append((kids[i], false)); i -= 1 }
+        while i >= 0 { stack.append((kids[i], 0)); i -= 1 }
+        if anyShadows, n.kind == .element, let s = shadows.includes(n) { stack.append((s, 2)) }
     }
-    while let (n, closing) = stack.popLast() {
-        if closing {
+    if includeSelf {
+        stack.append((node, 0))
+    } else {
+        pushChildren(node)
+    }
+    while let (n, step) = stack.popLast() {
+        if step == 1 {
             put("</")
             out.append(contentsOf: n.name.utf8)
             put(">")
+            continue
+        }
+        if step == 2 {
+            put("<template shadowrootmode=\"")
+            if n.shadowRootMode == .closed { put("closed") } else { put("open") }
+            put("\"")
+            if n.delegatesFocus { put(" shadowrootdelegatesfocus=\"\"") }
+            if n.serializable { put(" shadowrootserializable=\"\"") }
+            if n.clonable { put(" shadowrootclonable=\"\"") }
+            put(">")
+            stack.append((n, 3))
+            var i = n.children.count - 1
+            while i >= 0 { stack.append((n.children[i], 0)); i -= 1 }
+            continue
+        }
+        if step == 3 {
+            put("</template>")
             continue
         }
         switch n.kind {
@@ -80,10 +117,8 @@ func htmlSerializeInto(_ out: inout [UInt8], _ node: HTMLNode, includeSelf: Bool
             }
             put(">")
             if htmlSerializesAsVoid(n) { continue }
-            stack.append((n, true))
-            let kids = childList(n)
-            var i = kids.count - 1
-            while i >= 0 { stack.append((kids[i], false)); i -= 1 }
+            stack.append((n, 1))
+            pushChildren(n)
         case .text:
             if htmlIsRawTextParent(n.parent) { out.append(contentsOf: n.data) }
             else { htmlEscape(&out, n.data, attribute: false) }
@@ -97,7 +132,7 @@ func htmlSerializeInto(_ out: inout [UInt8], _ node: HTMLNode, includeSelf: Bool
             put(">")
         case .document, .documentFragment:
             var i = n.children.count - 1
-            while i >= 0 { stack.append((n.children[i], false)); i -= 1 }
+            while i >= 0 { stack.append((n.children[i], 0)); i -= 1 }
         }
     }
 }

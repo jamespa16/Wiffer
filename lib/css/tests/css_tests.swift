@@ -137,6 +137,7 @@ func libTests(_ t: Tests) {
     testShorthands(t)
     testUserAgent(t)
     testPseudoElements(t)
+    cssShadowTests(t)
     testSVGProperties(t)
     testFuzz(t)
     testPerformance(t)

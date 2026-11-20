@@ -1,0 +1,32 @@
+block <html> 0,0 400x222
+  block <body> 0,4 400x218
+    block <div#c1.card> 4,4 392x97
+      block <div.head> 6,6 388x19
+        inline <b> 6,6 81x19
+          text "Card one" 6,6 81x19
+      block <div.body> 6,41 388x38
+        block <p> 6,41 388x19
+          text "First paragraph" 6,41 122x19
+        anon-block 6,60 388x19
+          text "loose text" 6,61 79x19
+      anon-block 6,80 388x19
+        inline <i> 6,80 73x19
+          text "no footer" 6,80 73x19
+    block <div#c2.card> 4,105 392x23
+      block <div.head> 6,107 388x19
+        text "Untitled" 6,107 63x19
+      block <div.body> 6,126 388x0
+    block <div#nest> 0,132 400x19
+      block <div.outer> 0,132 400x19
+        inline <span#inner-host> 0,132 94x19
+          text "[" 0,132 6x19
+          inline <em> 6,132 82x19
+            text "forwarded" 6,132 82x19
+          text "]" 88,132 6x19
+    block <div#closed> 0,167 400x19
+      block <ul> 0,167 400x19
+        list-item <li> 40,167 360x19
+          marker "• " 25,167 15x19
+          text "closed root content" 40,167 155x19
+    block <div#plain> 0,202 400x19
+      text "light only (no shadow root)" 0,203 215x19
