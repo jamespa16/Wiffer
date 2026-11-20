@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48">
+<defs>
+<clipPath id="c1"><circle cx="12" cy="12" r="10"/></clipPath>
+<clipPath id="c2" clipPathUnits="objectBoundingBox"><rect x="0" y="0" width="0.5" height="1"/><rect x="0.5" y="0.5" width="0.5" height="0.5"/></clipPath>
+<clipPath id="c3"><path d="M24 26 L46 26 L46 46 L24 46 Z M30 32 L40 32 L40 40 L30 40 Z" clip-rule="evenodd"/></clipPath>
+<clipPath id="c4"><rect x="4" y="28" width="8" height="16"/></clipPath>
+</defs>
+<rect width="24" height="24" fill="#c00" clip-path="url(#c1)"/>
+<rect x="26" y="2" width="20" height="20" fill="#0a0" clip-path="url(#c2)"/>
+<rect x="24" y="26" width="24" height="22" fill="#00c" clip-path="url(#c3)"/>
+<g clip-path="url(#c4)"><circle cx="10" cy="36" r="9" fill="#a0a"/></g>
+</svg>

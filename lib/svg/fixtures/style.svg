@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="24">
+<style>
+.a { fill: #c00 }
+rect.b { fill: #0a0; stroke: #000 }
+#c { fill: #00c !important }
+g > .d { fill-opacity: 0.4 }
+</style>
+<rect class="a" x="1" y="1" width="10" height="10" fill="#999"/>
+<rect class="b" x="13" y="1" width="10" height="10" stroke-width="2"/>
+<rect id="c" x="25" y="1" width="10" height="10" style="fill:#ff0"/>
+<g><rect class="d" x="37" y="1" width="10" height="10" fill="#000"/></g>
+<rect x="1" y="13" width="22" height="10" style="fill: #f80; stroke: #000; stroke-width: 1px"/>
+<rect x="25" y="13" width="22" height="10" fill="#088" display="none"/>
+<rect x="25" y="13" width="22" height="10" fill="#880" visibility="hidden"/>
+</svg>

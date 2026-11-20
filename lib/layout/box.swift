@@ -98,7 +98,7 @@ enum LayoutBoxKind: UInt8 {
 }
 
 enum LayoutReplacedKind: UInt8 {
-    case none, image, textInput, password, checkbox, radio, button, select, textarea, frame, other
+    case none, image, textInput, password, checkbox, radio, button, select, textarea, frame, other, svg
     /// A form control (exposed to the browser through `LayoutEngine.formControls`).
     var isControl: Bool {
         switch self {
@@ -196,6 +196,12 @@ final class LayoutBox {
     var labelIsPlaceholder = false
     var options: [String] = []
     var labelRun: TextRun? = nil
+    /// Inline <svg> (svg.swift): the converted document, the external files
+    /// its `use` elements reference, and the last render with its key.
+    var svgDoc: SVGDocument? = nil
+    var svgExternals: [String] = []
+    var svgRaster: ImageBitmap? = nil
+    var svgKey = ""
     var listValue = 0
     /// Outside list marker (laid out beside the first line).
     var marker: LayoutBox? = nil

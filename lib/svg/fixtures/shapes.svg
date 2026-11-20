@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48">
+<rect x="2" y="2" width="20" height="12" fill="#c00"/>
+<rect x="26" y="2" width="20" height="12" rx="4" fill="#0a0"/>
+<circle cx="12" cy="25" r="8" fill="blue"/>
+<ellipse cx="36" cy="25" rx="10" ry="6" fill="orange"/>
+<line x1="2" y1="38" x2="22" y2="46" stroke="black" stroke-width="2"/>
+<polyline points="26,46 30,36 34,44 38,36 42,46" fill="none" stroke="purple" stroke-width="1.5"/>
+<polygon points="40,36 46,46 34,46" fill="teal" fill-opacity="0.6"/>
+</svg>
