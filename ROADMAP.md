@@ -3749,7 +3749,7 @@ identical to DerivedCoreProperties.txt). Entry point:
   attributes, decorators and explicit resource management (`using`) are
   newer than ES2022 and not parsed.
 
-## Phase 9B: compiler, VM and GC (`lib/js`)
+## Phase 9B: compiler, VM and GC (`lib/js`) (done)
 
 - **Scope analysis:** var hoisting, function declarations, block scopes,
   closures (captured variables move to heap environments, the rest stay
@@ -3775,7 +3775,8 @@ identical to DerivedCoreProperties.txt). Entry point:
   host, the GC stress pass is clean, and the VM fuzz (random bytecode
   sequences from mutated sources) never traps.
 
-**Status: runtime data layer done (first half); compiler and VM to come.**
+**Status: done.** The runtime data layer (first half) is described first,
+then the compiler, VM and embedding API (second half).
 `./run.sh --hosttest js` (`jsCoreTests`, 372 checks). The API contract is
 documented at the top of each file:
 
@@ -3869,6 +3870,126 @@ documented at the top of each file:
   and host exotic hooks wait for 9E/9F. Handle misuse (a raw handle held
   across an allocation without rooting) is the VM's responsibility, and
   `gcEveryAllocation` is the tool to find it.
+
+**As built (compiler, VM, embedding).** `./run.sh --hosttest js`
+(`jsVMTests` in `tests/jsvm_tests.swift`, 582 checks; the whole js suite
+2208 checks, 0 failures, about 6 s). Contracts are at the top of
+each file:
+
+- **`jsscope.swift`:** one iterative pass (an explicit task stack, so tree
+  height costs no Swift stack) builds the scope tree (script, eval,
+  function, block, catch, for-loop, switch, class, with, field-initializer
+  scopes), declares every binding (var hoisting, functions, let/const/class,
+  params, catch params, class and named-function-expression self names,
+  Annex B block functions, the `arguments` object, and pseudo bindings for
+  `this`, `new.target`, the home object and the active function, so arrows
+  resolve them lexically like variables), then resolves references.
+  Captured bindings go to heap environments, the rest to stack locals. A
+  function that contains `with` or direct `eval` (or encloses one) is
+  "all heap" with named environments; references that cross a `with`, a
+  sloppy direct eval or the top of eval code are dynamic (looked up by
+  name at run time). TDZ checks are emitted only where a reference may see
+  an uninitialized binding (textually before it, in a switch, from a
+  closure, or dynamic).
+- **`jsbytecode.swift`:** about 170 opcodes, byte-coded with little-endian
+  operands; per-function constant and key pools held by a GC'd code object
+  (its finalizer frees the Swift `JSCode`), line tables (pc to source
+  offset), handler tables (start, end, target, depth), `jsDisassemble`.
+  Frames are a region of one value stack: `[callee][this] locals |
+  operands`. Environments are heap objects: slot 0 parent, slot 1 scope
+  info (names to slots, for dynamic lookup), then the bindings.
+- **`jscompiler.swift`, `jscompiler_expr.swift`:** AST to bytecode. The
+  operand stack depth is tracked statically and checked at every label,
+  so a mismatch is an "internal compiler error" SyntaxError, never bad
+  code. Binary, member and call chains are walked iteratively along the
+  left spine; the rest recurses with a stack guard (the parser's budget).
+  break/continue/return route through `finally` blocks (a (value, kind)
+  pair and a `finallyDispatch` jump table) and close for-of iterators.
+  Implemented beyond ES5: let/const with TDZ and per-iteration loop
+  bindings, arrows, template literals (tagged, with cached template
+  objects), destructuring (declarations, assignment, params), default and
+  rest params, spread in arrays/calls/new, object spread and rest,
+  shorthand/computed properties, methods and accessors, `super`, classes
+  (extends, super calls and properties, static members, accessors,
+  instance and static fields, static blocks, `new.target`), for-of with
+  the iterator protocol, optional chaining, `??`, `**`, logical assignment.
+  Not yet (they compile to a runtime SyntaxError "not supported yet: X"
+  where they run): generators and async functions (when called), private
+  class members and computed field names (when the class is evaluated),
+  BigInt literals, `for await`, modules, `import()`; RegExp literals until
+  the RegExp agent sets `realm.regExpCreate`.
+- **`jsvm.swift`, `jsvm_ops.swift`:** the interpreter. JS-to-JS calls,
+  `new`, getters and setters found by property instructions, field
+  initializers and `Function.prototype.call/apply` all push a frame or
+  rewrite the stack: none recurse in Swift. Native-to-JS re-entry
+  (`realm.call`, ToPrimitive calling `valueOf`, ...) runs a nested loop,
+  capped at `maxNativeNesting` (64) and by a stack-address floor; JS call
+  depth is capped at `maxCallDepth` (10 000); both are RangeErrors.
+  Exceptions unwind frames through the handler tables; a termination skips
+  every handler. The interrupt budget counts down at backward jumps and
+  function entries (`interruptInterval`) and runs `heap.safePoint()`, the
+  heap-termination check and the embedder's `interruptHandler`. Abstract
+  operations: ToPrimitive (with @@toPrimitive), ToNumber, ToString,
+  ToPropertyKey, ToObject, `==`, `===`, relational comparison, `typeof`,
+  `instanceof` (@@hasInstance, bound functions), `in`, property get/set/
+  delete with prototype chains, accessors and attributes, array `length`
+  RangeErrors, name lookup through `with` (@@unscopables) and eval vars,
+  global var/let/const across scripts (one global lexical record per
+  realm), direct and indirect eval, for-in (snapshot, skips deleted keys),
+  fast array/string iteration when `Array.prototype[@@iterator]` /
+  `String.prototype[@@iterator]` are the intrinsics.
+  Suspension for 9E: a frame's whole state is its JSFrame, its stack
+  region and the env register.
+- **Embedding (`jsruntime.swift`, `jsrealm.swift`):** `JSRuntime(limits:)`
+  with `interruptHandler`, `makeRealm()`; `realm.evaluate(source:name:) ->
+  JSCompletion` (`.normal(v)`, `.exception(JSUncaughtException)` with
+  `message` and a V8-style `stack` string, `.terminated(reason)`);
+  `realm.call` / `construct` from Swift. **Native functions** are closures
+  `(JSRealm, JSArgs) throws(JSThrow) -> JSValue` in a per-realm table
+  (`registerNative`, `newNativeFunction`, `defineMethod`, `defineGetter`,
+  `defineConstructor`, `defineValue`, `defineGlobal`); errors via
+  `realm.throwTypeError(...)` etc. Built-in phases add a
+  `jsInstallXxx(realm)` line to `JSRealm.installBuiltins()` and intrinsic
+  slots to `JSIntrinsic`. Hooks: `regExpCreate`, `printHandler`,
+  `hostFinalizer`. `jsbuiltins_base.swift` installs the skeleton: the
+  prototypes, Object (a few statics), Function (call/apply/bind/toString,
+  `Function(...)`), Array (push, values/@@iterator), String/Number/Boolean
+  /Symbol basics, the Error types (message, cause, stack), globalThis,
+  eval, print.
+- **Results** (host, `-Osize`, Apple silicon): 270 script cases (each in a
+  fresh realm) cover operators, scopes, closures, control flow, finally
+  routing, exceptions, prototypes, accessors, destructuring, classes,
+  eval/with and limits; the same scripts pass again under
+  `gcEveryAllocation` (with a 300-node closure/class workload, 1000+ GCs),
+  about 280 ms. Stack traces, natives calling back into JS, nesting caps,
+  interrupt and heap-cap termination (uncatchable, `finally` skipped,
+  realm reusable afterwards), cross-script let/const, and 12 deep-nesting
+  shapes (2000-term `+` chains, 2000-link member and call chains, 300
+  nested parentheses, 150 nested functions, ...) on a 512 KiB thread. VM
+  fuzz: 20 000 mutants of the case scripts compiled and run under
+  `JSLimits.small` with a tiny interrupt budget never trap.
+
+  | Script | Time |
+  | --- | --- |
+  | fib(25) (250k calls) | 45 ms |
+  | 1M closure calls (in a function) | 150 ms |
+  | 1M property get/set loop (locals) | 185 ms |
+  | the same loop on global variables | 790 ms |
+  | 1M array index reads | 57 ms |
+  | 300k method calls + `new` | 275 ms |
+  | 100k `s += 'x'` | 1.4 s (quadratic: no ropes yet) |
+
+- **Known gaps:** arguments objects are unmapped (no aliasing of sloppy
+  parameters). Getters reached through method calls (`o.m()`), primitives,
+  `super`, `with` or globals, and every ToPrimitive, run as nested
+  (native-nesting) calls.
+  Global variable access is a property lookup each time (4x slower than a
+  local; inline caches are 9J). String `+=` in a loop is quadratic (ropes
+  are a stretch). Iterator close is not called when destructuring throws
+  half-way. `delete` of a super reference, compound assignment to
+  `super[x]`, spread arguments to direct eval, object rest after computed
+  keys are "not supported yet". Array, Object, String and Number
+  methods beyond the skeleton are 9C.
 
 ## Phase 9C: built-ins (`lib/js`)
 
