@@ -126,7 +126,13 @@ extension LayoutEngine {
                     if s.display != .none { return false }
                     continue
                 }
-                let parentStyleBox: LayoutBox? = n === r ? b.parent.flatMap { styleParent($0) } : styleParent(b.parent)
+                // Style inherits through the DOM parent. An element whose DOM parent has no
+                // box (display: contents) cannot be restyled in place from the box tree.
+                var parentStyleBox: LayoutBox? = nil
+                if let dp = n.parent, dp.kind == .element {
+                    guard let pb = box(for: dp), pb.node === dp else { return false }
+                    parentStyleBox = styleParent(pb)
+                }
                 if n !== r || b.parent != nil || !widen {
                     if !restyleOne(b, n, parentStyleBox) { return false }
                 }

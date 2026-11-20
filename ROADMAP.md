@@ -4089,6 +4089,7 @@ Groundwork, no engine needed (can start beside 9A):
 - Wikipedia host timings: class toggle paint-only 8 ms, layout-affecting
   (subtree rebuild + whole-document layout) 18 ms, full restyle+layout 145 ms.
 - Wired to lib/html: `LayoutEngine.init` registers a mutation observer (unowned capture, removed in `deinit`) that forwards connected records to the `note*` calls; the fuzz test mutates only through lib/html's public API.
+- Fuzz fixes after the first landing: in-place restyle took the style parent from the nearest box, which is wrong under a `display: contents` element (its children inherit through the contents holder, e.g. `visibility`), so restyle now uses the DOM parent's box and falls back to a rebuild if it has none (seed 9 at 6x rounds). Child-list changes now also restyle the parent's following siblings when any rule has `+`/`~` (`:empty` / `:nth-child` flips on the parent), with a full rebuild if that cannot be done in place; the fuzz CSS gained `div:empty + p` and `ul:empty ~ div`. Seeds 1-30 at 3x rounds and a few at 6x: 0 failures.
 
 Bindings (needs 9F):
 
