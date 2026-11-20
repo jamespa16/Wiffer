@@ -184,14 +184,3 @@ func jsdomEnv(_ name: String) -> String? {
     return String(cString: p)
 }
 
-func jsdomHasSubstring(_ s: String, _ sub: String) -> Bool {
-    let a = Array(s.utf8), b = Array(sub.utf8)
-    if b.isEmpty { return true }
-    if b.count > a.count { return false }
-    var i = 0
-    while i + b.count <= a.count {
-        if Array(a[i..<(i + b.count)]) == b { return true }
-        i += 1
-    }
-    return false
-}

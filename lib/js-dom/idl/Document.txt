@@ -26,9 +26,9 @@ interface Document : Node {
   [CEReactions, Throws] Element createElementNS(DOMString? namespace, DOMString qualifiedName, optional any options);
   [Throws] DocumentFragment createDocumentFragment();
   [Throws] Text createTextNode(DOMString data);
-  [Throws] Text createCDATASection(DOMString data);
+  [Throws] CDATASection createCDATASection(DOMString data);
   [Throws] Comment createComment(DOMString data);
-  [Throws] any createProcessingInstruction(DOMString target, DOMString data);
+  [Throws] ProcessingInstruction createProcessingInstruction(DOMString target, DOMString data);
 
   [CEReactions, Throws] Node importNode(Node node, optional any options);
   [CEReactions, Throws] Node adoptNode(Node node);
@@ -56,7 +56,7 @@ interface Document : Node {
   readonly attribute HTMLHeadElement? head;
   [SameObject] readonly attribute HTMLCollection images;
   [SameObject] readonly attribute HTMLCollection embeds;
-  [SameObject] readonly attribute HTMLCollection plugins;
+  [SameObject, Impl=Document_embeds] readonly attribute HTMLCollection plugins;
   [SameObject] readonly attribute HTMLCollection links;
   [SameObject] readonly attribute HTMLCollection forms;
   [SameObject] readonly attribute HTMLCollection scripts;
@@ -94,6 +94,11 @@ Document includes NonElementParentNode;
 Document includes DocumentOrShadowRoot;
 Document includes ParentNode;
 Document includes GlobalEventHandlers;
+
+// An XML document (createDocument, DOMParser with an XML type).
+[Kind=node]
+interface XMLDocument : Document {
+};
 
 [Kind=object, Swift=JSDOMImplementation]
 interface DOMImplementation {

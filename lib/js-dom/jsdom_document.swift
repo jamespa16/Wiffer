@@ -63,37 +63,23 @@ extension JSDOMBindings {
     }
 
     func Document_createElementNS(_ d: HTMLNode, _ ns: String?, _ q: String, _ options: JSValue) throws(JSThrow) -> HTMLNode? {
-        guard htmlIsValidElementName(q) else { throw throwDOM("InvalidCharacterError", "'" + q + "' is not a valid name.") }
-        let nsv = (ns?.isEmpty ?? true) ? nil : ns
-        if let i = q.firstIndex(of: ":") {
-            let prefix = String(q[q.startIndex..<i])
-            if nsv == nil { throw throwDOM("NamespaceError", "A prefix requires a namespace.") }
-            if prefix == "xml" && nsv != "http://www.w3.org/XML/1998/namespace" { throw throwDOM("NamespaceError", "Bad xml prefix.") }
-            if q.index(after: i) == q.endIndex { throw throwDOM("InvalidCharacterError", "Invalid qualified name.") }
-        }
-        if (q == "xmlns" || q.hasPrefix("xmlns:")) != (nsv == "http://www.w3.org/2000/xmlns/") {
-            throw throwDOM("NamespaceError", "Bad xmlns use.")
-        }
-        switch nsv {
-        case "http://www.w3.org/1999/xhtml": return d.makeElement(q, .html)
-        case "http://www.w3.org/2000/svg": return d.makeElement(q, .svg)
-        case "http://www.w3.org/1998/Math/MathML": return d.makeElement(q, .mathml)
+        let qn = try validateAndExtract(ns, q, element: true)
+        let e: HTMLNode
+        switch qn.namespace {
+        case "http://www.w3.org/1999/xhtml": e = d.makeElement(q, .html)
+        case "http://www.w3.org/2000/svg": e = d.makeElement(q, .svg)
+        case "http://www.w3.org/1998/Math/MathML": e = d.makeElement(q, .mathml)
         default:
-            let e = d.makeElement(q, .mathml)
-            foreignNamespaces[ObjectIdentifier(e)] = nsv ?? ""
-            return e
+            e = d.makeElement(q, .mathml)
+            foreignNamespaces[ObjectIdentifier(e)] = qn.namespace ?? ""
         }
+        if qn.prefix != nil { prefixedElements.insert(ObjectIdentifier(e)) }
+        return e
     }
 
     func Document_createDocumentFragment(_ d: HTMLNode) throws(JSThrow) -> HTMLNode? { d.createDocumentFragment() }
     func Document_createTextNode(_ d: HTMLNode, _ s: String) throws(JSThrow) -> HTMLNode? { d.createTextNode(s) }
-    func Document_createCDATASection(_ d: HTMLNode, _ s: String) throws(JSThrow) -> HTMLNode? {
-        throw throwDOM("NotSupportedError", "CDATA sections are not supported in HTML documents.")
-    }
     func Document_createComment(_ d: HTMLNode, _ s: String) throws(JSThrow) -> HTMLNode? { d.createComment(s) }
-    func Document_createProcessingInstruction(_ d: HTMLNode, _ t: String, _ s: String) throws(JSThrow) -> JSValue {
-        throw throwDOM("NotSupportedError", "Processing instructions are not supported.")
-    }
 
     func Document_importNode(_ d: HTMLNode, _ n: HTMLNode, _ options: JSValue) throws(JSThrow) -> HTMLNode? {
         var deep = false
@@ -103,7 +89,12 @@ extension JSDOMBindings {
             deep = heap.toBoolean(options)
         }
         if n.kind == .document || n.isShadowRoot { throw throwDOM("NotSupportedError", "This node can not be imported.") }
-        do throws(HTMLDOMError) { return try d.importNode(n, deep: deep) } catch { throw throwDOM(error) }
+        do throws(HTMLDOMError) {
+            let c = try d.importNode(n, deep: deep)
+            copyControlState(from: n, to: c, deep: deep)
+            copyNodeFlags(from: n, to: c, deep: deep)
+            return c
+        } catch { throw throwDOM(error) }
     }
 
     func Document_adoptNode(_ d: HTMLNode, _ n: HTMLNode) throws(JSThrow) -> HTMLNode? {
@@ -117,21 +108,26 @@ extension JSDOMBindings {
         return classes.Attr.wrap(JSDOMAttr(owner: nil, name: isHTMLDocument(d) ? htmlLowerASCII(name) : name, value: "", document: d))
     }
     func Document_createAttributeNS(_ d: HTMLNode, _ ns: String?, _ q: String) throws(JSThrow) -> JSValue {
-        if !htmlIsValidAttributeName(q) { throw throwDOM(.invalidCharacter) }
-        return classes.Attr.wrap(JSDOMAttr(owner: nil, name: q, value: "", document: d))
+        let qn = try validateAndExtract(ns, q, element: false)
+        let a = JSDOMAttr(owner: nil, name: q, value: "", document: d)
+        a.namespace = qn.namespace
+        return classes.Attr.wrap(a)
     }
 
     func Document_createEvent(_ d: HTMLNode, _ name: String) throws(JSThrow) -> JSDOMEvent {
         let i: JSDOMInterface
         switch htmlLowerASCII(name) {
-        case "event", "events", "htmlevents", "svgevents": i = .Event
+        case "event", "events", "htmlevents", "svgevents", "beforeunloadevent", "devicemotionevent",
+             "deviceorientationevent", "storageevent": i = .Event
         case "customevent": i = .CustomEvent
-        case "uievent", "uievents": i = .UIEvent
-        case "mouseevent", "mouseevents": i = .MouseEvent
+        case "uievent", "uievents", "touchevent": i = .UIEvent
+        case "mouseevent", "mouseevents", "dragevent": i = .MouseEvent
         case "keyboardevent": i = .KeyboardEvent
         case "focusevent": i = .FocusEvent
+        case "compositionevent", "textevent": i = .CompositionEvent
         case "hashchangeevent": i = .HashChangeEvent
         case "errorevent": i = .ErrorEvent
+        case "messageevent": i = .MessageEvent
         case "popstateevent": i = .PopStateEvent
         default: throw throwDOM("NotSupportedError", "The provided event type ('" + name + "') is invalid.")
         }

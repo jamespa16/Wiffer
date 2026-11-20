@@ -87,6 +87,15 @@ final class JSDOMBindings {
     var handlers: [JSDOMHandlerKey: JSDOMHandler] = [:]
     var currentEvent: JSValue = .undefined
     var formExoticID = -1
+    var documentExoticID = -1
+    /// Elements created by createElementNS with a prefix (name = prefix:local).
+    var prefixedElements: Set<ObjectIdentifier> = []
+    /// Namespaces of attributes set with setAttributeNS.
+    var attrNamespaces: [JSDOMAttrKey: String] = [:]
+    /// ProcessingInstruction nodes (comments) and their targets.
+    var piTargets: [ObjectIdentifier: String] = [:]
+    /// CDATASection nodes (text nodes).
+    var cdataNodes: Set<ObjectIdentifier> = []
 
     // Page state (jsdom_window.swift, jsdom_htmlelements.swift).
     var focused: HTMLNode? = nil
@@ -165,7 +174,22 @@ final class JSDOMBindings {
         // DOMException.prototype inherits Error.prototype.
         _ = heap.setPrototypeOf(protos[JSDOMInterface.DOMException.rawValue], realm.intrinsic(.errorPrototype))
         formExoticID = realm.registerExoticHandler(makeFormExotic())
+        documentExoticID = realm.registerExoticHandler(makeDocumentExotic())
         installGenerated()
+        // @@toStringTag on the object kinds' prototypes too.
+        var k = 0
+        while k < protos.count {
+            let p = protos[k]
+            let tagKey = JSPropertyKey.symbol(heap.symbolsWellKnown.toStringTag.handle)
+            if p.isObject && heap.getOwnProperty(p, tagKey) == nil {
+                let tag = heap.newString(jsdomInterfaceNames[k])
+                let d = heap.rootDepth
+                _ = heap.root(tag)
+                _ = heap.defineOwnProperty(p, tagKey, .data(tag, [.configurable]))
+                heap.popRoots(to: d)
+            }
+            k += 1
+        }
         installStyleProperties()
         installWindowExtras()
         // The global object is the Window.
@@ -192,16 +216,17 @@ final class JSDOMBindings {
     /// The most derived interface of a node.
     func nodeInterface(_ n: HTMLNode) -> JSDOMInterface {
         switch n.kind {
-        case .document: return .Document
+        case .document: return isHTMLDocument(n) ? .Document : .XMLDocument
         case .doctype: return .DocumentType
-        case .text: return .Text
-        case .comment: return .Comment
+        case .text: return isCDATA(n) ? .CDATASection : .Text
+        case .comment: return isPI(n) ? .ProcessingInstruction : .Comment
         case .documentFragment: return n.isShadowRoot ? .ShadowRoot : .DocumentFragment
         case .element:
             switch n.namespace {
             case .html:
-                if let i = jsdomHTMLInterface(n.name) { return i }
-                return jsdomIsPlainHTMLElementName(n.name) || htmlIsValidCustomElementName(n.name) ? .HTMLElement : .HTMLUnknownElement
+                let local = prefixedElements.isEmpty ? n.name : elementLocalName(n)
+                if let i = jsdomHTMLInterface(local) { return i }
+                return jsdomIsPlainHTMLElementName(local) || htmlIsValidCustomElementName(local) ? .HTMLElement : .HTMLUnknownElement
             case .svg: return jsdomSVGInterface(n.name) ?? .SVGElement
             case .mathml: return .Element
             }
@@ -228,7 +253,7 @@ final class JSDOMBindings {
         case .SVGElement: return n.kind == .element && n.namespace == .svg
         case .CharacterData: return n.kind == .text || n.kind == .comment
         case .Text: return n.kind == .text
-        case .Comment: return n.kind == .comment
+        case .Comment: return n.kind == .comment && !isPI(n)
         case .Document: return n.kind == .document
         case .DocumentFragment: return n.kind == .documentFragment
         case .DocumentType: return n.kind == .doctype
@@ -252,6 +277,7 @@ final class JSDOMBindings {
         if w.isObject, n.kind == .element, n.namespace == .html, n.name == "form" || n.name == "select" {
             realm.makeExotic(w, handler: formExoticID)
         }
+        if w.isObject, n.kind == .document { realm.makeExotic(w, handler: documentExoticID) }
         return w
     }
 
@@ -645,9 +671,32 @@ final class JSDOMBindings {
     }
 
     /// Indexed objects without iterable<T> (HTMLCollection) still get @@iterator.
-    func defineIndexedIterator(_ i: JSDOMInterface) {
-        _ = heap.defineOwnProperty(protos[i.rawValue], .symbol(heap.symbolsWellKnown.iterator.handle),
+    func defineIndexedIterator(_ p: JSValue) {
+        _ = heap.defineOwnProperty(p, .symbol(heap.symbolsWellKnown.iterator.handle),
                                    .data(realm.intrinsic(.arrayValues), [.writable, .configurable]))
+    }
+
+    /// A WebIDL attribute: an enumerable, configurable accessor.
+    func defineAttribute(_ obj: JSValue, _ name: String, setter: JSNativeFunction?, _ getter: @escaping JSNativeFunction) {
+        let r = heap.root(obj)
+        let g = realm.newNativeFunction(realm.registerNative("get " + name, length: 0, getter))
+        _ = heap.root(g)
+        var s: JSValue = .undefined
+        if let st = setter {
+            s = realm.newNativeFunction(realm.registerNative("set " + name, length: 1, st))
+            _ = heap.root(s)
+        }
+        _ = heap.defineOwnProperty(obj, heap.key(name), .accessor(get: g, set: s, [.enumerable, .configurable]))
+        heap.popRoots(to: r.slot)
+    }
+
+    /// A WebIDL operation: an enumerable, writable, configurable method.
+    func defineOperation(_ obj: JSValue, _ name: String, length: Int, _ fn: @escaping JSNativeFunction) {
+        let r = heap.root(obj)
+        let f = realm.newNativeFunction(realm.registerNative(name, length: length, fn))
+        _ = heap.root(f)
+        _ = heap.defineOwnProperty(obj, heap.key(name), .data(f, [.writable, .enumerable, .configurable]))
+        heap.popRoots(to: r.slot)
     }
 
     func defineStringifier(_ p: JSValue, _ i: JSDOMInterface) {}
@@ -711,8 +760,7 @@ func jsdomIsPlainHTMLElementName(_ n: String) -> Bool {
          "figure", "figcaption", "dt", "dd", "em", "strong", "small", "s", "cite", "dfn", "abbr", "ruby", "rt",
          "rp", "code", "var", "samp", "kbd", "sub", "sup", "i", "b", "u", "mark", "bdi", "bdo", "wbr", "summary",
          "noscript", "acronym", "basefont", "big", "center", "nobr", "noembed", "noframes", "plaintext", "rb",
-         "rtc", "strike", "tt", "image", "menuitem", "selectedcontent", "frame", "keygen", "marquee", "param",
-         "track", "math":
+         "rtc", "strike", "tt", "image", "menuitem", "selectedcontent", "keygen", "marquee", "math":
         return true
     default: return false
     }
@@ -781,4 +829,18 @@ extension JSDOMBindings {
     func DOMException_name(_ this: JSDOMExceptionData) -> String { this.name }
     func DOMException_message(_ this: JSDOMExceptionData) -> String { this.message }
     func DOMException_code(_ this: JSDOMExceptionData) -> Int { this.code }
+}
+
+func jsdomHasSubstring(_ s: String, _ sub: String) -> Bool {
+    let a = Array(s.utf8), b = Array(sub.utf8)
+    if b.isEmpty { return true }
+    if b.count > a.count { return false }
+    var i = 0
+    while i + b.count <= a.count {
+        var j = 0
+        while j < b.count && a[i + j] == b[j] { j += 1 }
+        if j == b.count { return true }
+        i += 1
+    }
+    return false
 }

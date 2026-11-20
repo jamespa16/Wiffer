@@ -55,6 +55,10 @@ dictionary InputEventInit : UIEventInit {
   DOMString inputType = "";
 };
 
+dictionary CompositionEventInit : UIEventInit {
+  DOMString data = "";
+};
+
 dictionary FocusEventInit : UIEventInit {
   EventTarget? relatedTarget = null;
 };
@@ -135,6 +139,11 @@ interface InputEvent : UIEvent {
   readonly attribute DOMString? data;
   [Impl=KeyboardEvent_isComposing] readonly attribute boolean isComposing;
   readonly attribute DOMString inputType;
+};
+
+interface CompositionEvent : UIEvent {
+  constructor(DOMString type, optional CompositionEventInit eventInitDict = {});
+  readonly attribute DOMString data;
 };
 
 interface FocusEvent : UIEvent {

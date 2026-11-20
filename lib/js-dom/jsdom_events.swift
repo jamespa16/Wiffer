@@ -328,7 +328,7 @@ extension JSDOMBindings {
                 default: break
                 }
                 if isAncestorCase {
-                    if isActivation && activationTarget == nil && hasActivationBehavior(p) {
+                    if isActivation && e.bubbles && activationTarget == nil && hasActivationBehavior(p) {
                         if case .window = p {} else { activationTarget = p }
                     }
                     appendToPath(e, p, nil, related, slotInClosed: slotInClosed)
@@ -338,7 +338,7 @@ extension JSDOMBindings {
                     continue
                 } else {
                     target = p
-                    if isActivation && activationTarget == nil && hasActivationBehavior(target) { activationTarget = target }
+                    if isActivation && e.bubbles && activationTarget == nil && hasActivationBehavior(target) { activationTarget = target }
                     appendToPath(e, p, target, related, slotInClosed: slotInClosed)
                 }
                 parent = eventParent(p, e)

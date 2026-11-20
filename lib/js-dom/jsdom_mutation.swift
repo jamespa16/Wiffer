@@ -22,6 +22,9 @@ final class JSDOMMutationObserver {
     var callback: JSValue
     var wrapper: JSValue = .undefined
     var registrations: [(node: HTMLNode, options: JSDOMObserverOptions)] = []
+    /// Transient registered observers (on nodes removed from an observed
+    /// subtree), dropped at the next notification.
+    var transient: [(node: HTMLNode, options: JSDOMObserverOptions)] = []
     var records: [JSDOMMutationRecord] = []
     init(_ cb: JSValue) { callback = cb }
     func mark(_ h: JSHeap) {
@@ -59,8 +62,12 @@ extension JSDOMBindings {
         switch m.kind {
         case .attributes:
             let name = m.attributeName
-            if name.utf8.count > 2 && name.hasPrefix("on") && scannedHandlers.contains(ObjectIdentifier(m.target)) {
-                contentHandlerChanged(m.target, String(name.dropFirst(2)), m.target.attribute(name))
+            if name.utf8.count > 2 && name.hasPrefix("on") && m.target.kind == .element {
+                if scannedHandlers.contains(ObjectIdentifier(m.target)) {
+                    contentHandlerChanged(m.target, String(name.dropFirst(2)), m.target.attribute(name))
+                } else {
+                    scanContentHandlers(m.target)
+                }
             }
             if m.target.attribute(name) == nil { detachAttr(m.target, name) }
         case .slotchange:
@@ -73,6 +80,25 @@ extension JSDOMBindings {
         }
         if observers.isEmpty { return }
         queueRecord(m)
+        if m.kind == .childList && !m.removedNodes.isEmpty { addTransientObservers(m) }
+    }
+
+    /// DOM "removing steps": subtree observers of the parent's inclusive
+    /// ancestors keep watching the removed nodes until the next notification.
+    func addTransientObservers(_ m: HTMLMutation) {
+        var node: HTMLNode? = m.target
+        var steps = 0
+        while let n = node, steps < 100_000 {
+            steps += 1
+            for o in observers {
+                for r in o.registrations where r.node === n && r.options.subtree {
+                    for removed in m.removedNodes where o.transient.count < 100_000 {
+                        o.transient.append((node: removed, options: r.options))
+                    }
+                }
+            }
+            node = n.parent
+        }
     }
 
     func queueRecord(_ m: HTMLMutation) {
@@ -90,7 +116,7 @@ extension JSDOMBindings {
         while let n = node, steps < 100_000 {
             steps += 1
             for o in observers {
-                for r in o.registrations where r.node === n {
+                for r in o.registrations + o.transient where r.node === n {
                     let opt = r.options
                     if n !== m.target && !opt.subtree { continue }
                     if type == "attributes" {
@@ -141,6 +167,7 @@ extension JSDOMBindings {
         let list = observers
         let slots = pendingSlotChanges
         pendingSlotChanges = []
+        for o in list { o.transient = [] }
         for o in list {
             let recs = o.records
             o.records = []
@@ -215,6 +242,7 @@ extension JSDOMBindings {
 
     func MutationObserver_disconnect(_ o: JSDOMMutationObserver) {
         o.registrations = []
+        o.transient = []
         o.records = []
     }
 

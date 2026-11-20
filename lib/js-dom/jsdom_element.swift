@@ -133,15 +133,9 @@ extension JSDOMBindings {
 
     // MARK: Names
 
-    func Element_namespaceURI(_ n: HTMLNode) -> String? {
-        if let f = foreignNamespaces[ObjectIdentifier(n)] { return f.isEmpty ? nil : f }
-        return jsdomNamespaceURI(n)
-    }
-    func Element_prefix(_ n: HTMLNode) -> String? {
-        guard let i = n.name.firstIndex(of: ":"), n.namespace != .html else { return nil }
-        return String(n.name[n.name.startIndex..<i])
-    }
-    func Element_localName(_ n: HTMLNode) -> String { n.name }
+    func Element_namespaceURI(_ n: HTMLNode) -> String? { elementNamespace(n) }
+    func Element_prefix(_ n: HTMLNode) -> String? { elementPrefix(n) }
+    func Element_localName(_ n: HTMLNode) -> String { elementLocalName(n) }
     func Element_tagName(_ n: HTMLNode) -> String {
         if n.namespace == .html && isHTMLDocument(n.nodeDocument ?? n) { return jsdomUpperASCII(n.name) }
         return n.name
@@ -161,38 +155,21 @@ extension JSDOMBindings {
     }
     func Element_getAttribute(_ n: HTMLNode, _ q: String) -> String? { n.getAttribute(q) }
     func Element_getAttributeNS(_ n: HTMLNode, _ ns: String?, _ local: String) -> String? {
-        guard let name = jsdomAttributeName(ns, local, n) else { return nil }
-        return n.attribute(name)
+        guard let i = findAttributeNS(n, ns, local) else { return nil }
+        return n.attributes[i].value
     }
     func Element_setAttribute(_ n: HTMLNode, _ q: String, _ v: String) throws(JSThrow) {
         do throws(HTMLDOMError) { try n.setAttribute(q, v) } catch { throw throwDOM(error) }
     }
     func Element_setAttributeNS(_ n: HTMLNode, _ ns: String?, _ q: String, _ v: String) throws(JSThrow) {
-        if !htmlIsValidAttributeName(q) { throw throwDOM(.invalidCharacter) }
-        var local = q
-        var prefix: String? = nil
-        if let i = q.firstIndex(of: ":") {
-            prefix = String(q[q.startIndex..<i])
-            local = String(q[q.index(after: i)...])
-            if local.isEmpty || prefix!.isEmpty { throw throwDOM("InvalidCharacterError", "Invalid qualified name.") }
-        }
-        let nsv = (ns?.isEmpty ?? true) ? nil : ns
-        if prefix != nil && nsv == nil { throw throwDOM("NamespaceError", "A prefix requires a namespace.") }
-        if prefix == "xml" && nsv != "http://www.w3.org/XML/1998/namespace" { throw throwDOM("NamespaceError", "Bad xml prefix.") }
-        if (q == "xmlns" || prefix == "xmlns") != (nsv == "http://www.w3.org/2000/xmlns/") { throw throwDOM("NamespaceError", "Bad xmlns use.") }
-        let stored = nsv == nil ? q : (jsdomAttributeName(nsv, local, n) ?? q)
-        n.setAttributeValue(stored, v)
+        try setAttributeNS(n, ns, q, v)
     }
     func Element_removeAttribute(_ n: HTMLNode, _ q: String) {
         let name = qualifiedAttrName(n, q)
         detachAttr(n, name)
         n.removeAttribute(name)
     }
-    func Element_removeAttributeNS(_ n: HTMLNode, _ ns: String?, _ local: String) {
-        guard let name = jsdomAttributeName(ns, local, n) else { return }
-        detachAttr(n, name)
-        n.removeAttribute(name)
-    }
+    func Element_removeAttributeNS(_ n: HTMLNode, _ ns: String?, _ local: String) { removeAttributeNS(n, ns, local) }
     func Element_toggleAttribute(_ n: HTMLNode, _ q: String, _ force: Bool?) throws(JSThrow) -> Bool {
         if !htmlIsValidAttributeName(q) { throw throwDOM(.invalidCharacter) }
         let name = qualifiedAttrName(n, q)
@@ -200,17 +177,14 @@ extension JSDOMBindings {
         do throws(HTMLDOMError) { return try n.toggleAttribute(q, force: force) } catch { throw throwDOM(error) }
     }
     func Element_hasAttribute(_ n: HTMLNode, _ q: String) -> Bool { n.hasAttribute(qualifiedAttrName(n, q)) }
-    func Element_hasAttributeNS(_ n: HTMLNode, _ ns: String?, _ local: String) -> Bool {
-        guard let name = jsdomAttributeName(ns, local, n) else { return false }
-        return n.hasAttribute(name)
-    }
+    func Element_hasAttributeNS(_ n: HTMLNode, _ ns: String?, _ local: String) -> Bool { findAttributeNS(n, ns, local) != nil }
     func Element_getAttributeNode(_ n: HTMLNode, _ q: String) -> JSValue {
         let name = qualifiedAttrName(n, q)
         return n.hasAttribute(name) ? attrObject(n, name) : .null
     }
     func Element_getAttributeNodeNS(_ n: HTMLNode, _ ns: String?, _ local: String) -> JSValue {
-        guard let name = jsdomAttributeName(ns, local, n), n.hasAttribute(name) else { return .null }
-        return attrObject(n, name)
+        guard let i = findAttributeNS(n, ns, local) else { return .null }
+        return attrObject(n, n.attributes[i].name)
     }
     func Element_setAttributeNode(_ n: HTMLNode, _ a: JSDOMAttr) throws(JSThrow) -> JSValue { try setAttrNode(n, a) }
     func Element_setAttributeNodeNS(_ n: HTMLNode, _ a: JSDOMAttr) throws(JSThrow) -> JSValue { try setAttrNode(n, a) }

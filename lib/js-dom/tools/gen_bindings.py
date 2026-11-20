@@ -992,6 +992,11 @@ class Gen:
                 w("        defineValueIterator(p)")
             elif kind == "stringifier":
                 w("        defineStringifier(p, .%s)" % n)
+        has_iter = any(m["kind"] == "iterable" for m in i["members"])
+        indexed = any(m["kind"] == "operation" and m.get("special") == "getter" and m["args"]
+                      and self.category(m["args"][0]["type"]) == "int" for m in i["members"])
+        if indexed and not has_iter:
+            w("        defineIndexedIterator(p)")
         w("    }")
         w("}")
         w("")
@@ -1037,13 +1042,14 @@ class Gen:
             if "Throws" in ext:
                 call = "try " + call
             if "SameObject" in ext:
-                slot = self.same_slot(n, name)
+                # Members sharing an implementation share the cache (document.plugins === embeds).
+                slot = self.same_slot(impl, "")
                 body.append("return try b.sameObject(args.this, slot: %d) { () throws(JSThrow) -> JSValue in" % slot)
                 body.append("    " + self.ret(m["type"], call).replace("\n            ", "\n                "))
                 body.append("}")
             else:
                 body.append(self.ret(m["type"], call))
-        w('        realm.defineGetter(%s, "%s", setter: %s) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in' % (
+        w('        defineAttribute(%s, "%s", setter: %s) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in' % (
             target, name, self.setter_closure(n, m, c, un, ill)))
         if un:
             w("            " + self.this_guard(un, ill, body))
@@ -1123,7 +1129,7 @@ class Gen:
             self.ce_members.append(n + "." + name)
         target = "ctor" if m["static"] else "p"
         length = sum(1 for a in m["args"] if not a["optional"] and not a["variadic"])
-        w('        realm.defineMethod(%s, "%s", length: %d) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in' % (
+        w('        defineOperation(%s, "%s", length: %d) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in' % (
             target, name, length))
         if not m["static"]:
             w('            guard let this = %s else { throw b.illegal("%s", "%s") }' % (self.unwrap(n), n, name))

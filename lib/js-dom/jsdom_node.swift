@@ -9,8 +9,8 @@ extension JSDOMBindings {
     func Node_nodeType(_ n: HTMLNode) -> Int {
         switch n.kind {
         case .element: return 1
-        case .text: return 3
-        case .comment: return 8
+        case .text: return isCDATA(n) ? 4 : 3
+        case .comment: return isPI(n) ? 7 : 8
         case .document: return 9
         case .doctype: return 10
         case .documentFragment: return 11
@@ -20,8 +20,8 @@ extension JSDOMBindings {
     func Node_nodeName(_ n: HTMLNode) -> String {
         switch n.kind {
         case .element: return Element_tagName(n)
-        case .text: return "#text"
-        case .comment: return "#comment"
+        case .text: return isCDATA(n) ? "#cdata-section" : "#text"
+        case .comment: return isPI(n) ? ProcessingInstruction_target(n) : "#comment"
         case .document: return "#document"
         case .doctype: return n.name
         case .documentFragment: return "#document-fragment"
@@ -99,6 +99,7 @@ extension JSDOMBindings {
         if n.isShadowRoot { throw throwDOM("NotSupportedError", "ShadowRoot nodes are not clonable.") }
         let c = n.cloneNode(deep: deep)
         copyControlState(from: n, to: c, deep: deep)
+        copyNodeFlags(from: n, to: c, deep: deep)
         return c
     }
 
@@ -115,6 +116,7 @@ extension JSDOMBindings {
                 for at in x.attributes where y.attribute(at.name) != at.value { return false }
             case .text, .comment:
                 if x.data != y.data { return false }
+                if isPI(x) != isPI(y) || ProcessingInstruction_target(x) != ProcessingInstruction_target(y) { return false }
             default: break
             }
             if x.children.count != y.children.count { return false }
@@ -150,24 +152,6 @@ extension JSDOMBindings {
     }
 
     func Node_contains(_ n: HTMLNode, _ o: HTMLNode?) -> Bool { n.contains(o) }
-
-    func Node_lookupPrefix(_ n: HTMLNode, _ ns: String?) -> String? { nil }
-    func Node_lookupNamespaceURI(_ n: HTMLNode, _ prefix: String?) -> String? {
-        if prefix == "xml" { return "http://www.w3.org/XML/1998/namespace" }
-        if prefix == "xmlns" { return "http://www.w3.org/2000/xmlns/" }
-        if prefix == nil || prefix == "" {
-            var x: HTMLNode? = n.kind == .document ? n.documentElement : n
-            while let e = x {
-                if e.kind == .element { return jsdomNamespaceURI(e) }
-                x = e.parent
-            }
-        }
-        return nil
-    }
-    func Node_isDefaultNamespace(_ n: HTMLNode, _ ns: String?) -> Bool {
-        let d = Node_lookupNamespaceURI(n, nil)
-        return d == ((ns?.isEmpty ?? true) ? nil : ns)
-    }
 
     // MARK: Mutation
 

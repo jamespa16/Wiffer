@@ -15,6 +15,7 @@ enum JSDOMInterface: Int {
     case DOMStringMap
     case Node
     case Document
+    case XMLDocument
     case DOMImplementation
     case DOMParser
     case XMLSerializer
@@ -49,6 +50,8 @@ enum JSDOMInterface: Int {
     case HTMLIFrameElement
     case HTMLCanvasElement
     case HTMLMediaElement
+    case HTMLVideoElement
+    case HTMLAudioElement
     case HTMLDetailsElement
     case HTMLDialogElement
     case HTMLBodyElement
@@ -80,6 +83,12 @@ enum JSDOMInterface: Int {
     case HTMLSourceElement
     case HTMLEmbedElement
     case HTMLObjectElement
+    case HTMLDataListElement
+    case HTMLDirectoryElement
+    case HTMLFrameElement
+    case HTMLMeterElement
+    case HTMLParamElement
+    case HTMLTrackElement
     case HTMLTimeElement
     case HTMLDataElement
     case HTMLMenuElement
@@ -95,6 +104,8 @@ enum JSDOMInterface: Int {
     case CharacterData
     case Text
     case Comment
+    case ProcessingInstruction
+    case CDATASection
     case SubmitEvent
     case PopStateEvent
     case HashChangeEvent
@@ -112,6 +123,7 @@ enum JSDOMInterface: Int {
     case WheelEvent
     case KeyboardEvent
     case InputEvent
+    case CompositionEvent
     case FocusEvent
     case Window
     case Location
@@ -138,104 +150,116 @@ let jsdomInterfaceParents: [Int] = [
     -1,  // DOMStringMap
     1,  // Node
     9,  // Document
+    10,  // XMLDocument
     -1,  // DOMImplementation
     -1,  // DOMParser
     -1,  // XMLSerializer
     9,  // Element
     9,  // Attr
     -1,  // Event
-    16,  // CustomEvent
+    17,  // CustomEvent
     -1,  // DOMRect
     -1,  // DOMRectList
     -1,  // DOMException
-    14,  // HTMLElement
-    21,  // HTMLUnknownElement
-    21,  // HTMLAnchorElement
-    21,  // HTMLAreaElement
-    21,  // HTMLFormElement
-    21,  // HTMLInputElement
-    21,  // HTMLButtonElement
-    21,  // HTMLSelectElement
-    21,  // HTMLOptionElement
-    21,  // HTMLOptGroupElement
-    21,  // HTMLTextAreaElement
-    21,  // HTMLLabelElement
-    21,  // HTMLFieldSetElement
-    21,  // HTMLImageElement
-    21,  // HTMLTemplateElement
-    21,  // HTMLSlotElement
-    21,  // HTMLScriptElement
-    21,  // HTMLStyleElement
-    21,  // HTMLLinkElement
-    21,  // HTMLMetaElement
-    21,  // HTMLBaseElement
-    21,  // HTMLIFrameElement
-    21,  // HTMLCanvasElement
-    21,  // HTMLMediaElement
-    21,  // HTMLDetailsElement
-    21,  // HTMLDialogElement
-    21,  // HTMLBodyElement
-    21,  // HTMLTableElement
-    21,  // HTMLTableSectionElement
-    21,  // HTMLTableRowElement
-    21,  // HTMLTableCellElement
-    21,  // HTMLLIElement
-    21,  // HTMLOListElement
-    21,  // HTMLProgressElement
-    21,  // HTMLOutputElement
-    21,  // HTMLDivElement
-    21,  // HTMLSpanElement
-    21,  // HTMLParagraphElement
-    21,  // HTMLHeadingElement
-    21,  // HTMLUListElement
-    21,  // HTMLDListElement
-    21,  // HTMLPreElement
-    21,  // HTMLBRElement
-    21,  // HTMLHRElement
-    21,  // HTMLHeadElement
-    21,  // HTMLHtmlElement
-    21,  // HTMLTitleElement
-    21,  // HTMLQuoteElement
-    21,  // HTMLModElement
-    21,  // HTMLTableCaptionElement
-    21,  // HTMLTableColElement
-    21,  // HTMLPictureElement
-    21,  // HTMLSourceElement
-    21,  // HTMLEmbedElement
-    21,  // HTMLObjectElement
-    21,  // HTMLTimeElement
-    21,  // HTMLDataElement
-    21,  // HTMLMenuElement
-    21,  // HTMLLegendElement
-    21,  // HTMLMapElement
-    21,  // HTMLFrameSetElement
-    21,  // HTMLFontElement
+    15,  // HTMLElement
+    22,  // HTMLUnknownElement
+    22,  // HTMLAnchorElement
+    22,  // HTMLAreaElement
+    22,  // HTMLFormElement
+    22,  // HTMLInputElement
+    22,  // HTMLButtonElement
+    22,  // HTMLSelectElement
+    22,  // HTMLOptionElement
+    22,  // HTMLOptGroupElement
+    22,  // HTMLTextAreaElement
+    22,  // HTMLLabelElement
+    22,  // HTMLFieldSetElement
+    22,  // HTMLImageElement
+    22,  // HTMLTemplateElement
+    22,  // HTMLSlotElement
+    22,  // HTMLScriptElement
+    22,  // HTMLStyleElement
+    22,  // HTMLLinkElement
+    22,  // HTMLMetaElement
+    22,  // HTMLBaseElement
+    22,  // HTMLIFrameElement
+    22,  // HTMLCanvasElement
+    22,  // HTMLMediaElement
+    45,  // HTMLVideoElement
+    45,  // HTMLAudioElement
+    22,  // HTMLDetailsElement
+    22,  // HTMLDialogElement
+    22,  // HTMLBodyElement
+    22,  // HTMLTableElement
+    22,  // HTMLTableSectionElement
+    22,  // HTMLTableRowElement
+    22,  // HTMLTableCellElement
+    22,  // HTMLLIElement
+    22,  // HTMLOListElement
+    22,  // HTMLProgressElement
+    22,  // HTMLOutputElement
+    22,  // HTMLDivElement
+    22,  // HTMLSpanElement
+    22,  // HTMLParagraphElement
+    22,  // HTMLHeadingElement
+    22,  // HTMLUListElement
+    22,  // HTMLDListElement
+    22,  // HTMLPreElement
+    22,  // HTMLBRElement
+    22,  // HTMLHRElement
+    22,  // HTMLHeadElement
+    22,  // HTMLHtmlElement
+    22,  // HTMLTitleElement
+    22,  // HTMLQuoteElement
+    22,  // HTMLModElement
+    22,  // HTMLTableCaptionElement
+    22,  // HTMLTableColElement
+    22,  // HTMLPictureElement
+    22,  // HTMLSourceElement
+    22,  // HTMLEmbedElement
+    22,  // HTMLObjectElement
+    22,  // HTMLDataListElement
+    22,  // HTMLDirectoryElement
+    22,  // HTMLFrameElement
+    22,  // HTMLMeterElement
+    22,  // HTMLParamElement
+    22,  // HTMLTrackElement
+    22,  // HTMLTimeElement
+    22,  // HTMLDataElement
+    22,  // HTMLMenuElement
+    22,  // HTMLLegendElement
+    22,  // HTMLMapElement
+    22,  // HTMLFrameSetElement
+    22,  // HTMLFontElement
     -1,  // MutationObserver
     -1,  // MutationRecord
     9,  // DocumentType
     9,  // DocumentFragment
-    86,  // ShadowRoot
+    95,  // ShadowRoot
     9,  // CharacterData
-    88,  // Text
-    88,  // Comment
-    16,  // SubmitEvent
-    16,  // PopStateEvent
-    16,  // HashChangeEvent
-    16,  // ErrorEvent
-    16,  // MediaQueryListEvent
-    16,  // MessageEvent
-    14,  // SVGElement
-    97,  // SVGGraphicsElement
-    98,  // SVGSVGElement
-    98,  // SVGGeometryElement
+    97,  // Text
+    97,  // Comment
+    97,  // ProcessingInstruction
+    98,  // CDATASection
+    17,  // SubmitEvent
+    17,  // PopStateEvent
+    17,  // HashChangeEvent
+    17,  // ErrorEvent
+    17,  // MediaQueryListEvent
+    17,  // MessageEvent
+    15,  // SVGElement
+    108,  // SVGGraphicsElement
+    109,  // SVGSVGElement
+    109,  // SVGGeometryElement
     -1,  // SVGAnimatedRect
-    16,  // UIEvent
-    102,  // MouseEvent
-    103,  // PointerEvent
-    103,  // WheelEvent
-    102,  // KeyboardEvent
-    102,  // InputEvent
-    102,  // FocusEvent
+    17,  // UIEvent
+    113,  // MouseEvent
+    114,  // PointerEvent
+    114,  // WheelEvent
+    113,  // KeyboardEvent
+    113,  // InputEvent
+    113,  // CompositionEvent
+    113,  // FocusEvent
     1,  // Window
     -1,  // Location
     -1,  // History
@@ -259,6 +283,7 @@ let jsdomInterfaceNames: [String] = [
     "DOMStringMap",
     "Node",
     "Document",
+    "XMLDocument",
     "DOMImplementation",
     "DOMParser",
     "XMLSerializer",
@@ -293,6 +318,8 @@ let jsdomInterfaceNames: [String] = [
     "HTMLIFrameElement",
     "HTMLCanvasElement",
     "HTMLMediaElement",
+    "HTMLVideoElement",
+    "HTMLAudioElement",
     "HTMLDetailsElement",
     "HTMLDialogElement",
     "HTMLBodyElement",
@@ -324,6 +351,12 @@ let jsdomInterfaceNames: [String] = [
     "HTMLSourceElement",
     "HTMLEmbedElement",
     "HTMLObjectElement",
+    "HTMLDataListElement",
+    "HTMLDirectoryElement",
+    "HTMLFrameElement",
+    "HTMLMeterElement",
+    "HTMLParamElement",
+    "HTMLTrackElement",
     "HTMLTimeElement",
     "HTMLDataElement",
     "HTMLMenuElement",
@@ -339,6 +372,8 @@ let jsdomInterfaceNames: [String] = [
     "CharacterData",
     "Text",
     "Comment",
+    "ProcessingInstruction",
+    "CDATASection",
     "SubmitEvent",
     "PopStateEvent",
     "HashChangeEvent",
@@ -356,6 +391,7 @@ let jsdomInterfaceNames: [String] = [
     "WheelEvent",
     "KeyboardEvent",
     "InputEvent",
+    "CompositionEvent",
     "FocusEvent",
     "Window",
     "Location",
@@ -393,7 +429,8 @@ func jsdomHTMLInterface(_ localName: String) -> JSDOMInterface? {
     case "base": return .HTMLBaseElement
     case "iframe": return .HTMLIFrameElement
     case "canvas": return .HTMLCanvasElement
-    case "video", "audio": return .HTMLMediaElement
+    case "video": return .HTMLVideoElement
+    case "audio": return .HTMLAudioElement
     case "details": return .HTMLDetailsElement
     case "dialog": return .HTMLDialogElement
     case "body": return .HTMLBodyElement
@@ -425,6 +462,12 @@ func jsdomHTMLInterface(_ localName: String) -> JSDOMInterface? {
     case "source": return .HTMLSourceElement
     case "embed": return .HTMLEmbedElement
     case "object": return .HTMLObjectElement
+    case "datalist": return .HTMLDataListElement
+    case "dir": return .HTMLDirectoryElement
+    case "frame": return .HTMLFrameElement
+    case "meter": return .HTMLMeterElement
+    case "param": return .HTMLParamElement
+    case "track": return .HTMLTrackElement
     case "time": return .HTMLTimeElement
     case "data": return .HTMLDataElement
     case "menu": return .HTMLMenuElement
@@ -450,6 +493,19 @@ struct JSDOM_AddEventListenerOptions {
     var once: Bool = false
     var passive: Bool? = nil
     var signal: JSDOMEventTargetObject? = nil
+    /// Members that were present in the dictionary.
+    var present: Set<String> = []
+    init() {}
+}
+
+struct JSDOM_CompositionEventInit {
+    var bubbles: Bool = false
+    var cancelable: Bool = false
+    var composed: Bool = false
+    var detail: Int = 0
+    var view: JSValue = .null
+    var which: Int = 0
+    var data: String = ""
     /// Members that were present in the dictionary.
     var present: Set<String> = []
     init() {}
@@ -761,6 +817,29 @@ extension JSDOMBindings {
         if !v_passive.isUndefined { d.passive = b.heap.toBoolean(v_passive); d.present.insert("passive") }
         let v_signal = try realm.getV(v, heap.key("signal"))
         if !v_signal.isUndefined { d.signal = try b.toTargetObject(v_signal, .AbortSignal, b.ctx("AddEventListenerOptions", "signal")); d.present.insert("signal") }
+        _ = b
+        return d
+    }
+
+    func dict_CompositionEventInit(_ v: JSValue) throws(JSThrow) -> JSDOM_CompositionEventInit {
+        var d = JSDOM_CompositionEventInit()
+        if v.isNullish { return d }
+        if !v.isObject { throw realm.throwTypeError("CompositionEventInit: not an object") }
+        let b = self
+        let v_bubbles = try realm.getV(v, heap.key("bubbles"))
+        if !v_bubbles.isUndefined { d.bubbles = b.heap.toBoolean(v_bubbles); d.present.insert("bubbles") }
+        let v_cancelable = try realm.getV(v, heap.key("cancelable"))
+        if !v_cancelable.isUndefined { d.cancelable = b.heap.toBoolean(v_cancelable); d.present.insert("cancelable") }
+        let v_composed = try realm.getV(v, heap.key("composed"))
+        if !v_composed.isUndefined { d.composed = b.heap.toBoolean(v_composed); d.present.insert("composed") }
+        let v_detail = try realm.getV(v, heap.key("detail"))
+        if !v_detail.isUndefined { d.detail = try b.toLong(v_detail); d.present.insert("detail") }
+        let v_view = try realm.getV(v, heap.key("view"))
+        if !v_view.isUndefined { _ = heap.root(v_view); d.view = v_view; d.present.insert("view") }
+        let v_which = try realm.getV(v, heap.key("which"))
+        if !v_which.isUndefined { d.which = try b.toUnsignedLong(v_which); d.present.insert("which") }
+        let v_data = try realm.getV(v, heap.key("data"))
+        if !v_data.isUndefined { d.data = try b.toStr(v_data); d.present.insert("data") }
         _ = b
         return d
     }
@@ -1334,39 +1413,39 @@ final class JSDOMClasses {
         DOMStringMap = JSHostClass<JSDOMStringMap>(realm: realm, name: "DOMStringMap", parent: nil, exotic: b.exotic_DOMStringMap())
         b.protos[8] = DOMStringMap.prototype
         DOMImplementation = JSHostClass<JSDOMImplementation>(realm: realm, name: "DOMImplementation", parent: nil)
-        b.protos[11] = DOMImplementation.prototype
+        b.protos[12] = DOMImplementation.prototype
         DOMParser = JSHostClass<JSDOMParser>(realm: realm, name: "DOMParser", parent: nil)
-        b.protos[12] = DOMParser.prototype
+        b.protos[13] = DOMParser.prototype
         XMLSerializer = JSHostClass<JSDOMXMLSerializer>(realm: realm, name: "XMLSerializer", parent: nil)
-        b.protos[13] = XMLSerializer.prototype
+        b.protos[14] = XMLSerializer.prototype
         Attr = JSHostClass<JSDOMAttr>(realm: realm, name: "Attr", parent: b.protos[9])
-        b.protos[15] = Attr.prototype
+        b.protos[16] = Attr.prototype
         DOMRect = JSHostClass<JSDOMRect>(realm: realm, name: "DOMRect", parent: nil)
-        b.protos[18] = DOMRect.prototype
+        b.protos[19] = DOMRect.prototype
         DOMRectList = JSHostClass<JSDOMRectList>(realm: realm, name: "DOMRectList", parent: nil, exotic: b.exotic_DOMRectList())
-        b.protos[19] = DOMRectList.prototype
+        b.protos[20] = DOMRectList.prototype
         DOMException = JSHostClass<JSDOMExceptionData>(realm: realm, name: "DOMException", parent: nil)
-        b.protos[20] = DOMException.prototype
+        b.protos[21] = DOMException.prototype
         MutationObserver = JSHostClass<JSDOMMutationObserver>(realm: realm, name: "MutationObserver", parent: nil)
-        b.protos[83] = MutationObserver.prototype
+        b.protos[92] = MutationObserver.prototype
         MutationRecord = JSHostClass<JSDOMMutationRecord>(realm: realm, name: "MutationRecord", parent: nil)
-        b.protos[84] = MutationRecord.prototype
+        b.protos[93] = MutationRecord.prototype
         SVGAnimatedRect = JSHostClass<JSDOMAnimatedRect>(realm: realm, name: "SVGAnimatedRect", parent: nil)
-        b.protos[101] = SVGAnimatedRect.prototype
+        b.protos[112] = SVGAnimatedRect.prototype
         Location = JSHostClass<JSDOMLocation>(realm: realm, name: "Location", parent: nil)
-        b.protos[110] = Location.prototype
+        b.protos[122] = Location.prototype
         History = JSHostClass<JSDOMHistory>(realm: realm, name: "History", parent: nil)
-        b.protos[111] = History.prototype
+        b.protos[123] = History.prototype
         Navigator = JSHostClass<JSDOMNavigator>(realm: realm, name: "Navigator", parent: nil)
-        b.protos[112] = Navigator.prototype
+        b.protos[124] = Navigator.prototype
         Screen = JSHostClass<JSDOMScreen>(realm: realm, name: "Screen", parent: nil)
-        b.protos[113] = Screen.prototype
+        b.protos[125] = Screen.prototype
         Selection = JSHostClass<JSDOMSelection>(realm: realm, name: "Selection", parent: nil)
-        b.protos[115] = Selection.prototype
+        b.protos[127] = Selection.prototype
         Performance = JSHostClass<JSDOMPerformance>(realm: realm, name: "Performance", parent: nil)
-        b.protos[116] = Performance.prototype
+        b.protos[128] = Performance.prototype
         Storage = JSHostClass<JSDOMStorage>(realm: realm, name: "Storage", parent: nil, exotic: b.exotic_Storage())
-        b.protos[117] = Storage.prototype
+        b.protos[129] = Storage.prototype
         EventTargetObject = JSHostClass<JSDOMEventTargetObject>(realm: realm, name: "EventTarget", parent: b.protos[1])
     }
 }
@@ -1379,6 +1458,7 @@ extension JSDOMBindings {
         makePrototype(.AbortSignal, parent: .EventTarget)
         makePrototype(.Node, parent: .EventTarget)
         makePrototype(.Document, parent: .Node)
+        makePrototype(.XMLDocument, parent: .Document)
         makePrototype(.Element, parent: .Node)
         makePrototype(.Event, parent: nil)
         makePrototype(.CustomEvent, parent: .Event)
@@ -1406,6 +1486,8 @@ extension JSDOMBindings {
         makePrototype(.HTMLIFrameElement, parent: .HTMLElement)
         makePrototype(.HTMLCanvasElement, parent: .HTMLElement)
         makePrototype(.HTMLMediaElement, parent: .HTMLElement)
+        makePrototype(.HTMLVideoElement, parent: .HTMLMediaElement)
+        makePrototype(.HTMLAudioElement, parent: .HTMLMediaElement)
         makePrototype(.HTMLDetailsElement, parent: .HTMLElement)
         makePrototype(.HTMLDialogElement, parent: .HTMLElement)
         makePrototype(.HTMLBodyElement, parent: .HTMLElement)
@@ -1437,6 +1519,12 @@ extension JSDOMBindings {
         makePrototype(.HTMLSourceElement, parent: .HTMLElement)
         makePrototype(.HTMLEmbedElement, parent: .HTMLElement)
         makePrototype(.HTMLObjectElement, parent: .HTMLElement)
+        makePrototype(.HTMLDataListElement, parent: .HTMLElement)
+        makePrototype(.HTMLDirectoryElement, parent: .HTMLElement)
+        makePrototype(.HTMLFrameElement, parent: .HTMLElement)
+        makePrototype(.HTMLMeterElement, parent: .HTMLElement)
+        makePrototype(.HTMLParamElement, parent: .HTMLElement)
+        makePrototype(.HTMLTrackElement, parent: .HTMLElement)
         makePrototype(.HTMLTimeElement, parent: .HTMLElement)
         makePrototype(.HTMLDataElement, parent: .HTMLElement)
         makePrototype(.HTMLMenuElement, parent: .HTMLElement)
@@ -1450,6 +1538,8 @@ extension JSDOMBindings {
         makePrototype(.CharacterData, parent: .Node)
         makePrototype(.Text, parent: .CharacterData)
         makePrototype(.Comment, parent: .CharacterData)
+        makePrototype(.ProcessingInstruction, parent: .CharacterData)
+        makePrototype(.CDATASection, parent: .Text)
         makePrototype(.SubmitEvent, parent: .Event)
         makePrototype(.PopStateEvent, parent: .Event)
         makePrototype(.HashChangeEvent, parent: .Event)
@@ -1466,6 +1556,7 @@ extension JSDOMBindings {
         makePrototype(.WheelEvent, parent: .MouseEvent)
         makePrototype(.KeyboardEvent, parent: .UIEvent)
         makePrototype(.InputEvent, parent: .UIEvent)
+        makePrototype(.CompositionEvent, parent: .UIEvent)
         makePrototype(.FocusEvent, parent: .UIEvent)
         makePrototype(.Window, parent: .EventTarget)
         makePrototype(.MediaQueryList, parent: .EventTarget)
@@ -1487,6 +1578,7 @@ extension JSDOMBindings {
         gen_DOMStringMap()
         gen_Node()
         gen_Document()
+        gen_XMLDocument()
         gen_DOMImplementation()
         gen_DOMParser()
         gen_XMLSerializer()
@@ -1521,6 +1613,8 @@ extension JSDOMBindings {
         gen_HTMLIFrameElement()
         gen_HTMLCanvasElement()
         gen_HTMLMediaElement()
+        gen_HTMLVideoElement()
+        gen_HTMLAudioElement()
         gen_HTMLDetailsElement()
         gen_HTMLDialogElement()
         gen_HTMLBodyElement()
@@ -1552,6 +1646,12 @@ extension JSDOMBindings {
         gen_HTMLSourceElement()
         gen_HTMLEmbedElement()
         gen_HTMLObjectElement()
+        gen_HTMLDataListElement()
+        gen_HTMLDirectoryElement()
+        gen_HTMLFrameElement()
+        gen_HTMLMeterElement()
+        gen_HTMLParamElement()
+        gen_HTMLTrackElement()
         gen_HTMLTimeElement()
         gen_HTMLDataElement()
         gen_HTMLMenuElement()
@@ -1567,6 +1667,8 @@ extension JSDOMBindings {
         gen_CharacterData()
         gen_Text()
         gen_Comment()
+        gen_ProcessingInstruction()
+        gen_CDATASection()
         gen_SubmitEvent()
         gen_PopStateEvent()
         gen_HashChangeEvent()
@@ -1584,6 +1686,7 @@ extension JSDOMBindings {
         gen_WheelEvent()
         gen_KeyboardEvent()
         gen_InputEvent()
+        gen_CompositionEvent()
         gen_FocusEvent()
         gen_Window()
         gen_Location()
@@ -1611,13 +1714,13 @@ extension JSDOMBindings {
             return try b.AbortController_constructor(newTarget: args.newTarget)
         }
         _ = ctor
-        realm.defineGetter(p, "signal", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "signal", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.AbortController.unwrap(args.this) else { throw b.illegal("AbortController", "signal") }
             return try b.sameObject(args.this, slot: 0) { () throws(JSThrow) -> JSValue in
                 return b.AbortController_signal(this)
             }
         }
-        realm.defineMethod(p, "abort", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "abort", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.AbortController.unwrap(args.this) else { throw b.illegal("AbortController", "abort") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1641,7 +1744,7 @@ extension JSDOMBindings {
             return try b.EventTarget_constructor(newTarget: args.newTarget)
         }
         _ = ctor
-        realm.defineMethod(p, "addEventListener", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "addEventListener", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisTarget(args.this) else { throw b.illegal("EventTarget", "addEventListener") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1652,7 +1755,7 @@ extension JSDOMBindings {
             try b.EventTarget_addEventListener(this, a0, a1, a2)
             return .undefined
         }
-        realm.defineMethod(p, "removeEventListener", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "removeEventListener", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisTarget(args.this) else { throw b.illegal("EventTarget", "removeEventListener") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1663,7 +1766,7 @@ extension JSDOMBindings {
             try b.EventTarget_removeEventListener(this, a0, a1, a2)
             return .undefined
         }
-        realm.defineMethod(p, "dispatchEvent", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "dispatchEvent", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisTarget(args.this) else { throw b.illegal("EventTarget", "dispatchEvent") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1682,28 +1785,28 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.AbortSignal, length: 0, nil)
         _ = ctor
-        realm.defineMethod(ctor, "abort", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(ctor, "abort", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             let a0: JSValue = args[0]
             return try b.AbortSignal_static_abort(a0)
         }
-        realm.defineGetter(p, "aborted", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "aborted", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisTargetObject(args.this, .AbortSignal) else { throw b.illegal("AbortSignal", "aborted") }
             return .bool(b.AbortSignal_aborted(this))
         }
-        realm.defineGetter(p, "reason", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "reason", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisTargetObject(args.this, .AbortSignal) else { throw b.illegal("AbortSignal", "reason") }
             return b.AbortSignal_reason(this)
         }
-        realm.defineMethod(p, "throwIfAborted", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "throwIfAborted", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisTargetObject(args.this, .AbortSignal) else { throw b.illegal("AbortSignal", "throwIfAborted") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             try b.AbortSignal_throwIfAborted(this)
             return .undefined
         }
-        realm.defineGetter(p, "onabort", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onabort", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisTargetObject(args.this, .AbortSignal) else { throw b.illegal("AbortSignal", "onabort") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1724,7 +1827,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.CSSStyleDeclaration, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "cssText", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "cssText", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.CSSStyleDeclaration.unwrap(args.this) else { throw b.illegal("CSSStyleDeclaration", "cssText") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1735,11 +1838,11 @@ extension JSDOMBindings {
             guard let this = b.classes.CSSStyleDeclaration.unwrap(args.this) else { throw b.illegal("CSSStyleDeclaration", "cssText") }
             return b.str(try b.CSSStyleDeclaration_cssText(this))
         }
-        realm.defineGetter(p, "length", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "length", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.CSSStyleDeclaration.unwrap(args.this) else { throw b.illegal("CSSStyleDeclaration", "length") }
             return JSValue.number(b.CSSStyleDeclaration_length(this))
         }
-        realm.defineMethod(p, "item", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "item", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.CSSStyleDeclaration.unwrap(args.this) else { throw b.illegal("CSSStyleDeclaration", "item") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1747,7 +1850,7 @@ extension JSDOMBindings {
             let a0: Int = try b.toUnsignedLong(args[0])
             return b.str(b.CSSStyleDeclaration_item(this, a0))
         }
-        realm.defineMethod(p, "getPropertyValue", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getPropertyValue", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.CSSStyleDeclaration.unwrap(args.this) else { throw b.illegal("CSSStyleDeclaration", "getPropertyValue") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1755,7 +1858,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.str(b.CSSStyleDeclaration_getPropertyValue(this, a0))
         }
-        realm.defineMethod(p, "getPropertyPriority", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getPropertyPriority", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.CSSStyleDeclaration.unwrap(args.this) else { throw b.illegal("CSSStyleDeclaration", "getPropertyPriority") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1763,7 +1866,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.str(b.CSSStyleDeclaration_getPropertyPriority(this, a0))
         }
-        realm.defineMethod(p, "setProperty", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "setProperty", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.CSSStyleDeclaration.unwrap(args.this) else { throw b.illegal("CSSStyleDeclaration", "setProperty") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1774,7 +1877,7 @@ extension JSDOMBindings {
             try b.CSSStyleDeclaration_setProperty(this, a0, a1, a2)
             return .undefined
         }
-        realm.defineMethod(p, "removeProperty", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "removeProperty", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.CSSStyleDeclaration.unwrap(args.this) else { throw b.illegal("CSSStyleDeclaration", "removeProperty") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1782,11 +1885,11 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.str(try b.CSSStyleDeclaration_removeProperty(this, a0))
         }
-        realm.defineGetter(p, "parentRule", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "parentRule", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.CSSStyleDeclaration.unwrap(args.this) else { throw b.illegal("CSSStyleDeclaration", "parentRule") }
             return b.CSSStyleDeclaration_parentRule(this)
         }
-        realm.defineGetter(p, "cssFloat", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "cssFloat", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.CSSStyleDeclaration.unwrap(args.this) else { throw b.illegal("CSSStyleDeclaration", "cssFloat") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1797,6 +1900,7 @@ extension JSDOMBindings {
             guard let this = b.classes.CSSStyleDeclaration.unwrap(args.this) else { throw b.illegal("CSSStyleDeclaration", "cssFloat") }
             return b.str(try b.CSSStyleDeclaration_cssFloat(this))
         }
+        defineIndexedIterator(p)
     }
 }
 
@@ -1808,7 +1912,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.NodeList, length: 0, nil)
         _ = ctor
-        realm.defineMethod(p, "item", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "item", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.NodeList.unwrap(args.this) else { throw b.illegal("NodeList", "item") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1816,7 +1920,7 @@ extension JSDOMBindings {
             let a0: Int = try b.toUnsignedLong(args[0])
             return b.wrapNode(b.NodeList_item(this, a0))
         }
-        realm.defineGetter(p, "length", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "length", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.NodeList.unwrap(args.this) else { throw b.illegal("NodeList", "length") }
             return JSValue.number(b.NodeList_length(this))
         }
@@ -1832,11 +1936,11 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLCollection, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "length", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "length", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.HTMLCollection.unwrap(args.this) else { throw b.illegal("HTMLCollection", "length") }
             return JSValue.number(b.HTMLCollection_length(this))
         }
-        realm.defineMethod(p, "item", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "item", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.HTMLCollection.unwrap(args.this) else { throw b.illegal("HTMLCollection", "item") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1844,7 +1948,7 @@ extension JSDOMBindings {
             let a0: Int = try b.toUnsignedLong(args[0])
             return b.wrapNode(b.HTMLCollection_item(this, a0))
         }
-        realm.defineMethod(p, "namedItem", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "namedItem", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.HTMLCollection.unwrap(args.this) else { throw b.illegal("HTMLCollection", "namedItem") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1852,6 +1956,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.wrapNode(b.HTMLCollection_namedItem(this, a0))
         }
+        defineIndexedIterator(p)
     }
 }
 
@@ -1863,11 +1968,11 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.DOMTokenList, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "length", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "length", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMTokenList.unwrap(args.this) else { throw b.illegal("DOMTokenList", "length") }
             return JSValue.number(b.DOMTokenList_length(this))
         }
-        realm.defineMethod(p, "item", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "item", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMTokenList.unwrap(args.this) else { throw b.illegal("DOMTokenList", "item") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1875,7 +1980,7 @@ extension JSDOMBindings {
             let a0: Int = try b.toUnsignedLong(args[0])
             return b.strOrNull(b.DOMTokenList_item(this, a0))
         }
-        realm.defineMethod(p, "contains", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "contains", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMTokenList.unwrap(args.this) else { throw b.illegal("DOMTokenList", "contains") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1883,7 +1988,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return .bool(b.DOMTokenList_contains(this, a0))
         }
-        realm.defineMethod(p, "add", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "add", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMTokenList.unwrap(args.this) else { throw b.illegal("DOMTokenList", "add") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1893,7 +1998,7 @@ extension JSDOMBindings {
             try b.DOMTokenList_add(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "remove", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "remove", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMTokenList.unwrap(args.this) else { throw b.illegal("DOMTokenList", "remove") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1903,7 +2008,7 @@ extension JSDOMBindings {
             try b.DOMTokenList_remove(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "toggle", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "toggle", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMTokenList.unwrap(args.this) else { throw b.illegal("DOMTokenList", "toggle") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1912,7 +2017,7 @@ extension JSDOMBindings {
             let a1: Bool? = args[1].isUndefined ? nil : b.heap.toBoolean(args[1])
             return .bool(try b.DOMTokenList_toggle(this, a0, a1))
         }
-        realm.defineMethod(p, "replace", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "replace", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMTokenList.unwrap(args.this) else { throw b.illegal("DOMTokenList", "replace") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1921,7 +2026,7 @@ extension JSDOMBindings {
             let a1: String = try b.toStr(args[1])
             return .bool(try b.DOMTokenList_replace(this, a0, a1))
         }
-        realm.defineMethod(p, "supports", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "supports", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMTokenList.unwrap(args.this) else { throw b.illegal("DOMTokenList", "supports") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1929,7 +2034,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return .bool(try b.DOMTokenList_supports(this, a0))
         }
-        realm.defineGetter(p, "value", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "value", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMTokenList.unwrap(args.this) else { throw b.illegal("DOMTokenList", "value") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1953,11 +2058,11 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.NamedNodeMap, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "length", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "length", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.NamedNodeMap.unwrap(args.this) else { throw b.illegal("NamedNodeMap", "length") }
             return JSValue.number(b.NamedNodeMap_length(this))
         }
-        realm.defineMethod(p, "item", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "item", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.NamedNodeMap.unwrap(args.this) else { throw b.illegal("NamedNodeMap", "item") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1965,7 +2070,7 @@ extension JSDOMBindings {
             let a0: Int = try b.toUnsignedLong(args[0])
             return b.NamedNodeMap_item(this, a0)
         }
-        realm.defineMethod(p, "getNamedItem", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getNamedItem", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.NamedNodeMap.unwrap(args.this) else { throw b.illegal("NamedNodeMap", "getNamedItem") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1973,7 +2078,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.NamedNodeMap_getNamedItem(this, a0)
         }
-        realm.defineMethod(p, "getNamedItemNS", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getNamedItemNS", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.NamedNodeMap.unwrap(args.this) else { throw b.illegal("NamedNodeMap", "getNamedItemNS") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1982,7 +2087,7 @@ extension JSDOMBindings {
             let a1: String = try b.toStr(args[1])
             return b.NamedNodeMap_getNamedItemNS(this, a0, a1)
         }
-        realm.defineMethod(p, "setNamedItem", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "setNamedItem", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.NamedNodeMap.unwrap(args.this) else { throw b.illegal("NamedNodeMap", "setNamedItem") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1990,7 +2095,7 @@ extension JSDOMBindings {
             let a0: JSDOMAttr = try b.toObj(b.classes.Attr, args[0], b.ctx("NamedNodeMap", "setNamedItem"))
             return try b.NamedNodeMap_setNamedItem(this, a0)
         }
-        realm.defineMethod(p, "setNamedItemNS", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "setNamedItemNS", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.NamedNodeMap.unwrap(args.this) else { throw b.illegal("NamedNodeMap", "setNamedItemNS") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -1998,7 +2103,7 @@ extension JSDOMBindings {
             let a0: JSDOMAttr = try b.toObj(b.classes.Attr, args[0], b.ctx("NamedNodeMap", "setNamedItemNS"))
             return try b.NamedNodeMap_setNamedItemNS(this, a0)
         }
-        realm.defineMethod(p, "removeNamedItem", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "removeNamedItem", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.NamedNodeMap.unwrap(args.this) else { throw b.illegal("NamedNodeMap", "removeNamedItem") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2006,7 +2111,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return try b.NamedNodeMap_removeNamedItem(this, a0)
         }
-        realm.defineMethod(p, "removeNamedItemNS", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "removeNamedItemNS", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.NamedNodeMap.unwrap(args.this) else { throw b.illegal("NamedNodeMap", "removeNamedItemNS") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2015,6 +2120,7 @@ extension JSDOMBindings {
             let a1: String = try b.toStr(args[1])
             return try b.NamedNodeMap_removeNamedItemNS(this, a0, a1)
         }
+        defineIndexedIterator(p)
     }
 }
 
@@ -2049,70 +2155,70 @@ extension JSDOMBindings {
         defineConstant(p, ctor, "DOCUMENT_TYPE_NODE", 10)
         defineConstant(p, ctor, "DOCUMENT_FRAGMENT_NODE", 11)
         defineConstant(p, ctor, "NOTATION_NODE", 12)
-        realm.defineGetter(p, "nodeType", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "nodeType", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "nodeType") }
             return JSValue.number(b.Node_nodeType(this))
         }
-        realm.defineGetter(p, "nodeName", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "nodeName", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "nodeName") }
             return b.str(b.Node_nodeName(this))
         }
-        realm.defineGetter(p, "baseURI", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "baseURI", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "baseURI") }
             return b.str(b.Node_baseURI(this))
         }
-        realm.defineGetter(p, "isConnected", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "isConnected", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "isConnected") }
             return .bool(b.Node_isConnected(this))
         }
-        realm.defineGetter(p, "ownerDocument", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ownerDocument", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "ownerDocument") }
             return b.wrapNode(b.Node_ownerDocument(this))
         }
-        realm.defineMethod(p, "getRootNode", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getRootNode", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "getRootNode") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             let a0: JSValue = args[0]
             return b.wrapNode(b.Node_getRootNode(this, a0))
         }
-        realm.defineGetter(p, "parentNode", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "parentNode", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "parentNode") }
             return b.wrapNode(b.Node_parentNode(this))
         }
-        realm.defineGetter(p, "parentElement", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "parentElement", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "parentElement") }
             return b.wrapNode(b.Node_parentElement(this))
         }
-        realm.defineMethod(p, "hasChildNodes", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "hasChildNodes", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "hasChildNodes") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             return .bool(b.Node_hasChildNodes(this))
         }
-        realm.defineGetter(p, "childNodes", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "childNodes", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "childNodes") }
             return try b.sameObject(args.this, slot: 1) { () throws(JSThrow) -> JSValue in
                 return b.Node_childNodes(this)
             }
         }
-        realm.defineGetter(p, "firstChild", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "firstChild", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "firstChild") }
             return b.wrapNode(b.Node_firstChild(this))
         }
-        realm.defineGetter(p, "lastChild", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "lastChild", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "lastChild") }
             return b.wrapNode(b.Node_lastChild(this))
         }
-        realm.defineGetter(p, "previousSibling", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "previousSibling", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "previousSibling") }
             return b.wrapNode(b.Node_previousSibling(this))
         }
-        realm.defineGetter(p, "nextSibling", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "nextSibling", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "nextSibling") }
             return b.wrapNode(b.Node_nextSibling(this))
         }
-        realm.defineGetter(p, "nodeValue", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "nodeValue", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "nodeValue") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2123,7 +2229,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "nodeValue") }
             return b.strOrNull(b.Node_nodeValue(this))
         }
-        realm.defineGetter(p, "textContent", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "textContent", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "textContent") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2134,21 +2240,21 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "textContent") }
             return b.strOrNull(b.Node_textContent(this))
         }
-        realm.defineMethod(p, "normalize", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "normalize", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "normalize") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             b.Node_normalize(this)
             return .undefined
         }
-        realm.defineMethod(p, "cloneNode", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "cloneNode", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "cloneNode") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             let a0: Bool = args[0].isUndefined ? false : b.heap.toBoolean(args[0])
             return b.wrapNode(try b.Node_cloneNode(this, a0))
         }
-        realm.defineMethod(p, "isEqualNode", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "isEqualNode", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "isEqualNode") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2156,7 +2262,7 @@ extension JSDOMBindings {
             let a0: HTMLNode? = try b.toNodeOrNull(args[0], .Node, b.ctx("Node", "isEqualNode"))
             return .bool(b.Node_isEqualNode(this, a0))
         }
-        realm.defineMethod(p, "isSameNode", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "isSameNode", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "isSameNode") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2170,7 +2276,7 @@ extension JSDOMBindings {
         defineConstant(p, ctor, "DOCUMENT_POSITION_CONTAINS", 0x08)
         defineConstant(p, ctor, "DOCUMENT_POSITION_CONTAINED_BY", 0x10)
         defineConstant(p, ctor, "DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC", 0x20)
-        realm.defineMethod(p, "compareDocumentPosition", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "compareDocumentPosition", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "compareDocumentPosition") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2178,7 +2284,7 @@ extension JSDOMBindings {
             let a0: HTMLNode = try b.toNode(args[0], .Node, b.ctx("Node", "compareDocumentPosition"))
             return JSValue.number(b.Node_compareDocumentPosition(this, a0))
         }
-        realm.defineMethod(p, "contains", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "contains", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "contains") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2186,7 +2292,7 @@ extension JSDOMBindings {
             let a0: HTMLNode? = try b.toNodeOrNull(args[0], .Node, b.ctx("Node", "contains"))
             return .bool(b.Node_contains(this, a0))
         }
-        realm.defineMethod(p, "lookupPrefix", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "lookupPrefix", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "lookupPrefix") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2194,7 +2300,7 @@ extension JSDOMBindings {
             let a0: String? = (args[0].isNullish ? nil : try b.toStr(args[0]))
             return b.strOrNull(b.Node_lookupPrefix(this, a0))
         }
-        realm.defineMethod(p, "lookupNamespaceURI", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "lookupNamespaceURI", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "lookupNamespaceURI") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2202,7 +2308,7 @@ extension JSDOMBindings {
             let a0: String? = (args[0].isNullish ? nil : try b.toStr(args[0]))
             return b.strOrNull(b.Node_lookupNamespaceURI(this, a0))
         }
-        realm.defineMethod(p, "isDefaultNamespace", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "isDefaultNamespace", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "isDefaultNamespace") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2210,7 +2316,7 @@ extension JSDOMBindings {
             let a0: String? = (args[0].isNullish ? nil : try b.toStr(args[0]))
             return .bool(b.Node_isDefaultNamespace(this, a0))
         }
-        realm.defineMethod(p, "insertBefore", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "insertBefore", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "insertBefore") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2219,7 +2325,7 @@ extension JSDOMBindings {
             let a1: HTMLNode? = try b.toNodeOrNull(args[1], .Node, b.ctx("Node", "insertBefore"))
             return b.wrapNode(try b.Node_insertBefore(this, a0, a1))
         }
-        realm.defineMethod(p, "appendChild", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "appendChild", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "appendChild") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2227,7 +2333,7 @@ extension JSDOMBindings {
             let a0: HTMLNode = try b.toNode(args[0], .Node, b.ctx("Node", "appendChild"))
             return b.wrapNode(try b.Node_appendChild(this, a0))
         }
-        realm.defineMethod(p, "replaceChild", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "replaceChild", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "replaceChild") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2236,7 +2342,7 @@ extension JSDOMBindings {
             let a1: HTMLNode = try b.toNode(args[1], .Node, b.ctx("Node", "replaceChild"))
             return b.wrapNode(try b.Node_replaceChild(this, a0, a1))
         }
-        realm.defineMethod(p, "removeChild", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "removeChild", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Node) else { throw b.illegal("Node", "removeChild") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2260,49 +2366,49 @@ extension JSDOMBindings {
             return try b.Document_constructor(newTarget: args.newTarget)
         }
         _ = ctor
-        realm.defineGetter(p, "implementation", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "implementation", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "implementation") }
             return try b.sameObject(args.this, slot: 2) { () throws(JSThrow) -> JSValue in
                 return b.Document_implementation(this)
             }
         }
-        realm.defineGetter(p, "URL", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "URL", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "URL") }
             return b.str(b.Document_URL(this))
         }
-        realm.defineGetter(p, "documentURI", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "documentURI", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "documentURI") }
             return b.str(b.Document_URL(this))
         }
-        realm.defineGetter(p, "compatMode", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "compatMode", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "compatMode") }
             return b.str(b.Document_compatMode(this))
         }
-        realm.defineGetter(p, "characterSet", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "characterSet", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "characterSet") }
             return b.str(b.Document_characterSet(this))
         }
-        realm.defineGetter(p, "charset", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "charset", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "charset") }
             return b.str(b.Document_characterSet(this))
         }
-        realm.defineGetter(p, "inputEncoding", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "inputEncoding", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "inputEncoding") }
             return b.str(b.Document_characterSet(this))
         }
-        realm.defineGetter(p, "contentType", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "contentType", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "contentType") }
             return b.str(b.Document_contentType(this))
         }
-        realm.defineGetter(p, "doctype", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "doctype", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "doctype") }
             return b.wrapNode(b.Document_doctype(this))
         }
-        realm.defineGetter(p, "documentElement", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "documentElement", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "documentElement") }
             return b.wrapNode(b.Document_documentElement(this))
         }
-        realm.defineMethod(p, "getElementsByTagName", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getElementsByTagName", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "getElementsByTagName") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2310,7 +2416,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.Document_getElementsByTagName(this, a0)
         }
-        realm.defineMethod(p, "getElementsByTagNameNS", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getElementsByTagNameNS", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "getElementsByTagNameNS") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2319,7 +2425,7 @@ extension JSDOMBindings {
             let a1: String = try b.toStr(args[1])
             return b.Document_getElementsByTagNameNS(this, a0, a1)
         }
-        realm.defineMethod(p, "getElementsByClassName", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getElementsByClassName", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "getElementsByClassName") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2327,7 +2433,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.Document_getElementsByClassName(this, a0)
         }
-        realm.defineMethod(p, "createElement", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "createElement", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "createElement") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2336,7 +2442,7 @@ extension JSDOMBindings {
             let a1: JSValue = args[1]
             return b.wrapNode(try b.Document_createElement(this, a0, a1))
         }
-        realm.defineMethod(p, "createElementNS", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "createElementNS", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "createElementNS") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2346,13 +2452,13 @@ extension JSDOMBindings {
             let a2: JSValue = args[2]
             return b.wrapNode(try b.Document_createElementNS(this, a0, a1, a2))
         }
-        realm.defineMethod(p, "createDocumentFragment", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "createDocumentFragment", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "createDocumentFragment") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             return b.wrapNode(try b.Document_createDocumentFragment(this))
         }
-        realm.defineMethod(p, "createTextNode", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "createTextNode", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "createTextNode") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2360,7 +2466,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.wrapNode(try b.Document_createTextNode(this, a0))
         }
-        realm.defineMethod(p, "createCDATASection", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "createCDATASection", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "createCDATASection") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2368,7 +2474,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.wrapNode(try b.Document_createCDATASection(this, a0))
         }
-        realm.defineMethod(p, "createComment", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "createComment", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "createComment") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2376,16 +2482,16 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.wrapNode(try b.Document_createComment(this, a0))
         }
-        realm.defineMethod(p, "createProcessingInstruction", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "createProcessingInstruction", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "createProcessingInstruction") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             if args.count < 2 { throw b.notEnoughArguments("Document", "createProcessingInstruction", 2, args.count) }
             let a0: String = try b.toStr(args[0])
             let a1: String = try b.toStr(args[1])
-            return try b.Document_createProcessingInstruction(this, a0, a1)
+            return b.wrapNode(try b.Document_createProcessingInstruction(this, a0, a1))
         }
-        realm.defineMethod(p, "importNode", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "importNode", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "importNode") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2394,7 +2500,7 @@ extension JSDOMBindings {
             let a1: JSValue = args[1]
             return b.wrapNode(try b.Document_importNode(this, a0, a1))
         }
-        realm.defineMethod(p, "adoptNode", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "adoptNode", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "adoptNode") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2402,7 +2508,7 @@ extension JSDOMBindings {
             let a0: HTMLNode = try b.toNode(args[0], .Node, b.ctx("Document", "adoptNode"))
             return b.wrapNode(try b.Document_adoptNode(this, a0))
         }
-        realm.defineMethod(p, "createAttribute", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "createAttribute", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "createAttribute") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2410,7 +2516,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return try b.Document_createAttribute(this, a0)
         }
-        realm.defineMethod(p, "createAttributeNS", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "createAttributeNS", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "createAttributeNS") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2419,7 +2525,7 @@ extension JSDOMBindings {
             let a1: String = try b.toStr(args[1])
             return try b.Document_createAttributeNS(this, a0, a1)
         }
-        realm.defineMethod(p, "createEvent", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "createEvent", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "createEvent") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2427,13 +2533,13 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.wrapEvent(try b.Document_createEvent(this, a0))
         }
-        realm.defineMethod(p, "createRange", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "createRange", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "createRange") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             return try b.Document_createRange(this)
         }
-        realm.defineMethod(p, "createTreeWalker", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "createTreeWalker", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "createTreeWalker") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2443,7 +2549,7 @@ extension JSDOMBindings {
             let a2: JSValue = args[2]
             return try b.Document_createTreeWalker(this, a0, a1, a2)
         }
-        realm.defineMethod(p, "createNodeIterator", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "createNodeIterator", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "createNodeIterator") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2453,11 +2559,11 @@ extension JSDOMBindings {
             let a2: JSValue = args[2]
             return try b.Document_createNodeIterator(this, a0, a1, a2)
         }
-        realm.defineGetter(p, "location", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "location", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "location") }
             return b.Document_location(this)
         }
-        realm.defineGetter(p, "domain", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "domain", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "domain") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2468,11 +2574,11 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "domain") }
             return b.str(b.Document_domain(this))
         }
-        realm.defineGetter(p, "referrer", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "referrer", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "referrer") }
             return b.str(b.Document_referrer(this))
         }
-        realm.defineGetter(p, "cookie", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "cookie", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "cookie") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2483,15 +2589,15 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "cookie") }
             return b.str(try b.Document_cookie(this))
         }
-        realm.defineGetter(p, "lastModified", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "lastModified", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "lastModified") }
             return b.str(b.Document_lastModified(this))
         }
-        realm.defineGetter(p, "readyState", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "readyState", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "readyState") }
             return b.str(b.Document_readyState(this))
         }
-        realm.defineGetter(p, "title", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "title", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "title") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2502,7 +2608,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "title") }
             return b.str(b.Document_title(this))
         }
-        realm.defineGetter(p, "dir", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "dir", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "dir") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2513,7 +2619,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "dir") }
             return b.str(b.Document_dir(this))
         }
-        realm.defineGetter(p, "body", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "body", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "body") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2524,53 +2630,53 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "body") }
             return b.wrapNode(try b.Document_body(this))
         }
-        realm.defineGetter(p, "head", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "head", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "head") }
             return b.wrapNode(b.Document_head(this))
         }
-        realm.defineGetter(p, "images", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "images", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "images") }
             return try b.sameObject(args.this, slot: 3) { () throws(JSThrow) -> JSValue in
                 return b.Document_images(this)
             }
         }
-        realm.defineGetter(p, "embeds", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "embeds", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "embeds") }
             return try b.sameObject(args.this, slot: 4) { () throws(JSThrow) -> JSValue in
                 return b.Document_embeds(this)
             }
         }
-        realm.defineGetter(p, "plugins", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "plugins", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "plugins") }
-            return try b.sameObject(args.this, slot: 5) { () throws(JSThrow) -> JSValue in
-                return b.Document_plugins(this)
+            return try b.sameObject(args.this, slot: 4) { () throws(JSThrow) -> JSValue in
+                return b.Document_embeds(this)
             }
         }
-        realm.defineGetter(p, "links", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "links", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "links") }
-            return try b.sameObject(args.this, slot: 6) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 5) { () throws(JSThrow) -> JSValue in
                 return b.Document_links(this)
             }
         }
-        realm.defineGetter(p, "forms", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "forms", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "forms") }
-            return try b.sameObject(args.this, slot: 7) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 6) { () throws(JSThrow) -> JSValue in
                 return b.Document_forms(this)
             }
         }
-        realm.defineGetter(p, "scripts", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "scripts", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "scripts") }
-            return try b.sameObject(args.this, slot: 8) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 7) { () throws(JSThrow) -> JSValue in
                 return b.Document_scripts(this)
             }
         }
-        realm.defineGetter(p, "anchors", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "anchors", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "anchors") }
-            return try b.sameObject(args.this, slot: 9) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 8) { () throws(JSThrow) -> JSValue in
                 return b.Document_anchors(this)
             }
         }
-        realm.defineMethod(p, "getElementsByName", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getElementsByName", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "getElementsByName") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2578,11 +2684,11 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.Document_getElementsByName(this, a0)
         }
-        realm.defineGetter(p, "currentScript", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "currentScript", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "currentScript") }
             return b.wrapNode(b.Document_currentScript(this))
         }
-        realm.defineMethod(p, "write", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "write", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "write") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2592,7 +2698,7 @@ extension JSDOMBindings {
             try b.Document_write(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "writeln", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "writeln", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "writeln") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2602,7 +2708,7 @@ extension JSDOMBindings {
             try b.Document_writeln(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "open", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "open", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "open") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2610,24 +2716,24 @@ extension JSDOMBindings {
             let a1: JSValue = args[1]
             return b.Document_open(this, a0, a1)
         }
-        realm.defineMethod(p, "close", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "close", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "close") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             b.Document_close(this)
             return .undefined
         }
-        realm.defineGetter(p, "defaultView", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "defaultView", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "defaultView") }
             return b.Document_defaultView(this)
         }
-        realm.defineMethod(p, "hasFocus", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "hasFocus", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "hasFocus") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             return .bool(b.Document_hasFocus(this))
         }
-        realm.defineGetter(p, "designMode", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "designMode", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "designMode") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2638,7 +2744,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "designMode") }
             return b.str(b.Document_designMode(this))
         }
-        realm.defineMethod(p, "execCommand", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "execCommand", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "execCommand") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2648,7 +2754,7 @@ extension JSDOMBindings {
             let a2: String = args[2].isUndefined ? "" : try b.toStr(args[2])
             return .bool(b.Document_execCommand(this, a0, a1, a2))
         }
-        realm.defineMethod(p, "queryCommandSupported", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "queryCommandSupported", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "queryCommandSupported") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2656,21 +2762,21 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return .bool(b.Document_queryCommandSupported(this, a0))
         }
-        realm.defineGetter(p, "hidden", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "hidden", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "hidden") }
             return .bool(b.Document_hidden(this))
         }
-        realm.defineGetter(p, "visibilityState", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "visibilityState", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "visibilityState") }
             return b.str(b.Document_visibilityState(this))
         }
-        realm.defineMethod(p, "getSelection", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getSelection", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "getSelection") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             return b.Document_getSelection(this)
         }
-        realm.defineMethod(p, "elementFromPoint", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "elementFromPoint", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "elementFromPoint") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2679,7 +2785,7 @@ extension JSDOMBindings {
             let a1: Double = try b.toDouble(args[1], b.ctx("Document", "elementFromPoint"))
             return b.Document_elementFromPoint(this, a0, a1)
         }
-        realm.defineMethod(p, "elementsFromPoint", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "elementsFromPoint", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "elementsFromPoint") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2688,15 +2794,15 @@ extension JSDOMBindings {
             let a1: Double = try b.toDouble(args[1], b.ctx("Document", "elementsFromPoint"))
             return b.Document_elementsFromPoint(this, a0, a1)
         }
-        realm.defineGetter(p, "scrollingElement", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "scrollingElement", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "scrollingElement") }
             return b.wrapNode(b.Document_scrollingElement(this))
         }
-        realm.defineGetter(p, "fullscreenElement", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "fullscreenElement", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "fullscreenElement") }
             return b.wrapNode(try b.Document_body(this))
         }
-        realm.defineGetter(p, "onreadystatechange", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onreadystatechange", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onreadystatechange") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2706,7 +2812,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onreadystatechange") }
             return b.getEventHandler(JSDOMTarget.node(this), "readystatechange", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onvisibilitychange", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onvisibilitychange", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onvisibilitychange") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2716,7 +2822,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onvisibilitychange") }
             return b.getEventHandler(JSDOMTarget.node(this), "visibilitychange", forwardToWindow: false)
         }
-        realm.defineMethod(p, "getElementById", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getElementById", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "getElementById") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2724,29 +2830,29 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.wrapNode(b.NonElementParentNode_getElementById(this, a0))
         }
-        realm.defineGetter(p, "activeElement", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "activeElement", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "activeElement") }
             return b.wrapNode(b.DocumentOrShadowRoot_activeElement(this))
         }
-        realm.defineGetter(p, "children", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "children", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "children") }
-            return try b.sameObject(args.this, slot: 10) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 9) { () throws(JSThrow) -> JSValue in
                 return b.ParentNode_children(this)
             }
         }
-        realm.defineGetter(p, "firstElementChild", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "firstElementChild", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "firstElementChild") }
             return b.wrapNode(b.ParentNode_firstElementChild(this))
         }
-        realm.defineGetter(p, "lastElementChild", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "lastElementChild", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "lastElementChild") }
             return b.wrapNode(b.ParentNode_lastElementChild(this))
         }
-        realm.defineGetter(p, "childElementCount", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "childElementCount", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "childElementCount") }
             return JSValue.number(b.ParentNode_childElementCount(this))
         }
-        realm.defineMethod(p, "prepend", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "prepend", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "prepend") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2756,7 +2862,7 @@ extension JSDOMBindings {
             try b.ParentNode_prepend(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "append", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "append", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "append") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2766,7 +2872,7 @@ extension JSDOMBindings {
             try b.ParentNode_append(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "replaceChildren", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "replaceChildren", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "replaceChildren") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2776,7 +2882,7 @@ extension JSDOMBindings {
             try b.ParentNode_replaceChildren(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "querySelector", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "querySelector", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "querySelector") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2784,7 +2890,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.wrapNode(try b.ParentNode_querySelector(this, a0))
         }
-        realm.defineMethod(p, "querySelectorAll", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "querySelectorAll", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "querySelectorAll") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2792,7 +2898,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return try b.ParentNode_querySelectorAll(this, a0)
         }
-        realm.defineGetter(p, "onabort", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onabort", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onabort") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2802,7 +2908,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onabort") }
             return b.getEventHandler(JSDOMTarget.node(this), "abort", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onauxclick", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onauxclick", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onauxclick") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2812,7 +2918,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onauxclick") }
             return b.getEventHandler(JSDOMTarget.node(this), "auxclick", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onbeforeinput", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onbeforeinput", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onbeforeinput") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2822,7 +2928,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onbeforeinput") }
             return b.getEventHandler(JSDOMTarget.node(this), "beforeinput", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onblur", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onblur", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onblur") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2832,7 +2938,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onblur") }
             return b.getEventHandler(JSDOMTarget.node(this), "blur", forwardToWindow: false)
         }
-        realm.defineGetter(p, "oncancel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "oncancel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "oncancel") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2842,7 +2948,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "oncancel") }
             return b.getEventHandler(JSDOMTarget.node(this), "cancel", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onchange", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onchange", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onchange") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2852,7 +2958,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onchange") }
             return b.getEventHandler(JSDOMTarget.node(this), "change", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onclick", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onclick", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onclick") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2862,7 +2968,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onclick") }
             return b.getEventHandler(JSDOMTarget.node(this), "click", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onclose", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onclose", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onclose") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2872,7 +2978,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onclose") }
             return b.getEventHandler(JSDOMTarget.node(this), "close", forwardToWindow: false)
         }
-        realm.defineGetter(p, "oncontextmenu", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "oncontextmenu", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "oncontextmenu") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2882,7 +2988,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "oncontextmenu") }
             return b.getEventHandler(JSDOMTarget.node(this), "contextmenu", forwardToWindow: false)
         }
-        realm.defineGetter(p, "oncopy", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "oncopy", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "oncopy") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2892,7 +2998,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "oncopy") }
             return b.getEventHandler(JSDOMTarget.node(this), "copy", forwardToWindow: false)
         }
-        realm.defineGetter(p, "oncut", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "oncut", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "oncut") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2902,7 +3008,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "oncut") }
             return b.getEventHandler(JSDOMTarget.node(this), "cut", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpaste", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpaste", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onpaste") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2912,7 +3018,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onpaste") }
             return b.getEventHandler(JSDOMTarget.node(this), "paste", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondblclick", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondblclick", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ondblclick") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2922,7 +3028,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ondblclick") }
             return b.getEventHandler(JSDOMTarget.node(this), "dblclick", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondrag", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondrag", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ondrag") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2932,7 +3038,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ondrag") }
             return b.getEventHandler(JSDOMTarget.node(this), "drag", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondragend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondragend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ondragend") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2942,7 +3048,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ondragend") }
             return b.getEventHandler(JSDOMTarget.node(this), "dragend", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondragenter", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondragenter", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ondragenter") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2952,7 +3058,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ondragenter") }
             return b.getEventHandler(JSDOMTarget.node(this), "dragenter", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondragleave", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondragleave", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ondragleave") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2962,7 +3068,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ondragleave") }
             return b.getEventHandler(JSDOMTarget.node(this), "dragleave", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondragover", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondragover", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ondragover") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2972,7 +3078,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ondragover") }
             return b.getEventHandler(JSDOMTarget.node(this), "dragover", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondragstart", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondragstart", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ondragstart") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2982,7 +3088,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ondragstart") }
             return b.getEventHandler(JSDOMTarget.node(this), "dragstart", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondrop", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondrop", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ondrop") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -2992,7 +3098,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ondrop") }
             return b.getEventHandler(JSDOMTarget.node(this), "drop", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onerror", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onerror", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onerror") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3002,7 +3108,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onerror") }
             return b.getEventHandler(JSDOMTarget.node(this), "error", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onfocus", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onfocus", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onfocus") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3012,7 +3118,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onfocus") }
             return b.getEventHandler(JSDOMTarget.node(this), "focus", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onfocusin", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onfocusin", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onfocusin") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3022,7 +3128,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onfocusin") }
             return b.getEventHandler(JSDOMTarget.node(this), "focusin", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onfocusout", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onfocusout", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onfocusout") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3032,7 +3138,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onfocusout") }
             return b.getEventHandler(JSDOMTarget.node(this), "focusout", forwardToWindow: false)
         }
-        realm.defineGetter(p, "oninput", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "oninput", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "oninput") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3042,7 +3148,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "oninput") }
             return b.getEventHandler(JSDOMTarget.node(this), "input", forwardToWindow: false)
         }
-        realm.defineGetter(p, "oninvalid", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "oninvalid", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "oninvalid") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3052,7 +3158,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "oninvalid") }
             return b.getEventHandler(JSDOMTarget.node(this), "invalid", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onkeydown", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onkeydown", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onkeydown") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3062,7 +3168,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onkeydown") }
             return b.getEventHandler(JSDOMTarget.node(this), "keydown", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onkeypress", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onkeypress", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onkeypress") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3072,7 +3178,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onkeypress") }
             return b.getEventHandler(JSDOMTarget.node(this), "keypress", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onkeyup", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onkeyup", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onkeyup") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3082,7 +3188,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onkeyup") }
             return b.getEventHandler(JSDOMTarget.node(this), "keyup", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onload", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onload", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onload") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3092,7 +3198,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onload") }
             return b.getEventHandler(JSDOMTarget.node(this), "load", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmousedown", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmousedown", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onmousedown") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3102,7 +3208,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onmousedown") }
             return b.getEventHandler(JSDOMTarget.node(this), "mousedown", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmouseenter", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmouseenter", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onmouseenter") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3112,7 +3218,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onmouseenter") }
             return b.getEventHandler(JSDOMTarget.node(this), "mouseenter", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmouseleave", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmouseleave", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onmouseleave") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3122,7 +3228,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onmouseleave") }
             return b.getEventHandler(JSDOMTarget.node(this), "mouseleave", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmousemove", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmousemove", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onmousemove") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3132,7 +3238,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onmousemove") }
             return b.getEventHandler(JSDOMTarget.node(this), "mousemove", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmouseout", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmouseout", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onmouseout") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3142,7 +3248,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onmouseout") }
             return b.getEventHandler(JSDOMTarget.node(this), "mouseout", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmouseover", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmouseover", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onmouseover") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3152,7 +3258,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onmouseover") }
             return b.getEventHandler(JSDOMTarget.node(this), "mouseover", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmouseup", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmouseup", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onmouseup") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3162,7 +3268,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onmouseup") }
             return b.getEventHandler(JSDOMTarget.node(this), "mouseup", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointerdown", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointerdown", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onpointerdown") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3172,7 +3278,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onpointerdown") }
             return b.getEventHandler(JSDOMTarget.node(this), "pointerdown", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointerup", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointerup", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onpointerup") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3182,7 +3288,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onpointerup") }
             return b.getEventHandler(JSDOMTarget.node(this), "pointerup", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointermove", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointermove", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onpointermove") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3192,7 +3298,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onpointermove") }
             return b.getEventHandler(JSDOMTarget.node(this), "pointermove", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointerover", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointerover", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onpointerover") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3202,7 +3308,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onpointerover") }
             return b.getEventHandler(JSDOMTarget.node(this), "pointerover", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointerout", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointerout", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onpointerout") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3212,7 +3318,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onpointerout") }
             return b.getEventHandler(JSDOMTarget.node(this), "pointerout", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointerenter", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointerenter", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onpointerenter") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3222,7 +3328,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onpointerenter") }
             return b.getEventHandler(JSDOMTarget.node(this), "pointerenter", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointerleave", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointerleave", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onpointerleave") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3232,7 +3338,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onpointerleave") }
             return b.getEventHandler(JSDOMTarget.node(this), "pointerleave", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointercancel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointercancel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onpointercancel") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3242,7 +3348,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onpointercancel") }
             return b.getEventHandler(JSDOMTarget.node(this), "pointercancel", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onreset", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onreset", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onreset") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3252,7 +3358,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onreset") }
             return b.getEventHandler(JSDOMTarget.node(this), "reset", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onresize", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onresize", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onresize") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3262,7 +3368,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onresize") }
             return b.getEventHandler(JSDOMTarget.node(this), "resize", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onscroll", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onscroll", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onscroll") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3272,7 +3378,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onscroll") }
             return b.getEventHandler(JSDOMTarget.node(this), "scroll", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onselect", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onselect", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onselect") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3282,7 +3388,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onselect") }
             return b.getEventHandler(JSDOMTarget.node(this), "select", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onsubmit", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onsubmit", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onsubmit") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3292,7 +3398,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onsubmit") }
             return b.getEventHandler(JSDOMTarget.node(this), "submit", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ontoggle", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ontoggle", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ontoggle") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3302,7 +3408,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ontoggle") }
             return b.getEventHandler(JSDOMTarget.node(this), "toggle", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ontransitionend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ontransitionend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ontransitionend") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3312,7 +3418,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ontransitionend") }
             return b.getEventHandler(JSDOMTarget.node(this), "transitionend", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onanimationend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onanimationend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onanimationend") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3322,7 +3428,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onanimationend") }
             return b.getEventHandler(JSDOMTarget.node(this), "animationend", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onwheel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onwheel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onwheel") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3332,7 +3438,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "onwheel") }
             return b.getEventHandler(JSDOMTarget.node(this), "wheel", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ontouchstart", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ontouchstart", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ontouchstart") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3342,7 +3448,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ontouchstart") }
             return b.getEventHandler(JSDOMTarget.node(this), "touchstart", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ontouchend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ontouchend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ontouchend") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3352,7 +3458,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ontouchend") }
             return b.getEventHandler(JSDOMTarget.node(this), "touchend", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ontouchmove", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ontouchmove", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ontouchmove") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3362,7 +3468,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ontouchmove") }
             return b.getEventHandler(JSDOMTarget.node(this), "touchmove", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ontouchcancel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ontouchcancel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Document) else { throw b.illegal("Document", "ontouchcancel") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3376,6 +3482,17 @@ extension JSDOMBindings {
 }
 
 extension JSDOMBindings {
+    func gen_XMLDocument() {
+        unowned(unsafe) let b = self
+        let realm = self.realm
+        let p = protos[JSDOMInterface.XMLDocument.rawValue]
+        _ = b; _ = realm; _ = p
+        let ctor = defineInterfaceObject(.XMLDocument, length: 0, nil)
+        _ = ctor
+    }
+}
+
+extension JSDOMBindings {
     func gen_DOMImplementation() {
         unowned(unsafe) let b = self
         let realm = self.realm
@@ -3383,7 +3500,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.DOMImplementation, length: 0, nil)
         _ = ctor
-        realm.defineMethod(p, "createDocumentType", length: 3) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "createDocumentType", length: 3) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMImplementation.unwrap(args.this) else { throw b.illegal("DOMImplementation", "createDocumentType") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3393,7 +3510,7 @@ extension JSDOMBindings {
             let a2: String = try b.toStr(args[2])
             return b.wrapNode(try b.DOMImplementation_createDocumentType(this, a0, a1, a2))
         }
-        realm.defineMethod(p, "createDocument", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "createDocument", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMImplementation.unwrap(args.this) else { throw b.illegal("DOMImplementation", "createDocument") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3403,14 +3520,14 @@ extension JSDOMBindings {
             let a2: HTMLNode? = args[2].isUndefined ? nil : try b.toNodeOrNull(args[2], .DocumentType, b.ctx("DOMImplementation", "createDocument"))
             return b.wrapNode(try b.DOMImplementation_createDocument(this, a0, a1, a2))
         }
-        realm.defineMethod(p, "createHTMLDocument", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "createHTMLDocument", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMImplementation.unwrap(args.this) else { throw b.illegal("DOMImplementation", "createHTMLDocument") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             let a0: String? = args[0].isUndefined ? nil : try b.toStr(args[0])
             return b.wrapNode(try b.DOMImplementation_createHTMLDocument(this, a0))
         }
-        realm.defineMethod(p, "hasFeature", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "hasFeature", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMImplementation.unwrap(args.this) else { throw b.illegal("DOMImplementation", "hasFeature") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3432,7 +3549,7 @@ extension JSDOMBindings {
             return try b.DOMParser_constructor(newTarget: args.newTarget)
         }
         _ = ctor
-        realm.defineMethod(p, "parseFromString", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "parseFromString", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMParser.unwrap(args.this) else { throw b.illegal("DOMParser", "parseFromString") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3457,7 +3574,7 @@ extension JSDOMBindings {
             return try b.XMLSerializer_constructor(newTarget: args.newTarget)
         }
         _ = ctor
-        realm.defineMethod(p, "serializeToString", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "serializeToString", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.XMLSerializer.unwrap(args.this) else { throw b.illegal("XMLSerializer", "serializeToString") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3476,23 +3593,23 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.Element, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "namespaceURI", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "namespaceURI", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "namespaceURI") }
             return b.strOrNull(b.Element_namespaceURI(this))
         }
-        realm.defineGetter(p, "prefix", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "prefix", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "prefix") }
             return b.strOrNull(b.Element_prefix(this))
         }
-        realm.defineGetter(p, "localName", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "localName", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "localName") }
             return b.str(b.Element_localName(this))
         }
-        realm.defineGetter(p, "tagName", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "tagName", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "tagName") }
             return b.str(b.Element_tagName(this))
         }
-        realm.defineGetter(p, "id", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "id", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "id") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3502,7 +3619,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "id") }
             return b.str(this.getAttribute("id") ?? "")
         }
-        realm.defineGetter(p, "className", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "className", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "className") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3512,18 +3629,18 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "className") }
             return b.str(this.getAttribute("class") ?? "")
         }
-        realm.defineGetter(p, "classList", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "classList", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             let o = try realm.getV(args.this, b.heap.key("classList"))
             if !o.isObject { throw realm.throwTypeError("Element.classList is not an object") }
             try realm.setV(o, b.heap.key("value"), args[0], strict: true)
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "classList") }
-            return try b.sameObject(args.this, slot: 11) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 10) { () throws(JSThrow) -> JSValue in
                 return b.Element_classList(this)
             }
         }
-        realm.defineGetter(p, "slot", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "slot", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "slot") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3533,25 +3650,25 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "slot") }
             return b.str(this.getAttribute("slot") ?? "")
         }
-        realm.defineMethod(p, "hasAttributes", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "hasAttributes", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "hasAttributes") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             return .bool(b.Element_hasAttributes(this))
         }
-        realm.defineGetter(p, "attributes", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "attributes", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "attributes") }
-            return try b.sameObject(args.this, slot: 12) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 11) { () throws(JSThrow) -> JSValue in
                 return b.Element_attributes(this)
             }
         }
-        realm.defineMethod(p, "getAttributeNames", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getAttributeNames", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "getAttributeNames") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             return b.Element_getAttributeNames(this)
         }
-        realm.defineMethod(p, "getAttribute", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getAttribute", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "getAttribute") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3559,7 +3676,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.strOrNull(b.Element_getAttribute(this, a0))
         }
-        realm.defineMethod(p, "getAttributeNS", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getAttributeNS", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "getAttributeNS") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3568,7 +3685,7 @@ extension JSDOMBindings {
             let a1: String = try b.toStr(args[1])
             return b.strOrNull(b.Element_getAttributeNS(this, a0, a1))
         }
-        realm.defineMethod(p, "setAttribute", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "setAttribute", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "setAttribute") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3578,7 +3695,7 @@ extension JSDOMBindings {
             try b.Element_setAttribute(this, a0, a1)
             return .undefined
         }
-        realm.defineMethod(p, "setAttributeNS", length: 3) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "setAttributeNS", length: 3) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "setAttributeNS") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3589,7 +3706,7 @@ extension JSDOMBindings {
             try b.Element_setAttributeNS(this, a0, a1, a2)
             return .undefined
         }
-        realm.defineMethod(p, "removeAttribute", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "removeAttribute", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "removeAttribute") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3598,7 +3715,7 @@ extension JSDOMBindings {
             b.Element_removeAttribute(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "removeAttributeNS", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "removeAttributeNS", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "removeAttributeNS") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3608,7 +3725,7 @@ extension JSDOMBindings {
             b.Element_removeAttributeNS(this, a0, a1)
             return .undefined
         }
-        realm.defineMethod(p, "toggleAttribute", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "toggleAttribute", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "toggleAttribute") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3617,7 +3734,7 @@ extension JSDOMBindings {
             let a1: Bool? = args[1].isUndefined ? nil : b.heap.toBoolean(args[1])
             return .bool(try b.Element_toggleAttribute(this, a0, a1))
         }
-        realm.defineMethod(p, "hasAttribute", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "hasAttribute", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "hasAttribute") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3625,7 +3742,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return .bool(b.Element_hasAttribute(this, a0))
         }
-        realm.defineMethod(p, "hasAttributeNS", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "hasAttributeNS", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "hasAttributeNS") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3634,7 +3751,7 @@ extension JSDOMBindings {
             let a1: String = try b.toStr(args[1])
             return .bool(b.Element_hasAttributeNS(this, a0, a1))
         }
-        realm.defineMethod(p, "getAttributeNode", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getAttributeNode", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "getAttributeNode") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3642,7 +3759,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.Element_getAttributeNode(this, a0)
         }
-        realm.defineMethod(p, "getAttributeNodeNS", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getAttributeNodeNS", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "getAttributeNodeNS") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3651,7 +3768,7 @@ extension JSDOMBindings {
             let a1: String = try b.toStr(args[1])
             return b.Element_getAttributeNodeNS(this, a0, a1)
         }
-        realm.defineMethod(p, "setAttributeNode", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "setAttributeNode", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "setAttributeNode") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3659,7 +3776,7 @@ extension JSDOMBindings {
             let a0: JSDOMAttr = try b.toObj(b.classes.Attr, args[0], b.ctx("Element", "setAttributeNode"))
             return try b.Element_setAttributeNode(this, a0)
         }
-        realm.defineMethod(p, "setAttributeNodeNS", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "setAttributeNodeNS", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "setAttributeNodeNS") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3667,7 +3784,7 @@ extension JSDOMBindings {
             let a0: JSDOMAttr = try b.toObj(b.classes.Attr, args[0], b.ctx("Element", "setAttributeNodeNS"))
             return try b.Element_setAttributeNodeNS(this, a0)
         }
-        realm.defineMethod(p, "removeAttributeNode", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "removeAttributeNode", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "removeAttributeNode") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3675,7 +3792,7 @@ extension JSDOMBindings {
             let a0: JSDOMAttr = try b.toObj(b.classes.Attr, args[0], b.ctx("Element", "removeAttributeNode"))
             return try b.Element_removeAttributeNode(this, a0)
         }
-        realm.defineMethod(p, "attachShadow", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "attachShadow", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "attachShadow") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3683,11 +3800,11 @@ extension JSDOMBindings {
             let a0: JSDOM_ShadowRootInit = try b.dict_ShadowRootInit(args[0])
             return b.wrapNode(try b.Element_attachShadow(this, a0))
         }
-        realm.defineGetter(p, "shadowRoot", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "shadowRoot", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "shadowRoot") }
             return b.wrapNode(b.Element_shadowRoot(this))
         }
-        realm.defineMethod(p, "closest", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "closest", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "closest") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3695,7 +3812,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.wrapNode(try b.Element_closest(this, a0))
         }
-        realm.defineMethod(p, "matches", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "matches", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "matches") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3703,7 +3820,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return .bool(try b.Element_matches(this, a0))
         }
-        realm.defineMethod(p, "webkitMatchesSelector", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "webkitMatchesSelector", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "webkitMatchesSelector") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3711,7 +3828,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return .bool(try b.Element_matches(this, a0))
         }
-        realm.defineMethod(p, "getElementsByTagName", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getElementsByTagName", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "getElementsByTagName") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3719,7 +3836,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.Element_getElementsByTagName(this, a0)
         }
-        realm.defineMethod(p, "getElementsByTagNameNS", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getElementsByTagNameNS", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "getElementsByTagNameNS") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3728,7 +3845,7 @@ extension JSDOMBindings {
             let a1: String = try b.toStr(args[1])
             return b.Element_getElementsByTagNameNS(this, a0, a1)
         }
-        realm.defineMethod(p, "getElementsByClassName", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getElementsByClassName", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "getElementsByClassName") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3736,7 +3853,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.Element_getElementsByClassName(this, a0)
         }
-        realm.defineMethod(p, "insertAdjacentElement", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "insertAdjacentElement", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "insertAdjacentElement") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3745,7 +3862,7 @@ extension JSDOMBindings {
             let a1: HTMLNode = try b.toNode(args[1], .Element, b.ctx("Element", "insertAdjacentElement"))
             return b.wrapNode(try b.Element_insertAdjacentElement(this, a0, a1))
         }
-        realm.defineMethod(p, "insertAdjacentText", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "insertAdjacentText", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "insertAdjacentText") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3755,7 +3872,7 @@ extension JSDOMBindings {
             try b.Element_insertAdjacentText(this, a0, a1)
             return .undefined
         }
-        realm.defineGetter(p, "innerHTML", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "innerHTML", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "innerHTML") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3766,7 +3883,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "innerHTML") }
             return b.str(b.Element_innerHTML(this))
         }
-        realm.defineGetter(p, "outerHTML", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "outerHTML", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "outerHTML") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3777,7 +3894,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "outerHTML") }
             return b.str(try b.Element_outerHTML(this))
         }
-        realm.defineMethod(p, "insertAdjacentHTML", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "insertAdjacentHTML", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "insertAdjacentHTML") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3787,7 +3904,7 @@ extension JSDOMBindings {
             try b.Element_insertAdjacentHTML(this, a0, a1)
             return .undefined
         }
-        realm.defineMethod(p, "setHTMLUnsafe", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "setHTMLUnsafe", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "setHTMLUnsafe") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3796,33 +3913,33 @@ extension JSDOMBindings {
             b.Element_setHTMLUnsafe(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "getHTML", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getHTML", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "getHTML") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             let a0: JSValue = args[0]
             return b.str(b.Element_getHTML(this, a0))
         }
-        realm.defineMethod(p, "getClientRects", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getClientRects", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "getClientRects") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             return b.Element_getClientRects(this)
         }
-        realm.defineMethod(p, "getBoundingClientRect", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getBoundingClientRect", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "getBoundingClientRect") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             return b.Element_getBoundingClientRect(this)
         }
-        realm.defineMethod(p, "checkVisibility", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "checkVisibility", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "checkVisibility") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             let a0: JSValue = args[0]
             return .bool(b.Element_checkVisibility(this, a0))
         }
-        realm.defineMethod(p, "scrollIntoView", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "scrollIntoView", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "scrollIntoView") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3830,7 +3947,7 @@ extension JSDOMBindings {
             b.Element_scrollIntoView(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "scroll", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "scroll", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "scroll") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3839,7 +3956,7 @@ extension JSDOMBindings {
             b.Element_scroll(this, a0, a1)
             return .undefined
         }
-        realm.defineMethod(p, "scrollTo", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "scrollTo", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "scrollTo") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3848,7 +3965,7 @@ extension JSDOMBindings {
             b.Element_scroll(this, a0, a1)
             return .undefined
         }
-        realm.defineMethod(p, "scrollBy", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "scrollBy", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "scrollBy") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3857,7 +3974,7 @@ extension JSDOMBindings {
             b.Element_scrollBy(this, a0, a1)
             return .undefined
         }
-        realm.defineGetter(p, "scrollTop", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "scrollTop", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "scrollTop") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3868,7 +3985,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "scrollTop") }
             return JSValue.number(b.Element_scrollTop(this))
         }
-        realm.defineGetter(p, "scrollLeft", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "scrollLeft", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "scrollLeft") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3879,49 +3996,49 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "scrollLeft") }
             return JSValue.number(b.Element_scrollLeft(this))
         }
-        realm.defineGetter(p, "scrollWidth", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "scrollWidth", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "scrollWidth") }
             return JSValue.number(b.Element_scrollWidth(this))
         }
-        realm.defineGetter(p, "scrollHeight", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "scrollHeight", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "scrollHeight") }
             return JSValue.number(b.Element_scrollHeight(this))
         }
-        realm.defineGetter(p, "clientTop", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "clientTop", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "clientTop") }
             return JSValue.number(b.Element_clientTop(this))
         }
-        realm.defineGetter(p, "clientLeft", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "clientLeft", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "clientLeft") }
             return JSValue.number(b.Element_clientLeft(this))
         }
-        realm.defineGetter(p, "clientWidth", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "clientWidth", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "clientWidth") }
             return JSValue.number(b.Element_clientWidth(this))
         }
-        realm.defineGetter(p, "clientHeight", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "clientHeight", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "clientHeight") }
             return JSValue.number(b.Element_clientHeight(this))
         }
-        realm.defineGetter(p, "children", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "children", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "children") }
-            return try b.sameObject(args.this, slot: 13) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 9) { () throws(JSThrow) -> JSValue in
                 return b.ParentNode_children(this)
             }
         }
-        realm.defineGetter(p, "firstElementChild", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "firstElementChild", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "firstElementChild") }
             return b.wrapNode(b.ParentNode_firstElementChild(this))
         }
-        realm.defineGetter(p, "lastElementChild", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "lastElementChild", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "lastElementChild") }
             return b.wrapNode(b.ParentNode_lastElementChild(this))
         }
-        realm.defineGetter(p, "childElementCount", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "childElementCount", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "childElementCount") }
             return JSValue.number(b.ParentNode_childElementCount(this))
         }
-        realm.defineMethod(p, "prepend", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "prepend", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "prepend") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3931,7 +4048,7 @@ extension JSDOMBindings {
             try b.ParentNode_prepend(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "append", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "append", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "append") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3941,7 +4058,7 @@ extension JSDOMBindings {
             try b.ParentNode_append(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "replaceChildren", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "replaceChildren", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "replaceChildren") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3951,7 +4068,7 @@ extension JSDOMBindings {
             try b.ParentNode_replaceChildren(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "querySelector", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "querySelector", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "querySelector") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3959,7 +4076,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.wrapNode(try b.ParentNode_querySelector(this, a0))
         }
-        realm.defineMethod(p, "querySelectorAll", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "querySelectorAll", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "querySelectorAll") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3967,15 +4084,15 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return try b.ParentNode_querySelectorAll(this, a0)
         }
-        realm.defineGetter(p, "previousElementSibling", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "previousElementSibling", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "previousElementSibling") }
             return b.wrapNode(b.NonDocumentTypeChildNode_previousElementSibling(this))
         }
-        realm.defineGetter(p, "nextElementSibling", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "nextElementSibling", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "nextElementSibling") }
             return b.wrapNode(b.NonDocumentTypeChildNode_nextElementSibling(this))
         }
-        realm.defineMethod(p, "before", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "before", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "before") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3985,7 +4102,7 @@ extension JSDOMBindings {
             try b.ChildNode_before(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "after", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "after", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "after") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -3995,7 +4112,7 @@ extension JSDOMBindings {
             try b.ChildNode_after(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "replaceWith", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "replaceWith", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "replaceWith") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4005,14 +4122,14 @@ extension JSDOMBindings {
             try b.ChildNode_replaceWith(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "remove", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "remove", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "remove") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             b.ChildNode_remove(this)
             return .undefined
         }
-        realm.defineGetter(p, "assignedSlot", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "assignedSlot", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Element) else { throw b.illegal("Element", "assignedSlot") }
             return b.wrapNode(b.Slottable_assignedSlot(this))
         }
@@ -4027,23 +4144,23 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.Attr, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "namespaceURI", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "namespaceURI", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Attr.unwrap(args.this) else { throw b.illegal("Attr", "namespaceURI") }
             return b.strOrNull(b.Attr_namespaceURI(this))
         }
-        realm.defineGetter(p, "prefix", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "prefix", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Attr.unwrap(args.this) else { throw b.illegal("Attr", "prefix") }
             return b.strOrNull(b.Attr_prefix(this))
         }
-        realm.defineGetter(p, "localName", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "localName", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Attr.unwrap(args.this) else { throw b.illegal("Attr", "localName") }
             return b.str(b.Attr_localName(this))
         }
-        realm.defineGetter(p, "name", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "name", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Attr.unwrap(args.this) else { throw b.illegal("Attr", "name") }
             return b.str(b.Attr_name(this))
         }
-        realm.defineGetter(p, "value", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "value", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Attr.unwrap(args.this) else { throw b.illegal("Attr", "value") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4054,7 +4171,7 @@ extension JSDOMBindings {
             guard let this = b.classes.Attr.unwrap(args.this) else { throw b.illegal("Attr", "value") }
             return b.str(b.Attr_value(this))
         }
-        realm.defineGetter(p, "nodeValue", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "nodeValue", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Attr.unwrap(args.this) else { throw b.illegal("Attr", "nodeValue") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4065,7 +4182,7 @@ extension JSDOMBindings {
             guard let this = b.classes.Attr.unwrap(args.this) else { throw b.illegal("Attr", "nodeValue") }
             return b.str(b.Attr_value(this))
         }
-        realm.defineGetter(p, "textContent", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "textContent", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Attr.unwrap(args.this) else { throw b.illegal("Attr", "textContent") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4076,23 +4193,23 @@ extension JSDOMBindings {
             guard let this = b.classes.Attr.unwrap(args.this) else { throw b.illegal("Attr", "textContent") }
             return b.str(b.Attr_value(this))
         }
-        realm.defineGetter(p, "nodeType", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "nodeType", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Attr.unwrap(args.this) else { throw b.illegal("Attr", "nodeType") }
             return JSValue.number(b.Attr_nodeType(this))
         }
-        realm.defineGetter(p, "nodeName", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "nodeName", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Attr.unwrap(args.this) else { throw b.illegal("Attr", "nodeName") }
             return b.str(b.Attr_name(this))
         }
-        realm.defineGetter(p, "ownerElement", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ownerElement", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Attr.unwrap(args.this) else { throw b.illegal("Attr", "ownerElement") }
             return b.wrapNode(b.Attr_ownerElement(this))
         }
-        realm.defineGetter(p, "ownerDocument", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ownerDocument", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Attr.unwrap(args.this) else { throw b.illegal("Attr", "ownerDocument") }
             return b.wrapNode(b.Attr_ownerDocument(this))
         }
-        realm.defineGetter(p, "specified", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "specified", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Attr.unwrap(args.this) else { throw b.illegal("Attr", "specified") }
             return .bool(b.Attr_specified(this))
         }
@@ -4115,23 +4232,23 @@ extension JSDOMBindings {
             return try b.Event_constructor(a0, a1, newTarget: args.newTarget)
         }
         _ = ctor
-        realm.defineGetter(p, "type", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "type", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .Event) else { throw b.illegal("Event", "type") }
             return b.str(b.Event_type(this))
         }
-        realm.defineGetter(p, "target", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "target", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .Event) else { throw b.illegal("Event", "target") }
             return b.wrapTarget(b.Event_target(this))
         }
-        realm.defineGetter(p, "srcElement", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "srcElement", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .Event) else { throw b.illegal("Event", "srcElement") }
             return b.wrapTarget(b.Event_srcElement(this))
         }
-        realm.defineGetter(p, "currentTarget", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "currentTarget", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .Event) else { throw b.illegal("Event", "currentTarget") }
             return b.wrapTarget(b.Event_currentTarget(this))
         }
-        realm.defineMethod(p, "composedPath", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "composedPath", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .Event) else { throw b.illegal("Event", "composedPath") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4141,18 +4258,18 @@ extension JSDOMBindings {
         defineConstant(p, ctor, "CAPTURING_PHASE", 1)
         defineConstant(p, ctor, "AT_TARGET", 2)
         defineConstant(p, ctor, "BUBBLING_PHASE", 3)
-        realm.defineGetter(p, "eventPhase", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "eventPhase", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .Event) else { throw b.illegal("Event", "eventPhase") }
             return JSValue.number(b.Event_eventPhase(this))
         }
-        realm.defineMethod(p, "stopPropagation", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "stopPropagation", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .Event) else { throw b.illegal("Event", "stopPropagation") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             b.Event_stopPropagation(this)
             return .undefined
         }
-        realm.defineGetter(p, "cancelBubble", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "cancelBubble", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .Event) else { throw b.illegal("Event", "cancelBubble") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4163,22 +4280,22 @@ extension JSDOMBindings {
             guard let this = b.thisEvent(args.this, .Event) else { throw b.illegal("Event", "cancelBubble") }
             return .bool(b.Event_cancelBubble(this))
         }
-        realm.defineMethod(p, "stopImmediatePropagation", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "stopImmediatePropagation", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .Event) else { throw b.illegal("Event", "stopImmediatePropagation") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             b.Event_stopImmediatePropagation(this)
             return .undefined
         }
-        realm.defineGetter(p, "bubbles", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "bubbles", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .Event) else { throw b.illegal("Event", "bubbles") }
             return .bool(b.Event_bubbles(this))
         }
-        realm.defineGetter(p, "cancelable", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "cancelable", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .Event) else { throw b.illegal("Event", "cancelable") }
             return .bool(b.Event_cancelable(this))
         }
-        realm.defineGetter(p, "returnValue", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "returnValue", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .Event) else { throw b.illegal("Event", "returnValue") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4189,30 +4306,30 @@ extension JSDOMBindings {
             guard let this = b.thisEvent(args.this, .Event) else { throw b.illegal("Event", "returnValue") }
             return .bool(b.Event_returnValue(this))
         }
-        realm.defineMethod(p, "preventDefault", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "preventDefault", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .Event) else { throw b.illegal("Event", "preventDefault") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             b.Event_preventDefault(this)
             return .undefined
         }
-        realm.defineGetter(p, "defaultPrevented", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "defaultPrevented", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .Event) else { throw b.illegal("Event", "defaultPrevented") }
             return .bool(b.Event_defaultPrevented(this))
         }
-        realm.defineGetter(p, "composed", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "composed", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .Event) else { throw b.illegal("Event", "composed") }
             return .bool(b.Event_composed(this))
         }
-        realm.defineGetter(p, "isTrusted", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "isTrusted", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .Event) else { throw b.illegal("Event", "isTrusted") }
             return .bool(b.Event_isTrusted(this))
         }
-        realm.defineGetter(p, "timeStamp", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "timeStamp", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .Event) else { throw b.illegal("Event", "timeStamp") }
             return JSValue.number(b.Event_timeStamp(this))
         }
-        realm.defineMethod(p, "initEvent", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "initEvent", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .Event) else { throw b.illegal("Event", "initEvent") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4242,11 +4359,11 @@ extension JSDOMBindings {
             return try b.CustomEvent_constructor(a0, a1, newTarget: args.newTarget)
         }
         _ = ctor
-        realm.defineGetter(p, "detail", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "detail", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .CustomEvent) else { throw b.illegal("CustomEvent", "detail") }
             return b.CustomEvent_detail(this)
         }
-        realm.defineMethod(p, "initCustomEvent", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "initCustomEvent", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .CustomEvent) else { throw b.illegal("CustomEvent", "initCustomEvent") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4278,7 +4395,7 @@ extension JSDOMBindings {
             return try b.DOMRect_constructor(a0, a1, a2, a3, newTarget: args.newTarget)
         }
         _ = ctor
-        realm.defineGetter(p, "x", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "x", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMRect.unwrap(args.this) else { throw b.illegal("DOMRect", "x") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4289,7 +4406,7 @@ extension JSDOMBindings {
             guard let this = b.classes.DOMRect.unwrap(args.this) else { throw b.illegal("DOMRect", "x") }
             return JSValue.number(b.DOMRect_x(this))
         }
-        realm.defineGetter(p, "y", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "y", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMRect.unwrap(args.this) else { throw b.illegal("DOMRect", "y") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4300,7 +4417,7 @@ extension JSDOMBindings {
             guard let this = b.classes.DOMRect.unwrap(args.this) else { throw b.illegal("DOMRect", "y") }
             return JSValue.number(b.DOMRect_y(this))
         }
-        realm.defineGetter(p, "width", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "width", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMRect.unwrap(args.this) else { throw b.illegal("DOMRect", "width") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4311,7 +4428,7 @@ extension JSDOMBindings {
             guard let this = b.classes.DOMRect.unwrap(args.this) else { throw b.illegal("DOMRect", "width") }
             return JSValue.number(b.DOMRect_width(this))
         }
-        realm.defineGetter(p, "height", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "height", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMRect.unwrap(args.this) else { throw b.illegal("DOMRect", "height") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4322,23 +4439,23 @@ extension JSDOMBindings {
             guard let this = b.classes.DOMRect.unwrap(args.this) else { throw b.illegal("DOMRect", "height") }
             return JSValue.number(b.DOMRect_height(this))
         }
-        realm.defineGetter(p, "top", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "top", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMRect.unwrap(args.this) else { throw b.illegal("DOMRect", "top") }
             return JSValue.number(b.DOMRect_top(this))
         }
-        realm.defineGetter(p, "right", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "right", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMRect.unwrap(args.this) else { throw b.illegal("DOMRect", "right") }
             return JSValue.number(b.DOMRect_right(this))
         }
-        realm.defineGetter(p, "bottom", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "bottom", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMRect.unwrap(args.this) else { throw b.illegal("DOMRect", "bottom") }
             return JSValue.number(b.DOMRect_bottom(this))
         }
-        realm.defineGetter(p, "left", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "left", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMRect.unwrap(args.this) else { throw b.illegal("DOMRect", "left") }
             return JSValue.number(b.DOMRect_left(this))
         }
-        realm.defineMethod(p, "toJSON", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "toJSON", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMRect.unwrap(args.this) else { throw b.illegal("DOMRect", "toJSON") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4355,11 +4472,11 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.DOMRectList, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "length", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "length", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMRectList.unwrap(args.this) else { throw b.illegal("DOMRectList", "length") }
             return JSValue.number(b.DOMRectList_length(this))
         }
-        realm.defineMethod(p, "item", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "item", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMRectList.unwrap(args.this) else { throw b.illegal("DOMRectList", "item") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4367,6 +4484,7 @@ extension JSDOMBindings {
             let a0: Int = try b.toUnsignedLong(args[0])
             return b.DOMRectList_item(this, a0)
         }
+        defineIndexedIterator(p)
     }
 }
 
@@ -4385,15 +4503,15 @@ extension JSDOMBindings {
             return try b.DOMException_constructor(a0, a1, newTarget: args.newTarget)
         }
         _ = ctor
-        realm.defineGetter(p, "name", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "name", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMException.unwrap(args.this) else { throw b.illegal("DOMException", "name") }
             return b.str(b.DOMException_name(this))
         }
-        realm.defineGetter(p, "message", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "message", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMException.unwrap(args.this) else { throw b.illegal("DOMException", "message") }
             return b.str(b.DOMException_message(this))
         }
-        realm.defineGetter(p, "code", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "code", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.DOMException.unwrap(args.this) else { throw b.illegal("DOMException", "code") }
             return JSValue.number(b.DOMException_code(this))
         }
@@ -4433,7 +4551,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "title", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "title", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "title") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4443,7 +4561,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "title") }
             return b.str(this.getAttribute("title") ?? "")
         }
-        realm.defineGetter(p, "lang", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "lang", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "lang") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4453,7 +4571,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "lang") }
             return b.str(this.getAttribute("lang") ?? "")
         }
-        realm.defineGetter(p, "translate", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "translate", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "translate") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4463,7 +4581,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "translate") }
             return .bool(this.hasAttribute("translate"))
         }
-        realm.defineGetter(p, "dir", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "dir", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "dir") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4473,7 +4591,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "dir") }
             return b.str(this.getAttribute("dir") ?? "")
         }
-        realm.defineGetter(p, "hidden", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "hidden", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "hidden") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4483,7 +4601,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "hidden") }
             return .bool(this.hasAttribute("hidden"))
         }
-        realm.defineGetter(p, "inert", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "inert", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "inert") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4493,14 +4611,14 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "inert") }
             return .bool(this.hasAttribute("inert"))
         }
-        realm.defineMethod(p, "click", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "click", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "click") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             b.HTMLElement_click(this)
             return .undefined
         }
-        realm.defineGetter(p, "accessKey", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "accessKey", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "accessKey") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4510,7 +4628,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "accessKey") }
             return b.str(this.getAttribute("accesskey") ?? "")
         }
-        realm.defineGetter(p, "draggable", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "draggable", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "draggable") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4520,7 +4638,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "draggable") }
             return .bool(this.hasAttribute("draggable"))
         }
-        realm.defineGetter(p, "spellcheck", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "spellcheck", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "spellcheck") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4530,7 +4648,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "spellcheck") }
             return .bool(this.hasAttribute("spellcheck"))
         }
-        realm.defineGetter(p, "autocapitalize", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "autocapitalize", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "autocapitalize") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4540,7 +4658,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "autocapitalize") }
             return b.str(this.getAttribute("autocapitalize") ?? "")
         }
-        realm.defineGetter(p, "innerText", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "innerText", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "innerText") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4551,7 +4669,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "innerText") }
             return b.str(b.HTMLElement_innerText(this))
         }
-        realm.defineGetter(p, "outerText", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "outerText", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "outerText") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4562,7 +4680,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "outerText") }
             return b.str(b.HTMLElement_innerText(this))
         }
-        realm.defineGetter(p, "contentEditable", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "contentEditable", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "contentEditable") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4572,11 +4690,11 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "contentEditable") }
             return b.str(this.getAttribute("contenteditable") ?? "")
         }
-        realm.defineGetter(p, "isContentEditable", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "isContentEditable", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "isContentEditable") }
             return .bool(b.HTMLElement_isContentEditable(this))
         }
-        realm.defineGetter(p, "inputMode", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "inputMode", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "inputMode") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4586,7 +4704,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "inputMode") }
             return b.str(this.getAttribute("inputmode") ?? "")
         }
-        realm.defineGetter(p, "enterKeyHint", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "enterKeyHint", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "enterKeyHint") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4596,7 +4714,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "enterKeyHint") }
             return b.str(this.getAttribute("enterkeyhint") ?? "")
         }
-        realm.defineGetter(p, "popover", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "popover", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "popover") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4606,27 +4724,27 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "popover") }
             return b.strOrNull(this.getAttribute("popover"))
         }
-        realm.defineGetter(p, "offsetParent", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "offsetParent", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "offsetParent") }
             return b.wrapNode(b.HTMLElement_offsetParent(this))
         }
-        realm.defineGetter(p, "offsetTop", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "offsetTop", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "offsetTop") }
             return JSValue.number(b.HTMLElement_offsetTop(this))
         }
-        realm.defineGetter(p, "offsetLeft", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "offsetLeft", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "offsetLeft") }
             return JSValue.number(b.HTMLElement_offsetLeft(this))
         }
-        realm.defineGetter(p, "offsetWidth", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "offsetWidth", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "offsetWidth") }
             return JSValue.number(b.HTMLElement_offsetWidth(this))
         }
-        realm.defineGetter(p, "offsetHeight", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "offsetHeight", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "offsetHeight") }
             return JSValue.number(b.HTMLElement_offsetHeight(this))
         }
-        realm.defineGetter(p, "onabort", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onabort", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onabort") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4636,7 +4754,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onabort") }
             return b.getEventHandler(JSDOMTarget.node(this), "abort", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onauxclick", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onauxclick", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onauxclick") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4646,7 +4764,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onauxclick") }
             return b.getEventHandler(JSDOMTarget.node(this), "auxclick", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onbeforeinput", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onbeforeinput", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onbeforeinput") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4656,7 +4774,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onbeforeinput") }
             return b.getEventHandler(JSDOMTarget.node(this), "beforeinput", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onblur", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onblur", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onblur") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4666,7 +4784,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onblur") }
             return b.getEventHandler(JSDOMTarget.node(this), "blur", forwardToWindow: false)
         }
-        realm.defineGetter(p, "oncancel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "oncancel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "oncancel") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4676,7 +4794,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "oncancel") }
             return b.getEventHandler(JSDOMTarget.node(this), "cancel", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onchange", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onchange", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onchange") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4686,7 +4804,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onchange") }
             return b.getEventHandler(JSDOMTarget.node(this), "change", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onclick", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onclick", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onclick") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4696,7 +4814,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onclick") }
             return b.getEventHandler(JSDOMTarget.node(this), "click", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onclose", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onclose", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onclose") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4706,7 +4824,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onclose") }
             return b.getEventHandler(JSDOMTarget.node(this), "close", forwardToWindow: false)
         }
-        realm.defineGetter(p, "oncontextmenu", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "oncontextmenu", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "oncontextmenu") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4716,7 +4834,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "oncontextmenu") }
             return b.getEventHandler(JSDOMTarget.node(this), "contextmenu", forwardToWindow: false)
         }
-        realm.defineGetter(p, "oncopy", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "oncopy", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "oncopy") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4726,7 +4844,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "oncopy") }
             return b.getEventHandler(JSDOMTarget.node(this), "copy", forwardToWindow: false)
         }
-        realm.defineGetter(p, "oncut", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "oncut", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "oncut") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4736,7 +4854,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "oncut") }
             return b.getEventHandler(JSDOMTarget.node(this), "cut", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpaste", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpaste", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onpaste") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4746,7 +4864,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onpaste") }
             return b.getEventHandler(JSDOMTarget.node(this), "paste", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondblclick", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondblclick", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ondblclick") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4756,7 +4874,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ondblclick") }
             return b.getEventHandler(JSDOMTarget.node(this), "dblclick", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondrag", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondrag", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ondrag") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4766,7 +4884,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ondrag") }
             return b.getEventHandler(JSDOMTarget.node(this), "drag", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondragend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondragend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ondragend") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4776,7 +4894,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ondragend") }
             return b.getEventHandler(JSDOMTarget.node(this), "dragend", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondragenter", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondragenter", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ondragenter") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4786,7 +4904,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ondragenter") }
             return b.getEventHandler(JSDOMTarget.node(this), "dragenter", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondragleave", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondragleave", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ondragleave") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4796,7 +4914,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ondragleave") }
             return b.getEventHandler(JSDOMTarget.node(this), "dragleave", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondragover", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondragover", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ondragover") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4806,7 +4924,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ondragover") }
             return b.getEventHandler(JSDOMTarget.node(this), "dragover", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondragstart", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondragstart", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ondragstart") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4816,7 +4934,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ondragstart") }
             return b.getEventHandler(JSDOMTarget.node(this), "dragstart", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondrop", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondrop", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ondrop") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4826,7 +4944,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ondrop") }
             return b.getEventHandler(JSDOMTarget.node(this), "drop", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onerror", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onerror", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onerror") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4836,7 +4954,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onerror") }
             return b.getEventHandler(JSDOMTarget.node(this), "error", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onfocus", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onfocus", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onfocus") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4846,7 +4964,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onfocus") }
             return b.getEventHandler(JSDOMTarget.node(this), "focus", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onfocusin", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onfocusin", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onfocusin") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4856,7 +4974,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onfocusin") }
             return b.getEventHandler(JSDOMTarget.node(this), "focusin", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onfocusout", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onfocusout", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onfocusout") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4866,7 +4984,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onfocusout") }
             return b.getEventHandler(JSDOMTarget.node(this), "focusout", forwardToWindow: false)
         }
-        realm.defineGetter(p, "oninput", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "oninput", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "oninput") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4876,7 +4994,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "oninput") }
             return b.getEventHandler(JSDOMTarget.node(this), "input", forwardToWindow: false)
         }
-        realm.defineGetter(p, "oninvalid", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "oninvalid", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "oninvalid") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4886,7 +5004,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "oninvalid") }
             return b.getEventHandler(JSDOMTarget.node(this), "invalid", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onkeydown", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onkeydown", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onkeydown") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4896,7 +5014,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onkeydown") }
             return b.getEventHandler(JSDOMTarget.node(this), "keydown", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onkeypress", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onkeypress", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onkeypress") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4906,7 +5024,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onkeypress") }
             return b.getEventHandler(JSDOMTarget.node(this), "keypress", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onkeyup", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onkeyup", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onkeyup") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4916,7 +5034,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onkeyup") }
             return b.getEventHandler(JSDOMTarget.node(this), "keyup", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onload", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onload", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onload") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4926,7 +5044,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onload") }
             return b.getEventHandler(JSDOMTarget.node(this), "load", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmousedown", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmousedown", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onmousedown") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4936,7 +5054,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onmousedown") }
             return b.getEventHandler(JSDOMTarget.node(this), "mousedown", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmouseenter", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmouseenter", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onmouseenter") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4946,7 +5064,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onmouseenter") }
             return b.getEventHandler(JSDOMTarget.node(this), "mouseenter", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmouseleave", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmouseleave", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onmouseleave") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4956,7 +5074,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onmouseleave") }
             return b.getEventHandler(JSDOMTarget.node(this), "mouseleave", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmousemove", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmousemove", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onmousemove") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4966,7 +5084,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onmousemove") }
             return b.getEventHandler(JSDOMTarget.node(this), "mousemove", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmouseout", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmouseout", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onmouseout") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4976,7 +5094,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onmouseout") }
             return b.getEventHandler(JSDOMTarget.node(this), "mouseout", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmouseover", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmouseover", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onmouseover") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4986,7 +5104,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onmouseover") }
             return b.getEventHandler(JSDOMTarget.node(this), "mouseover", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmouseup", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmouseup", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onmouseup") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -4996,7 +5114,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onmouseup") }
             return b.getEventHandler(JSDOMTarget.node(this), "mouseup", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointerdown", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointerdown", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onpointerdown") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5006,7 +5124,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onpointerdown") }
             return b.getEventHandler(JSDOMTarget.node(this), "pointerdown", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointerup", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointerup", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onpointerup") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5016,7 +5134,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onpointerup") }
             return b.getEventHandler(JSDOMTarget.node(this), "pointerup", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointermove", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointermove", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onpointermove") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5026,7 +5144,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onpointermove") }
             return b.getEventHandler(JSDOMTarget.node(this), "pointermove", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointerover", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointerover", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onpointerover") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5036,7 +5154,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onpointerover") }
             return b.getEventHandler(JSDOMTarget.node(this), "pointerover", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointerout", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointerout", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onpointerout") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5046,7 +5164,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onpointerout") }
             return b.getEventHandler(JSDOMTarget.node(this), "pointerout", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointerenter", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointerenter", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onpointerenter") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5056,7 +5174,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onpointerenter") }
             return b.getEventHandler(JSDOMTarget.node(this), "pointerenter", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointerleave", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointerleave", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onpointerleave") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5066,7 +5184,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onpointerleave") }
             return b.getEventHandler(JSDOMTarget.node(this), "pointerleave", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointercancel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointercancel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onpointercancel") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5076,7 +5194,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onpointercancel") }
             return b.getEventHandler(JSDOMTarget.node(this), "pointercancel", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onreset", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onreset", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onreset") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5086,7 +5204,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onreset") }
             return b.getEventHandler(JSDOMTarget.node(this), "reset", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onresize", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onresize", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onresize") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5096,7 +5214,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onresize") }
             return b.getEventHandler(JSDOMTarget.node(this), "resize", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onscroll", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onscroll", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onscroll") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5106,7 +5224,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onscroll") }
             return b.getEventHandler(JSDOMTarget.node(this), "scroll", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onselect", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onselect", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onselect") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5116,7 +5234,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onselect") }
             return b.getEventHandler(JSDOMTarget.node(this), "select", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onsubmit", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onsubmit", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onsubmit") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5126,7 +5244,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onsubmit") }
             return b.getEventHandler(JSDOMTarget.node(this), "submit", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ontoggle", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ontoggle", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ontoggle") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5136,7 +5254,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ontoggle") }
             return b.getEventHandler(JSDOMTarget.node(this), "toggle", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ontransitionend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ontransitionend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ontransitionend") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5146,7 +5264,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ontransitionend") }
             return b.getEventHandler(JSDOMTarget.node(this), "transitionend", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onanimationend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onanimationend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onanimationend") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5156,7 +5274,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onanimationend") }
             return b.getEventHandler(JSDOMTarget.node(this), "animationend", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onwheel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onwheel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onwheel") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5166,7 +5284,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "onwheel") }
             return b.getEventHandler(JSDOMTarget.node(this), "wheel", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ontouchstart", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ontouchstart", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ontouchstart") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5176,7 +5294,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ontouchstart") }
             return b.getEventHandler(JSDOMTarget.node(this), "touchstart", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ontouchend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ontouchend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ontouchend") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5186,7 +5304,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ontouchend") }
             return b.getEventHandler(JSDOMTarget.node(this), "touchend", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ontouchmove", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ontouchmove", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ontouchmove") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5196,7 +5314,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ontouchmove") }
             return b.getEventHandler(JSDOMTarget.node(this), "touchmove", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ontouchcancel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ontouchcancel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ontouchcancel") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5206,24 +5324,24 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "ontouchcancel") }
             return b.getEventHandler(JSDOMTarget.node(this), "touchcancel", forwardToWindow: false)
         }
-        realm.defineGetter(p, "style", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "style", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             let o = try realm.getV(args.this, b.heap.key("style"))
             if !o.isObject { throw realm.throwTypeError("HTMLElement.style is not an object") }
             try realm.setV(o, b.heap.key("cssText"), args[0], strict: true)
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "style") }
-            return try b.sameObject(args.this, slot: 14) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 12) { () throws(JSThrow) -> JSValue in
                 return b.ElementCSSInlineStyle_style(this)
             }
         }
-        realm.defineGetter(p, "dataset", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "dataset", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "dataset") }
-            return try b.sameObject(args.this, slot: 15) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 13) { () throws(JSThrow) -> JSValue in
                 return b.HTMLOrSVGElement_dataset(this)
             }
         }
-        realm.defineGetter(p, "nonce", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "nonce", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "nonce") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5233,7 +5351,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "nonce") }
             return b.str(this.getAttribute("nonce") ?? "")
         }
-        realm.defineGetter(p, "autofocus", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "autofocus", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "autofocus") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5243,7 +5361,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "autofocus") }
             return .bool(this.hasAttribute("autofocus"))
         }
-        realm.defineGetter(p, "tabIndex", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "tabIndex", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "tabIndex") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5254,7 +5372,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "tabIndex") }
             return JSValue.number(b.HTMLOrSVGElement_tabIndex(this))
         }
-        realm.defineMethod(p, "focus", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "focus", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "focus") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5262,7 +5380,7 @@ extension JSDOMBindings {
             b.HTMLOrSVGElement_focus(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "blur", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "blur", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLElement) else { throw b.illegal("HTMLElement", "blur") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5291,7 +5409,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLAnchorElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "target", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "target", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "target") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5301,7 +5419,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "target") }
             return b.str(this.getAttribute("target") ?? "")
         }
-        realm.defineGetter(p, "download", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "download", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "download") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5311,7 +5429,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "download") }
             return b.str(this.getAttribute("download") ?? "")
         }
-        realm.defineGetter(p, "ping", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ping", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "ping") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5321,7 +5439,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "ping") }
             return b.str(this.getAttribute("ping") ?? "")
         }
-        realm.defineGetter(p, "rel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "rel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "rel") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5331,18 +5449,18 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "rel") }
             return b.str(this.getAttribute("rel") ?? "")
         }
-        realm.defineGetter(p, "relList", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "relList", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             let o = try realm.getV(args.this, b.heap.key("relList"))
             if !o.isObject { throw realm.throwTypeError("HTMLAnchorElement.relList is not an object") }
             try realm.setV(o, b.heap.key("value"), args[0], strict: true)
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "relList") }
-            return try b.sameObject(args.this, slot: 16) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 14) { () throws(JSThrow) -> JSValue in
                 return b.HTMLAnchorElement_relList(this)
             }
         }
-        realm.defineGetter(p, "hreflang", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "hreflang", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "hreflang") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5352,7 +5470,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "hreflang") }
             return b.str(this.getAttribute("hreflang") ?? "")
         }
-        realm.defineGetter(p, "type", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "type", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "type") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5362,7 +5480,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "type") }
             return b.str(this.getAttribute("type") ?? "")
         }
-        realm.defineGetter(p, "text", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "text", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "text") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5373,7 +5491,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "text") }
             return b.str(b.HTMLAnchorElement_text(this))
         }
-        realm.defineGetter(p, "referrerPolicy", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "referrerPolicy", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "referrerPolicy") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5383,7 +5501,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "referrerPolicy") }
             return b.str(this.getAttribute("referrerpolicy") ?? "")
         }
-        realm.defineGetter(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "name") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5393,7 +5511,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "name") }
             return b.str(this.getAttribute("name") ?? "")
         }
-        realm.defineGetter(p, "href", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "href", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "href") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5405,11 +5523,11 @@ extension JSDOMBindings {
             return b.str(b.HTMLHyperlinkElementUtils_href(this))
         }
         defineStringifierFrom(p, "href")
-        realm.defineGetter(p, "origin", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "origin", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "origin") }
             return b.str(b.HTMLHyperlinkElementUtils_origin(this))
         }
-        realm.defineGetter(p, "protocol", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "protocol", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "protocol") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5420,7 +5538,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "protocol") }
             return b.str(b.HTMLHyperlinkElementUtils_protocol(this))
         }
-        realm.defineGetter(p, "username", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "username", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "username") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5431,7 +5549,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "username") }
             return b.str(b.HTMLHyperlinkElementUtils_username(this))
         }
-        realm.defineGetter(p, "password", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "password", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "password") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5442,7 +5560,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "password") }
             return b.str(b.HTMLHyperlinkElementUtils_password(this))
         }
-        realm.defineGetter(p, "host", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "host", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "host") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5453,7 +5571,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "host") }
             return b.str(b.HTMLHyperlinkElementUtils_host(this))
         }
-        realm.defineGetter(p, "hostname", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "hostname", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "hostname") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5464,7 +5582,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "hostname") }
             return b.str(b.HTMLHyperlinkElementUtils_hostname(this))
         }
-        realm.defineGetter(p, "port", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "port", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "port") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5475,7 +5593,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "port") }
             return b.str(b.HTMLHyperlinkElementUtils_port(this))
         }
-        realm.defineGetter(p, "pathname", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "pathname", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "pathname") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5486,7 +5604,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "pathname") }
             return b.str(b.HTMLHyperlinkElementUtils_pathname(this))
         }
-        realm.defineGetter(p, "search", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "search", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "search") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5497,7 +5615,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "search") }
             return b.str(b.HTMLHyperlinkElementUtils_search(this))
         }
-        realm.defineGetter(p, "hash", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "hash", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAnchorElement) else { throw b.illegal("HTMLAnchorElement", "hash") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5519,7 +5637,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLAreaElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "alt", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "alt", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "alt") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5529,7 +5647,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "alt") }
             return b.str(this.getAttribute("alt") ?? "")
         }
-        realm.defineGetter(p, "coords", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "coords", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "coords") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5539,7 +5657,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "coords") }
             return b.str(this.getAttribute("coords") ?? "")
         }
-        realm.defineGetter(p, "shape", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "shape", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "shape") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5549,7 +5667,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "shape") }
             return b.str(this.getAttribute("shape") ?? "")
         }
-        realm.defineGetter(p, "target", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "target", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "target") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5559,7 +5677,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "target") }
             return b.str(this.getAttribute("target") ?? "")
         }
-        realm.defineGetter(p, "rel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "rel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "rel") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5569,7 +5687,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "rel") }
             return b.str(this.getAttribute("rel") ?? "")
         }
-        realm.defineGetter(p, "href", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "href", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "href") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5581,11 +5699,11 @@ extension JSDOMBindings {
             return b.str(b.HTMLHyperlinkElementUtils_href(this))
         }
         defineStringifierFrom(p, "href")
-        realm.defineGetter(p, "origin", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "origin", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "origin") }
             return b.str(b.HTMLHyperlinkElementUtils_origin(this))
         }
-        realm.defineGetter(p, "protocol", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "protocol", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "protocol") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5596,7 +5714,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "protocol") }
             return b.str(b.HTMLHyperlinkElementUtils_protocol(this))
         }
-        realm.defineGetter(p, "username", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "username", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "username") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5607,7 +5725,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "username") }
             return b.str(b.HTMLHyperlinkElementUtils_username(this))
         }
-        realm.defineGetter(p, "password", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "password", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "password") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5618,7 +5736,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "password") }
             return b.str(b.HTMLHyperlinkElementUtils_password(this))
         }
-        realm.defineGetter(p, "host", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "host", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "host") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5629,7 +5747,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "host") }
             return b.str(b.HTMLHyperlinkElementUtils_host(this))
         }
-        realm.defineGetter(p, "hostname", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "hostname", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "hostname") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5640,7 +5758,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "hostname") }
             return b.str(b.HTMLHyperlinkElementUtils_hostname(this))
         }
-        realm.defineGetter(p, "port", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "port", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "port") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5651,7 +5769,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "port") }
             return b.str(b.HTMLHyperlinkElementUtils_port(this))
         }
-        realm.defineGetter(p, "pathname", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "pathname", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "pathname") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5662,7 +5780,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "pathname") }
             return b.str(b.HTMLHyperlinkElementUtils_pathname(this))
         }
-        realm.defineGetter(p, "search", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "search", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "search") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5673,7 +5791,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "search") }
             return b.str(b.HTMLHyperlinkElementUtils_search(this))
         }
-        realm.defineGetter(p, "hash", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "hash", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLAreaElement) else { throw b.illegal("HTMLAreaElement", "hash") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5695,7 +5813,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLFormElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "acceptCharset", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "acceptCharset", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "acceptCharset") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5705,7 +5823,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "acceptCharset") }
             return b.str(this.getAttribute("accept-charset") ?? "")
         }
-        realm.defineGetter(p, "action", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "action", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "action") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5716,7 +5834,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "action") }
             return b.str(b.HTMLFormElement_action(this))
         }
-        realm.defineGetter(p, "autocomplete", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "autocomplete", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "autocomplete") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5726,7 +5844,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "autocomplete") }
             return b.str(this.getAttribute("autocomplete") ?? "")
         }
-        realm.defineGetter(p, "enctype", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "enctype", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "enctype") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5737,7 +5855,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "enctype") }
             return b.str(b.HTMLFormElement_enctype(this))
         }
-        realm.defineGetter(p, "encoding", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "encoding", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "encoding") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5748,7 +5866,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "encoding") }
             return b.str(b.HTMLFormElement_enctype(this))
         }
-        realm.defineGetter(p, "method", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "method", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "method") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5759,7 +5877,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "method") }
             return b.str(b.HTMLFormElement_method(this))
         }
-        realm.defineGetter(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "name") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5769,7 +5887,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "name") }
             return b.str(this.getAttribute("name") ?? "")
         }
-        realm.defineGetter(p, "noValidate", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "noValidate", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "noValidate") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5779,7 +5897,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "noValidate") }
             return .bool(this.hasAttribute("novalidate"))
         }
-        realm.defineGetter(p, "target", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "target", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "target") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5789,7 +5907,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "target") }
             return b.str(this.getAttribute("target") ?? "")
         }
-        realm.defineGetter(p, "rel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "rel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "rel") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5799,24 +5917,24 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "rel") }
             return b.str(this.getAttribute("rel") ?? "")
         }
-        realm.defineGetter(p, "elements", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "elements", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "elements") }
-            return try b.sameObject(args.this, slot: 17) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 15) { () throws(JSThrow) -> JSValue in
                 return b.HTMLFormElement_elements(this)
             }
         }
-        realm.defineGetter(p, "length", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "length", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "length") }
             return JSValue.number(b.HTMLFormElement_length(this))
         }
-        realm.defineMethod(p, "submit", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "submit", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "submit") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             try b.HTMLFormElement_submit(this)
             return .undefined
         }
-        realm.defineMethod(p, "requestSubmit", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "requestSubmit", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "requestSubmit") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5824,20 +5942,20 @@ extension JSDOMBindings {
             try b.HTMLFormElement_requestSubmit(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "reset", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "reset", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "reset") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             b.HTMLFormElement_reset(this)
             return .undefined
         }
-        realm.defineMethod(p, "checkValidity", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "checkValidity", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "checkValidity") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             return .bool(b.HTMLFormElement_checkValidity(this))
         }
-        realm.defineMethod(p, "reportValidity", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "reportValidity", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLFormElement) else { throw b.illegal("HTMLFormElement", "reportValidity") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5854,7 +5972,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLInputElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "accept", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "accept", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "accept") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5864,7 +5982,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "accept") }
             return b.str(this.getAttribute("accept") ?? "")
         }
-        realm.defineGetter(p, "alt", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "alt", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "alt") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5874,7 +5992,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "alt") }
             return b.str(this.getAttribute("alt") ?? "")
         }
-        realm.defineGetter(p, "autocomplete", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "autocomplete", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "autocomplete") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5884,7 +6002,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "autocomplete") }
             return b.str(this.getAttribute("autocomplete") ?? "")
         }
-        realm.defineGetter(p, "defaultChecked", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "defaultChecked", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "defaultChecked") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5894,7 +6012,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "defaultChecked") }
             return .bool(this.hasAttribute("checked"))
         }
-        realm.defineGetter(p, "checked", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "checked", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "checked") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5905,7 +6023,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "checked") }
             return .bool(b.HTMLInputElement_checked(this))
         }
-        realm.defineGetter(p, "dirName", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "dirName", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "dirName") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5915,7 +6033,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "dirName") }
             return b.str(this.getAttribute("dirname") ?? "")
         }
-        realm.defineGetter(p, "disabled", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "disabled", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "disabled") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5925,15 +6043,15 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "disabled") }
             return .bool(this.hasAttribute("disabled"))
         }
-        realm.defineGetter(p, "form", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "form", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "form") }
             return b.wrapNode(b.HTMLInputElement_form(this))
         }
-        realm.defineGetter(p, "files", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "files", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "files") }
             return b.HTMLInputElement_files(this)
         }
-        realm.defineGetter(p, "formAction", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "formAction", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "formAction") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5943,7 +6061,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "formAction") }
             return b.str(b.reflectURL(this, "formaction"))
         }
-        realm.defineGetter(p, "formMethod", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "formMethod", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "formMethod") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5953,7 +6071,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "formMethod") }
             return b.str(this.getAttribute("formmethod") ?? "")
         }
-        realm.defineGetter(p, "formNoValidate", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "formNoValidate", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "formNoValidate") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5963,7 +6081,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "formNoValidate") }
             return .bool(this.hasAttribute("formnovalidate"))
         }
-        realm.defineGetter(p, "formTarget", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "formTarget", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "formTarget") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5973,7 +6091,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "formTarget") }
             return b.str(this.getAttribute("formtarget") ?? "")
         }
-        realm.defineGetter(p, "height", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "height", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "height") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5983,7 +6101,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "height") }
             return .number(b.reflectInt(this, "height", default: 0, unsigned: true))
         }
-        realm.defineGetter(p, "indeterminate", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "indeterminate", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "indeterminate") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -5994,7 +6112,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "indeterminate") }
             return .bool(b.HTMLInputElement_indeterminate(this))
         }
-        realm.defineGetter(p, "max", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "max", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "max") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6004,7 +6122,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "max") }
             return b.str(this.getAttribute("max") ?? "")
         }
-        realm.defineGetter(p, "maxLength", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "maxLength", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "maxLength") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6014,7 +6132,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "maxLength") }
             return .number(b.reflectInt(this, "maxlength", default: -1, unsigned: false))
         }
-        realm.defineGetter(p, "min", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "min", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "min") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6024,7 +6142,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "min") }
             return b.str(this.getAttribute("min") ?? "")
         }
-        realm.defineGetter(p, "minLength", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "minLength", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "minLength") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6034,7 +6152,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "minLength") }
             return .number(b.reflectInt(this, "minlength", default: -1, unsigned: false))
         }
-        realm.defineGetter(p, "multiple", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "multiple", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "multiple") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6044,7 +6162,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "multiple") }
             return .bool(this.hasAttribute("multiple"))
         }
-        realm.defineGetter(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "name") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6054,7 +6172,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "name") }
             return b.str(this.getAttribute("name") ?? "")
         }
-        realm.defineGetter(p, "pattern", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "pattern", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "pattern") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6064,7 +6182,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "pattern") }
             return b.str(this.getAttribute("pattern") ?? "")
         }
-        realm.defineGetter(p, "placeholder", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "placeholder", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "placeholder") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6074,7 +6192,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "placeholder") }
             return b.str(this.getAttribute("placeholder") ?? "")
         }
-        realm.defineGetter(p, "readOnly", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "readOnly", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "readOnly") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6084,7 +6202,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "readOnly") }
             return .bool(this.hasAttribute("readonly"))
         }
-        realm.defineGetter(p, "required", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "required", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "required") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6094,7 +6212,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "required") }
             return .bool(this.hasAttribute("required"))
         }
-        realm.defineGetter(p, "size", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "size", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "size") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6104,7 +6222,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "size") }
             return .number(b.reflectInt(this, "size", default: 20, unsigned: true))
         }
-        realm.defineGetter(p, "src", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "src", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "src") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6114,7 +6232,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "src") }
             return b.str(b.reflectURL(this, "src"))
         }
-        realm.defineGetter(p, "step", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "step", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "step") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6124,7 +6242,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "step") }
             return b.str(this.getAttribute("step") ?? "")
         }
-        realm.defineGetter(p, "type", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "type", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "type") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6135,7 +6253,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "type") }
             return b.str(b.HTMLInputElement_type(this))
         }
-        realm.defineGetter(p, "defaultValue", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "defaultValue", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "defaultValue") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6145,7 +6263,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "defaultValue") }
             return b.str(this.getAttribute("value") ?? "")
         }
-        realm.defineGetter(p, "value", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "value", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "value") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6156,7 +6274,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "value") }
             return b.str(try b.HTMLInputElement_value(this))
         }
-        realm.defineGetter(p, "valueAsNumber", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "valueAsNumber", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "valueAsNumber") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6167,7 +6285,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "valueAsNumber") }
             return JSValue.number(b.HTMLInputElement_valueAsNumber(this))
         }
-        realm.defineGetter(p, "width", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "width", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "width") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6177,31 +6295,31 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "width") }
             return .number(b.reflectInt(this, "width", default: 0, unsigned: true))
         }
-        realm.defineGetter(p, "willValidate", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "willValidate", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "willValidate") }
             return .bool(b.HTMLInputElement_willValidate(this))
         }
-        realm.defineGetter(p, "validity", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "validity", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "validity") }
             return b.HTMLInputElement_validity(this)
         }
-        realm.defineGetter(p, "validationMessage", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "validationMessage", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "validationMessage") }
             return b.str(b.HTMLInputElement_validationMessage(this))
         }
-        realm.defineMethod(p, "checkValidity", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "checkValidity", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "checkValidity") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             return .bool(b.HTMLInputElement_checkValidity(this))
         }
-        realm.defineMethod(p, "reportValidity", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "reportValidity", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "reportValidity") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             return .bool(b.HTMLInputElement_reportValidity(this))
         }
-        realm.defineMethod(p, "setCustomValidity", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "setCustomValidity", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "setCustomValidity") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6210,18 +6328,18 @@ extension JSDOMBindings {
             b.HTMLInputElement_setCustomValidity(this, a0)
             return .undefined
         }
-        realm.defineGetter(p, "labels", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "labels", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "labels") }
             return b.HTMLInputElement_labels(this)
         }
-        realm.defineMethod(p, "select", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "select", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "select") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             b.HTMLInputElement_select(this)
             return .undefined
         }
-        realm.defineGetter(p, "selectionStart", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "selectionStart", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "selectionStart") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6232,7 +6350,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "selectionStart") }
             return b.numOrNull(b.HTMLInputElement_selectionStart(this))
         }
-        realm.defineGetter(p, "selectionEnd", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "selectionEnd", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "selectionEnd") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6243,7 +6361,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "selectionEnd") }
             return b.numOrNull(b.HTMLInputElement_selectionEnd(this))
         }
-        realm.defineGetter(p, "selectionDirection", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "selectionDirection", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "selectionDirection") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6254,7 +6372,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "selectionDirection") }
             return b.strOrNull(b.HTMLInputElement_selectionDirection(this))
         }
-        realm.defineMethod(p, "setSelectionRange", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "setSelectionRange", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "setSelectionRange") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6265,7 +6383,7 @@ extension JSDOMBindings {
             b.HTMLInputElement_setSelectionRange(this, a0, a1, a2)
             return .undefined
         }
-        realm.defineMethod(p, "stepUp", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "stepUp", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "stepUp") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6273,7 +6391,7 @@ extension JSDOMBindings {
             b.HTMLInputElement_stepUp(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "stepDown", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "stepDown", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "stepDown") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6281,7 +6399,7 @@ extension JSDOMBindings {
             b.HTMLInputElement_stepDown(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "showPicker", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "showPicker", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLInputElement) else { throw b.illegal("HTMLInputElement", "showPicker") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6299,7 +6417,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLButtonElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "disabled", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "disabled", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLButtonElement) else { throw b.illegal("HTMLButtonElement", "disabled") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6309,11 +6427,11 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLButtonElement) else { throw b.illegal("HTMLButtonElement", "disabled") }
             return .bool(this.hasAttribute("disabled"))
         }
-        realm.defineGetter(p, "form", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "form", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLButtonElement) else { throw b.illegal("HTMLButtonElement", "form") }
             return b.wrapNode(b.HTMLButtonElement_form(this))
         }
-        realm.defineGetter(p, "formAction", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "formAction", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLButtonElement) else { throw b.illegal("HTMLButtonElement", "formAction") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6323,7 +6441,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLButtonElement) else { throw b.illegal("HTMLButtonElement", "formAction") }
             return b.str(b.reflectURL(this, "formaction"))
         }
-        realm.defineGetter(p, "formNoValidate", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "formNoValidate", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLButtonElement) else { throw b.illegal("HTMLButtonElement", "formNoValidate") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6333,7 +6451,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLButtonElement) else { throw b.illegal("HTMLButtonElement", "formNoValidate") }
             return .bool(this.hasAttribute("formnovalidate"))
         }
-        realm.defineGetter(p, "formTarget", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "formTarget", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLButtonElement) else { throw b.illegal("HTMLButtonElement", "formTarget") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6343,7 +6461,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLButtonElement) else { throw b.illegal("HTMLButtonElement", "formTarget") }
             return b.str(this.getAttribute("formtarget") ?? "")
         }
-        realm.defineGetter(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLButtonElement) else { throw b.illegal("HTMLButtonElement", "name") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6353,7 +6471,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLButtonElement) else { throw b.illegal("HTMLButtonElement", "name") }
             return b.str(this.getAttribute("name") ?? "")
         }
-        realm.defineGetter(p, "type", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "type", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLButtonElement) else { throw b.illegal("HTMLButtonElement", "type") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6364,7 +6482,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLButtonElement) else { throw b.illegal("HTMLButtonElement", "type") }
             return b.str(b.HTMLButtonElement_type(this))
         }
-        realm.defineGetter(p, "value", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "value", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLButtonElement) else { throw b.illegal("HTMLButtonElement", "value") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6374,31 +6492,31 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLButtonElement) else { throw b.illegal("HTMLButtonElement", "value") }
             return b.str(this.getAttribute("value") ?? "")
         }
-        realm.defineGetter(p, "willValidate", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "willValidate", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLButtonElement) else { throw b.illegal("HTMLButtonElement", "willValidate") }
             return .bool(b.HTMLButtonElement_willValidate(this))
         }
-        realm.defineGetter(p, "validity", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "validity", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLButtonElement) else { throw b.illegal("HTMLButtonElement", "validity") }
             return b.HTMLButtonElement_validity(this)
         }
-        realm.defineGetter(p, "validationMessage", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "validationMessage", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLButtonElement) else { throw b.illegal("HTMLButtonElement", "validationMessage") }
             return b.str(b.HTMLButtonElement_validationMessage(this))
         }
-        realm.defineMethod(p, "checkValidity", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "checkValidity", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLButtonElement) else { throw b.illegal("HTMLButtonElement", "checkValidity") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             return .bool(b.HTMLInputElement_checkValidity(this))
         }
-        realm.defineMethod(p, "reportValidity", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "reportValidity", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLButtonElement) else { throw b.illegal("HTMLButtonElement", "reportValidity") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             return .bool(b.HTMLInputElement_reportValidity(this))
         }
-        realm.defineMethod(p, "setCustomValidity", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "setCustomValidity", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLButtonElement) else { throw b.illegal("HTMLButtonElement", "setCustomValidity") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6407,7 +6525,7 @@ extension JSDOMBindings {
             b.HTMLInputElement_setCustomValidity(this, a0)
             return .undefined
         }
-        realm.defineGetter(p, "labels", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "labels", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLButtonElement) else { throw b.illegal("HTMLButtonElement", "labels") }
             return b.HTMLInputElement_labels(this)
         }
@@ -6422,7 +6540,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLSelectElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "autocomplete", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "autocomplete", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "autocomplete") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6432,7 +6550,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "autocomplete") }
             return b.str(this.getAttribute("autocomplete") ?? "")
         }
-        realm.defineGetter(p, "disabled", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "disabled", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "disabled") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6442,11 +6560,11 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "disabled") }
             return .bool(this.hasAttribute("disabled"))
         }
-        realm.defineGetter(p, "form", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "form", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "form") }
             return b.wrapNode(b.HTMLButtonElement_form(this))
         }
-        realm.defineGetter(p, "multiple", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "multiple", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "multiple") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6456,7 +6574,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "multiple") }
             return .bool(this.hasAttribute("multiple"))
         }
-        realm.defineGetter(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "name") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6466,7 +6584,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "name") }
             return b.str(this.getAttribute("name") ?? "")
         }
-        realm.defineGetter(p, "required", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "required", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "required") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6476,7 +6594,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "required") }
             return .bool(this.hasAttribute("required"))
         }
-        realm.defineGetter(p, "size", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "size", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "size") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6486,17 +6604,17 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "size") }
             return .number(b.reflectInt(this, "size", default: 0, unsigned: true))
         }
-        realm.defineGetter(p, "type", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "type", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "type") }
             return b.str(b.HTMLSelectElement_type(this))
         }
-        realm.defineGetter(p, "options", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "options", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "options") }
-            return try b.sameObject(args.this, slot: 18) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 16) { () throws(JSThrow) -> JSValue in
                 return b.HTMLSelectElement_options(this)
             }
         }
-        realm.defineGetter(p, "length", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "length", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "length") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6507,7 +6625,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "length") }
             return JSValue.number(try b.HTMLSelectElement_length(this))
         }
-        realm.defineMethod(p, "item", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "item", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "item") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6515,7 +6633,7 @@ extension JSDOMBindings {
             let a0: Int = try b.toUnsignedLong(args[0])
             return b.wrapNode(b.HTMLSelectElement_item(this, a0))
         }
-        realm.defineMethod(p, "namedItem", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "namedItem", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "namedItem") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6523,7 +6641,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.HTMLSelectElement_namedItem(this, a0)
         }
-        realm.defineMethod(p, "add", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "add", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "add") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6533,7 +6651,7 @@ extension JSDOMBindings {
             try b.HTMLSelectElement_add(this, a0, a1)
             return .undefined
         }
-        realm.defineMethod(p, "remove", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "remove", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "remove") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6541,13 +6659,13 @@ extension JSDOMBindings {
             b.HTMLSelectElement_remove(this, a0)
             return .undefined
         }
-        realm.defineGetter(p, "selectedOptions", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "selectedOptions", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "selectedOptions") }
-            return try b.sameObject(args.this, slot: 19) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 17) { () throws(JSThrow) -> JSValue in
                 return b.HTMLSelectElement_selectedOptions(this)
             }
         }
-        realm.defineGetter(p, "selectedIndex", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "selectedIndex", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "selectedIndex") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6558,7 +6676,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "selectedIndex") }
             return JSValue.number(b.HTMLSelectElement_selectedIndex(this))
         }
-        realm.defineGetter(p, "value", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "value", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "value") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6569,23 +6687,23 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "value") }
             return b.str(b.HTMLSelectElement_value(this))
         }
-        realm.defineGetter(p, "willValidate", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "willValidate", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "willValidate") }
             return .bool(b.HTMLInputElement_willValidate(this))
         }
-        realm.defineMethod(p, "checkValidity", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "checkValidity", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "checkValidity") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             return .bool(b.HTMLInputElement_checkValidity(this))
         }
-        realm.defineMethod(p, "reportValidity", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "reportValidity", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "reportValidity") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             return .bool(b.HTMLInputElement_reportValidity(this))
         }
-        realm.defineMethod(p, "setCustomValidity", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "setCustomValidity", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "setCustomValidity") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6594,7 +6712,7 @@ extension JSDOMBindings {
             b.HTMLInputElement_setCustomValidity(this, a0)
             return .undefined
         }
-        realm.defineGetter(p, "labels", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "labels", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSelectElement) else { throw b.illegal("HTMLSelectElement", "labels") }
             return b.HTMLInputElement_labels(this)
         }
@@ -6612,7 +6730,7 @@ extension JSDOMBindings {
             try b.HTMLOptionElement_factory(args)
         }
         _ = ctor
-        realm.defineGetter(p, "disabled", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "disabled", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLOptionElement) else { throw b.illegal("HTMLOptionElement", "disabled") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6622,11 +6740,11 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLOptionElement) else { throw b.illegal("HTMLOptionElement", "disabled") }
             return .bool(this.hasAttribute("disabled"))
         }
-        realm.defineGetter(p, "form", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "form", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLOptionElement) else { throw b.illegal("HTMLOptionElement", "form") }
             return b.wrapNode(b.HTMLOptionElement_form(this))
         }
-        realm.defineGetter(p, "label", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "label", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLOptionElement) else { throw b.illegal("HTMLOptionElement", "label") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6637,7 +6755,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLOptionElement) else { throw b.illegal("HTMLOptionElement", "label") }
             return b.str(b.HTMLOptionElement_label(this))
         }
-        realm.defineGetter(p, "defaultSelected", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "defaultSelected", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLOptionElement) else { throw b.illegal("HTMLOptionElement", "defaultSelected") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6647,7 +6765,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLOptionElement) else { throw b.illegal("HTMLOptionElement", "defaultSelected") }
             return .bool(this.hasAttribute("selected"))
         }
-        realm.defineGetter(p, "selected", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "selected", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLOptionElement) else { throw b.illegal("HTMLOptionElement", "selected") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6658,7 +6776,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLOptionElement) else { throw b.illegal("HTMLOptionElement", "selected") }
             return .bool(b.HTMLOptionElement_selected(this))
         }
-        realm.defineGetter(p, "value", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "value", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLOptionElement) else { throw b.illegal("HTMLOptionElement", "value") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6669,7 +6787,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLOptionElement) else { throw b.illegal("HTMLOptionElement", "value") }
             return b.str(b.HTMLOptionElement_value(this))
         }
-        realm.defineGetter(p, "text", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "text", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLOptionElement) else { throw b.illegal("HTMLOptionElement", "text") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6680,7 +6798,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLOptionElement) else { throw b.illegal("HTMLOptionElement", "text") }
             return b.str(b.HTMLOptionElement_text(this))
         }
-        realm.defineGetter(p, "index", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "index", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLOptionElement) else { throw b.illegal("HTMLOptionElement", "index") }
             return JSValue.number(b.HTMLOptionElement_index(this))
         }
@@ -6695,7 +6813,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLOptGroupElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "disabled", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "disabled", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLOptGroupElement) else { throw b.illegal("HTMLOptGroupElement", "disabled") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6705,7 +6823,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLOptGroupElement) else { throw b.illegal("HTMLOptGroupElement", "disabled") }
             return .bool(this.hasAttribute("disabled"))
         }
-        realm.defineGetter(p, "label", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "label", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLOptGroupElement) else { throw b.illegal("HTMLOptGroupElement", "label") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6726,7 +6844,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLTextAreaElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "autocomplete", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "autocomplete", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "autocomplete") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6736,7 +6854,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "autocomplete") }
             return b.str(this.getAttribute("autocomplete") ?? "")
         }
-        realm.defineGetter(p, "cols", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "cols", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "cols") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6746,7 +6864,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "cols") }
             return .number(b.reflectInt(this, "cols", default: 0, unsigned: true))
         }
-        realm.defineGetter(p, "disabled", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "disabled", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "disabled") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6756,11 +6874,11 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "disabled") }
             return .bool(this.hasAttribute("disabled"))
         }
-        realm.defineGetter(p, "form", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "form", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "form") }
             return b.wrapNode(b.HTMLButtonElement_form(this))
         }
-        realm.defineGetter(p, "maxLength", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "maxLength", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "maxLength") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6770,7 +6888,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "maxLength") }
             return .number(b.reflectInt(this, "maxlength", default: -1, unsigned: false))
         }
-        realm.defineGetter(p, "minLength", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "minLength", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "minLength") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6780,7 +6898,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "minLength") }
             return .number(b.reflectInt(this, "minlength", default: -1, unsigned: false))
         }
-        realm.defineGetter(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "name") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6790,7 +6908,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "name") }
             return b.str(this.getAttribute("name") ?? "")
         }
-        realm.defineGetter(p, "placeholder", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "placeholder", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "placeholder") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6800,7 +6918,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "placeholder") }
             return b.str(this.getAttribute("placeholder") ?? "")
         }
-        realm.defineGetter(p, "readOnly", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "readOnly", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "readOnly") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6810,7 +6928,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "readOnly") }
             return .bool(this.hasAttribute("readonly"))
         }
-        realm.defineGetter(p, "required", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "required", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "required") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6820,7 +6938,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "required") }
             return .bool(this.hasAttribute("required"))
         }
-        realm.defineGetter(p, "rows", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "rows", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "rows") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6830,7 +6948,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "rows") }
             return .number(b.reflectInt(this, "rows", default: 0, unsigned: true))
         }
-        realm.defineGetter(p, "wrap", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "wrap", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "wrap") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6840,11 +6958,11 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "wrap") }
             return b.str(this.getAttribute("wrap") ?? "")
         }
-        realm.defineGetter(p, "type", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "type", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "type") }
             return b.str(b.HTMLTextAreaElement_type(this))
         }
-        realm.defineGetter(p, "defaultValue", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "defaultValue", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "defaultValue") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6855,7 +6973,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "defaultValue") }
             return b.str(b.HTMLTextAreaElement_defaultValue(this))
         }
-        realm.defineGetter(p, "value", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "value", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "value") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6866,27 +6984,27 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "value") }
             return b.str(b.HTMLTextAreaElement_value(this))
         }
-        realm.defineGetter(p, "textLength", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "textLength", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "textLength") }
             return JSValue.number(b.HTMLTextAreaElement_textLength(this))
         }
-        realm.defineGetter(p, "willValidate", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "willValidate", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "willValidate") }
             return .bool(b.HTMLInputElement_willValidate(this))
         }
-        realm.defineMethod(p, "checkValidity", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "checkValidity", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "checkValidity") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             return .bool(b.HTMLInputElement_checkValidity(this))
         }
-        realm.defineMethod(p, "reportValidity", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "reportValidity", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "reportValidity") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             return .bool(b.HTMLInputElement_reportValidity(this))
         }
-        realm.defineMethod(p, "setCustomValidity", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "setCustomValidity", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "setCustomValidity") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6895,18 +7013,18 @@ extension JSDOMBindings {
             b.HTMLInputElement_setCustomValidity(this, a0)
             return .undefined
         }
-        realm.defineGetter(p, "labels", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "labels", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "labels") }
             return b.HTMLInputElement_labels(this)
         }
-        realm.defineMethod(p, "select", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "select", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "select") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             b.HTMLInputElement_select(this)
             return .undefined
         }
-        realm.defineGetter(p, "selectionStart", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "selectionStart", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "selectionStart") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6917,7 +7035,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "selectionStart") }
             return b.numOrNull(b.HTMLInputElement_selectionStart(this))
         }
-        realm.defineGetter(p, "selectionEnd", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "selectionEnd", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "selectionEnd") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6928,7 +7046,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "selectionEnd") }
             return b.numOrNull(b.HTMLInputElement_selectionEnd(this))
         }
-        realm.defineMethod(p, "setSelectionRange", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "setSelectionRange", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTextAreaElement) else { throw b.illegal("HTMLTextAreaElement", "setSelectionRange") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6950,11 +7068,11 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLLabelElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "form", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "form", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLLabelElement) else { throw b.illegal("HTMLLabelElement", "form") }
             return b.wrapNode(b.HTMLLabelElement_form(this))
         }
-        realm.defineGetter(p, "htmlFor", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "htmlFor", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLLabelElement) else { throw b.illegal("HTMLLabelElement", "htmlFor") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6964,7 +7082,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLLabelElement) else { throw b.illegal("HTMLLabelElement", "htmlFor") }
             return b.str(this.getAttribute("for") ?? "")
         }
-        realm.defineGetter(p, "control", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "control", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLLabelElement) else { throw b.illegal("HTMLLabelElement", "control") }
             return b.wrapNode(b.HTMLLabelElement_control(this))
         }
@@ -6979,7 +7097,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLFieldSetElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "disabled", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "disabled", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLFieldSetElement) else { throw b.illegal("HTMLFieldSetElement", "disabled") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6989,7 +7107,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLFieldSetElement) else { throw b.illegal("HTMLFieldSetElement", "disabled") }
             return .bool(this.hasAttribute("disabled"))
         }
-        realm.defineGetter(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLFieldSetElement) else { throw b.illegal("HTMLFieldSetElement", "name") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -6999,9 +7117,9 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLFieldSetElement) else { throw b.illegal("HTMLFieldSetElement", "name") }
             return b.str(this.getAttribute("name") ?? "")
         }
-        realm.defineGetter(p, "elements", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "elements", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLFieldSetElement) else { throw b.illegal("HTMLFieldSetElement", "elements") }
-            return try b.sameObject(args.this, slot: 20) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 18) { () throws(JSThrow) -> JSValue in
                 return b.HTMLFieldSetElement_elements(this)
             }
         }
@@ -7019,7 +7137,7 @@ extension JSDOMBindings {
             try b.HTMLImageElement_factory(args)
         }
         _ = ctor
-        realm.defineGetter(p, "alt", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "alt", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "alt") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7029,7 +7147,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "alt") }
             return b.str(this.getAttribute("alt") ?? "")
         }
-        realm.defineGetter(p, "src", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "src", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "src") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7039,7 +7157,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "src") }
             return b.str(b.reflectURL(this, "src"))
         }
-        realm.defineGetter(p, "srcset", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "srcset", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "srcset") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7049,7 +7167,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "srcset") }
             return b.str(this.getAttribute("srcset") ?? "")
         }
-        realm.defineGetter(p, "sizes", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "sizes", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "sizes") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7059,7 +7177,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "sizes") }
             return b.str(this.getAttribute("sizes") ?? "")
         }
-        realm.defineGetter(p, "crossOrigin", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "crossOrigin", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "crossOrigin") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7069,7 +7187,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "crossOrigin") }
             return b.strOrNull(this.getAttribute("crossorigin"))
         }
-        realm.defineGetter(p, "useMap", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "useMap", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "useMap") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7079,7 +7197,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "useMap") }
             return b.str(this.getAttribute("usemap") ?? "")
         }
-        realm.defineGetter(p, "isMap", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "isMap", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "isMap") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7089,7 +7207,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "isMap") }
             return .bool(this.hasAttribute("ismap"))
         }
-        realm.defineGetter(p, "width", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "width", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "width") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7100,7 +7218,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "width") }
             return JSValue.number(b.HTMLImageElement_width(this))
         }
-        realm.defineGetter(p, "height", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "height", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "height") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7111,23 +7229,23 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "height") }
             return JSValue.number(b.HTMLImageElement_height(this))
         }
-        realm.defineGetter(p, "naturalWidth", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "naturalWidth", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "naturalWidth") }
             return JSValue.number(b.HTMLImageElement_naturalWidth(this))
         }
-        realm.defineGetter(p, "naturalHeight", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "naturalHeight", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "naturalHeight") }
             return JSValue.number(b.HTMLImageElement_naturalHeight(this))
         }
-        realm.defineGetter(p, "complete", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "complete", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "complete") }
             return .bool(b.HTMLImageElement_complete(this))
         }
-        realm.defineGetter(p, "currentSrc", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "currentSrc", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "currentSrc") }
             return b.str(b.HTMLImageElement_currentSrc(this))
         }
-        realm.defineGetter(p, "decoding", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "decoding", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "decoding") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7137,7 +7255,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "decoding") }
             return b.str(this.getAttribute("decoding") ?? "")
         }
-        realm.defineGetter(p, "loading", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "loading", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "loading") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7147,7 +7265,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "loading") }
             return b.str(this.getAttribute("loading") ?? "")
         }
-        realm.defineGetter(p, "fetchPriority", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "fetchPriority", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "fetchPriority") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7157,7 +7275,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "fetchPriority") }
             return b.str(this.getAttribute("fetchpriority") ?? "")
         }
-        realm.defineMethod(p, "decode", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "decode", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLImageElement) else { throw b.illegal("HTMLImageElement", "decode") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7174,11 +7292,11 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLTemplateElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "content", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "content", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTemplateElement) else { throw b.illegal("HTMLTemplateElement", "content") }
             return b.wrapNode(b.HTMLTemplateElement_content(this))
         }
-        realm.defineGetter(p, "shadowRootMode", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "shadowRootMode", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTemplateElement) else { throw b.illegal("HTMLTemplateElement", "shadowRootMode") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7199,7 +7317,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLSlotElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSlotElement) else { throw b.illegal("HTMLSlotElement", "name") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7209,21 +7327,21 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLSlotElement) else { throw b.illegal("HTMLSlotElement", "name") }
             return b.str(this.getAttribute("name") ?? "")
         }
-        realm.defineMethod(p, "assignedNodes", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "assignedNodes", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSlotElement) else { throw b.illegal("HTMLSlotElement", "assignedNodes") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             let a0: JSValue = args[0]
             return b.HTMLSlotElement_assignedNodes(this, a0)
         }
-        realm.defineMethod(p, "assignedElements", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "assignedElements", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSlotElement) else { throw b.illegal("HTMLSlotElement", "assignedElements") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             let a0: JSValue = args[0]
             return b.HTMLSlotElement_assignedElements(this, a0)
         }
-        realm.defineMethod(p, "assign", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "assign", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSlotElement) else { throw b.illegal("HTMLSlotElement", "assign") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7244,7 +7362,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLScriptElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "src", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "src", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLScriptElement) else { throw b.illegal("HTMLScriptElement", "src") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7254,7 +7372,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLScriptElement) else { throw b.illegal("HTMLScriptElement", "src") }
             return b.str(b.reflectURL(this, "src"))
         }
-        realm.defineGetter(p, "type", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "type", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLScriptElement) else { throw b.illegal("HTMLScriptElement", "type") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7264,7 +7382,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLScriptElement) else { throw b.illegal("HTMLScriptElement", "type") }
             return b.str(this.getAttribute("type") ?? "")
         }
-        realm.defineGetter(p, "noModule", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "noModule", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLScriptElement) else { throw b.illegal("HTMLScriptElement", "noModule") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7274,7 +7392,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLScriptElement) else { throw b.illegal("HTMLScriptElement", "noModule") }
             return .bool(this.hasAttribute("nomodule"))
         }
-        realm.defineGetter(p, "async", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "async", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLScriptElement) else { throw b.illegal("HTMLScriptElement", "async") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7284,7 +7402,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLScriptElement) else { throw b.illegal("HTMLScriptElement", "async") }
             return .bool(this.hasAttribute("async"))
         }
-        realm.defineGetter(p, "defer", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "defer", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLScriptElement) else { throw b.illegal("HTMLScriptElement", "defer") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7294,7 +7412,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLScriptElement) else { throw b.illegal("HTMLScriptElement", "defer") }
             return .bool(this.hasAttribute("defer"))
         }
-        realm.defineGetter(p, "crossOrigin", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "crossOrigin", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLScriptElement) else { throw b.illegal("HTMLScriptElement", "crossOrigin") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7304,7 +7422,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLScriptElement) else { throw b.illegal("HTMLScriptElement", "crossOrigin") }
             return b.strOrNull(this.getAttribute("crossorigin"))
         }
-        realm.defineGetter(p, "text", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "text", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLScriptElement) else { throw b.illegal("HTMLScriptElement", "text") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7315,7 +7433,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLScriptElement) else { throw b.illegal("HTMLScriptElement", "text") }
             return b.str(b.HTMLScriptElement_text(this))
         }
-        realm.defineGetter(p, "integrity", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "integrity", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLScriptElement) else { throw b.illegal("HTMLScriptElement", "integrity") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7325,7 +7443,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLScriptElement) else { throw b.illegal("HTMLScriptElement", "integrity") }
             return b.str(this.getAttribute("integrity") ?? "")
         }
-        realm.defineGetter(p, "referrerPolicy", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "referrerPolicy", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLScriptElement) else { throw b.illegal("HTMLScriptElement", "referrerPolicy") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7335,7 +7453,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLScriptElement) else { throw b.illegal("HTMLScriptElement", "referrerPolicy") }
             return b.str(this.getAttribute("referrerpolicy") ?? "")
         }
-        realm.defineGetter(p, "charset", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "charset", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLScriptElement) else { throw b.illegal("HTMLScriptElement", "charset") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7345,7 +7463,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLScriptElement) else { throw b.illegal("HTMLScriptElement", "charset") }
             return b.str(this.getAttribute("charset") ?? "")
         }
-        realm.defineGetter(p, "event", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "event", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLScriptElement) else { throw b.illegal("HTMLScriptElement", "event") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7355,7 +7473,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLScriptElement) else { throw b.illegal("HTMLScriptElement", "event") }
             return b.str(this.getAttribute("event") ?? "")
         }
-        realm.defineGetter(p, "htmlFor", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "htmlFor", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLScriptElement) else { throw b.illegal("HTMLScriptElement", "htmlFor") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7376,7 +7494,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLStyleElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "disabled", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "disabled", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLStyleElement) else { throw b.illegal("HTMLStyleElement", "disabled") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7386,7 +7504,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLStyleElement) else { throw b.illegal("HTMLStyleElement", "disabled") }
             return .bool(this.hasAttribute("disabled"))
         }
-        realm.defineGetter(p, "media", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "media", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLStyleElement) else { throw b.illegal("HTMLStyleElement", "media") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7396,7 +7514,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLStyleElement) else { throw b.illegal("HTMLStyleElement", "media") }
             return b.str(this.getAttribute("media") ?? "")
         }
-        realm.defineGetter(p, "type", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "type", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLStyleElement) else { throw b.illegal("HTMLStyleElement", "type") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7406,7 +7524,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLStyleElement) else { throw b.illegal("HTMLStyleElement", "type") }
             return b.str(this.getAttribute("type") ?? "")
         }
-        realm.defineGetter(p, "sheet", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "sheet", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLStyleElement) else { throw b.illegal("HTMLStyleElement", "sheet") }
             return b.HTMLStyleElement_sheet(this)
         }
@@ -7421,7 +7539,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLLinkElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "href", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "href", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLLinkElement) else { throw b.illegal("HTMLLinkElement", "href") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7431,7 +7549,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLLinkElement) else { throw b.illegal("HTMLLinkElement", "href") }
             return b.str(b.reflectURL(this, "href"))
         }
-        realm.defineGetter(p, "crossOrigin", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "crossOrigin", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLLinkElement) else { throw b.illegal("HTMLLinkElement", "crossOrigin") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7441,7 +7559,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLLinkElement) else { throw b.illegal("HTMLLinkElement", "crossOrigin") }
             return b.strOrNull(this.getAttribute("crossorigin"))
         }
-        realm.defineGetter(p, "rel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "rel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLLinkElement) else { throw b.illegal("HTMLLinkElement", "rel") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7451,7 +7569,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLLinkElement) else { throw b.illegal("HTMLLinkElement", "rel") }
             return b.str(this.getAttribute("rel") ?? "")
         }
-        realm.defineGetter(p, "as", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "as", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLLinkElement) else { throw b.illegal("HTMLLinkElement", "as") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7461,18 +7579,18 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLLinkElement) else { throw b.illegal("HTMLLinkElement", "as") }
             return b.str(this.getAttribute("as") ?? "")
         }
-        realm.defineGetter(p, "relList", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "relList", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             let o = try realm.getV(args.this, b.heap.key("relList"))
             if !o.isObject { throw realm.throwTypeError("HTMLLinkElement.relList is not an object") }
             try realm.setV(o, b.heap.key("value"), args[0], strict: true)
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLLinkElement) else { throw b.illegal("HTMLLinkElement", "relList") }
-            return try b.sameObject(args.this, slot: 21) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 14) { () throws(JSThrow) -> JSValue in
                 return b.HTMLAnchorElement_relList(this)
             }
         }
-        realm.defineGetter(p, "media", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "media", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLLinkElement) else { throw b.illegal("HTMLLinkElement", "media") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7482,7 +7600,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLLinkElement) else { throw b.illegal("HTMLLinkElement", "media") }
             return b.str(this.getAttribute("media") ?? "")
         }
-        realm.defineGetter(p, "integrity", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "integrity", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLLinkElement) else { throw b.illegal("HTMLLinkElement", "integrity") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7492,7 +7610,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLLinkElement) else { throw b.illegal("HTMLLinkElement", "integrity") }
             return b.str(this.getAttribute("integrity") ?? "")
         }
-        realm.defineGetter(p, "hreflang", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "hreflang", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLLinkElement) else { throw b.illegal("HTMLLinkElement", "hreflang") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7502,7 +7620,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLLinkElement) else { throw b.illegal("HTMLLinkElement", "hreflang") }
             return b.str(this.getAttribute("hreflang") ?? "")
         }
-        realm.defineGetter(p, "type", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "type", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLLinkElement) else { throw b.illegal("HTMLLinkElement", "type") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7512,7 +7630,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLLinkElement) else { throw b.illegal("HTMLLinkElement", "type") }
             return b.str(this.getAttribute("type") ?? "")
         }
-        realm.defineGetter(p, "disabled", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "disabled", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLLinkElement) else { throw b.illegal("HTMLLinkElement", "disabled") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7522,7 +7640,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLLinkElement) else { throw b.illegal("HTMLLinkElement", "disabled") }
             return .bool(this.hasAttribute("disabled"))
         }
-        realm.defineGetter(p, "sheet", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "sheet", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLLinkElement) else { throw b.illegal("HTMLLinkElement", "sheet") }
             return b.HTMLStyleElement_sheet(this)
         }
@@ -7537,7 +7655,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLMetaElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLMetaElement) else { throw b.illegal("HTMLMetaElement", "name") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7547,7 +7665,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLMetaElement) else { throw b.illegal("HTMLMetaElement", "name") }
             return b.str(this.getAttribute("name") ?? "")
         }
-        realm.defineGetter(p, "httpEquiv", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "httpEquiv", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLMetaElement) else { throw b.illegal("HTMLMetaElement", "httpEquiv") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7557,7 +7675,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLMetaElement) else { throw b.illegal("HTMLMetaElement", "httpEquiv") }
             return b.str(this.getAttribute("http-equiv") ?? "")
         }
-        realm.defineGetter(p, "content", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "content", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLMetaElement) else { throw b.illegal("HTMLMetaElement", "content") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7567,7 +7685,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLMetaElement) else { throw b.illegal("HTMLMetaElement", "content") }
             return b.str(this.getAttribute("content") ?? "")
         }
-        realm.defineGetter(p, "media", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "media", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLMetaElement) else { throw b.illegal("HTMLMetaElement", "media") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7588,7 +7706,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLBaseElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "href", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "href", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLBaseElement) else { throw b.illegal("HTMLBaseElement", "href") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7598,7 +7716,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLBaseElement) else { throw b.illegal("HTMLBaseElement", "href") }
             return b.str(b.reflectURL(this, "href"))
         }
-        realm.defineGetter(p, "target", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "target", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLBaseElement) else { throw b.illegal("HTMLBaseElement", "target") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7619,7 +7737,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLIFrameElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "src", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "src", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLIFrameElement) else { throw b.illegal("HTMLIFrameElement", "src") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7629,7 +7747,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLIFrameElement) else { throw b.illegal("HTMLIFrameElement", "src") }
             return b.str(b.reflectURL(this, "src"))
         }
-        realm.defineGetter(p, "srcdoc", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "srcdoc", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLIFrameElement) else { throw b.illegal("HTMLIFrameElement", "srcdoc") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7639,7 +7757,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLIFrameElement) else { throw b.illegal("HTMLIFrameElement", "srcdoc") }
             return b.str(this.getAttribute("srcdoc") ?? "")
         }
-        realm.defineGetter(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLIFrameElement) else { throw b.illegal("HTMLIFrameElement", "name") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7649,7 +7767,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLIFrameElement) else { throw b.illegal("HTMLIFrameElement", "name") }
             return b.str(this.getAttribute("name") ?? "")
         }
-        realm.defineGetter(p, "allow", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "allow", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLIFrameElement) else { throw b.illegal("HTMLIFrameElement", "allow") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7659,7 +7777,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLIFrameElement) else { throw b.illegal("HTMLIFrameElement", "allow") }
             return b.str(this.getAttribute("allow") ?? "")
         }
-        realm.defineGetter(p, "width", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "width", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLIFrameElement) else { throw b.illegal("HTMLIFrameElement", "width") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7669,7 +7787,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLIFrameElement) else { throw b.illegal("HTMLIFrameElement", "width") }
             return b.str(this.getAttribute("width") ?? "")
         }
-        realm.defineGetter(p, "height", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "height", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLIFrameElement) else { throw b.illegal("HTMLIFrameElement", "height") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7679,7 +7797,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLIFrameElement) else { throw b.illegal("HTMLIFrameElement", "height") }
             return b.str(this.getAttribute("height") ?? "")
         }
-        realm.defineGetter(p, "loading", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "loading", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLIFrameElement) else { throw b.illegal("HTMLIFrameElement", "loading") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7689,11 +7807,11 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLIFrameElement) else { throw b.illegal("HTMLIFrameElement", "loading") }
             return b.str(this.getAttribute("loading") ?? "")
         }
-        realm.defineGetter(p, "contentDocument", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "contentDocument", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLIFrameElement) else { throw b.illegal("HTMLIFrameElement", "contentDocument") }
             return b.HTMLIFrameElement_contentDocument(this)
         }
-        realm.defineGetter(p, "contentWindow", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "contentWindow", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLIFrameElement) else { throw b.illegal("HTMLIFrameElement", "contentWindow") }
             return b.HTMLIFrameElement_contentWindow(this)
         }
@@ -7708,7 +7826,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLCanvasElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "width", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "width", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLCanvasElement) else { throw b.illegal("HTMLCanvasElement", "width") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7718,7 +7836,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLCanvasElement) else { throw b.illegal("HTMLCanvasElement", "width") }
             return .number(b.reflectInt(this, "width", default: 300, unsigned: true))
         }
-        realm.defineGetter(p, "height", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "height", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLCanvasElement) else { throw b.illegal("HTMLCanvasElement", "height") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7728,7 +7846,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLCanvasElement) else { throw b.illegal("HTMLCanvasElement", "height") }
             return .number(b.reflectInt(this, "height", default: 150, unsigned: true))
         }
-        realm.defineMethod(p, "getContext", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getContext", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLCanvasElement) else { throw b.illegal("HTMLCanvasElement", "getContext") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7739,7 +7857,7 @@ extension JSDOMBindings {
             while k < args.count { a1.append(args[k]); k += 1 }
             return b.HTMLCanvasElement_getContext(this, a0, a1)
         }
-        realm.defineMethod(p, "toDataURL", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "toDataURL", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLCanvasElement) else { throw b.illegal("HTMLCanvasElement", "toDataURL") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7758,7 +7876,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLMediaElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "src", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "src", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLMediaElement) else { throw b.illegal("HTMLMediaElement", "src") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7768,7 +7886,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLMediaElement) else { throw b.illegal("HTMLMediaElement", "src") }
             return b.str(b.reflectURL(this, "src"))
         }
-        realm.defineGetter(p, "autoplay", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "autoplay", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLMediaElement) else { throw b.illegal("HTMLMediaElement", "autoplay") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7778,7 +7896,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLMediaElement) else { throw b.illegal("HTMLMediaElement", "autoplay") }
             return .bool(this.hasAttribute("autoplay"))
         }
-        realm.defineGetter(p, "loop", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "loop", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLMediaElement) else { throw b.illegal("HTMLMediaElement", "loop") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7788,7 +7906,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLMediaElement) else { throw b.illegal("HTMLMediaElement", "loop") }
             return .bool(this.hasAttribute("loop"))
         }
-        realm.defineGetter(p, "controls", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "controls", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLMediaElement) else { throw b.illegal("HTMLMediaElement", "controls") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7798,7 +7916,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLMediaElement) else { throw b.illegal("HTMLMediaElement", "controls") }
             return .bool(this.hasAttribute("controls"))
         }
-        realm.defineGetter(p, "defaultMuted", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "defaultMuted", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLMediaElement) else { throw b.illegal("HTMLMediaElement", "defaultMuted") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7808,7 +7926,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLMediaElement) else { throw b.illegal("HTMLMediaElement", "defaultMuted") }
             return .bool(this.hasAttribute("muted"))
         }
-        realm.defineGetter(p, "preload", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "preload", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLMediaElement) else { throw b.illegal("HTMLMediaElement", "preload") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7818,31 +7936,31 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLMediaElement) else { throw b.illegal("HTMLMediaElement", "preload") }
             return b.str(this.getAttribute("preload") ?? "")
         }
-        realm.defineGetter(p, "paused", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "paused", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLMediaElement) else { throw b.illegal("HTMLMediaElement", "paused") }
             return .bool(b.HTMLMediaElement_paused(this))
         }
-        realm.defineMethod(p, "play", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "play", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLMediaElement) else { throw b.illegal("HTMLMediaElement", "play") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             return b.HTMLMediaElement_play(this)
         }
-        realm.defineMethod(p, "pause", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "pause", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLMediaElement) else { throw b.illegal("HTMLMediaElement", "pause") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             b.HTMLMediaElement_pause(this)
             return .undefined
         }
-        realm.defineMethod(p, "load", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "load", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLMediaElement) else { throw b.illegal("HTMLMediaElement", "load") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             b.HTMLMediaElement_load(this)
             return .undefined
         }
-        realm.defineMethod(p, "canPlayType", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "canPlayType", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLMediaElement) else { throw b.illegal("HTMLMediaElement", "canPlayType") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7854,6 +7972,58 @@ extension JSDOMBindings {
 }
 
 extension JSDOMBindings {
+    func gen_HTMLVideoElement() {
+        unowned(unsafe) let b = self
+        let realm = self.realm
+        let p = protos[JSDOMInterface.HTMLVideoElement.rawValue]
+        _ = b; _ = realm; _ = p
+        let ctor = defineInterfaceObject(.HTMLVideoElement, length: 0, nil)
+        _ = ctor
+        defineAttribute(p, "width", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLVideoElement) else { throw b.illegal("HTMLVideoElement", "width") }
+            let rd = b.heap.rootDepth
+            defer { b.heap.popRoots(to: rd) }
+            try b.reflectSetInt(this, "width", try b.toUnsignedLong(args[0]))
+            return .undefined
+        }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLVideoElement) else { throw b.illegal("HTMLVideoElement", "width") }
+            return .number(b.reflectInt(this, "width", default: 0, unsigned: true))
+        }
+        defineAttribute(p, "height", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLVideoElement) else { throw b.illegal("HTMLVideoElement", "height") }
+            let rd = b.heap.rootDepth
+            defer { b.heap.popRoots(to: rd) }
+            try b.reflectSetInt(this, "height", try b.toUnsignedLong(args[0]))
+            return .undefined
+        }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLVideoElement) else { throw b.illegal("HTMLVideoElement", "height") }
+            return .number(b.reflectInt(this, "height", default: 0, unsigned: true))
+        }
+        defineAttribute(p, "poster", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLVideoElement) else { throw b.illegal("HTMLVideoElement", "poster") }
+            let rd = b.heap.rootDepth
+            defer { b.heap.popRoots(to: rd) }
+            try b.reflectSetString(this, "poster", try b.toStr(args[0]))
+            return .undefined
+        }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLVideoElement) else { throw b.illegal("HTMLVideoElement", "poster") }
+            return b.str(b.reflectURL(this, "poster"))
+        }
+    }
+}
+
+extension JSDOMBindings {
+    func gen_HTMLAudioElement() {
+        unowned(unsafe) let b = self
+        let realm = self.realm
+        let p = protos[JSDOMInterface.HTMLAudioElement.rawValue]
+        _ = b; _ = realm; _ = p
+        let ctor = defineInterfaceObject(.HTMLAudioElement, length: 0, nil)
+        _ = ctor
+    }
+}
+
+extension JSDOMBindings {
     func gen_HTMLDetailsElement() {
         unowned(unsafe) let b = self
         let realm = self.realm
@@ -7861,7 +8031,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLDetailsElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "open", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "open", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLDetailsElement) else { throw b.illegal("HTMLDetailsElement", "open") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7871,7 +8041,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLDetailsElement) else { throw b.illegal("HTMLDetailsElement", "open") }
             return .bool(this.hasAttribute("open"))
         }
-        realm.defineGetter(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLDetailsElement) else { throw b.illegal("HTMLDetailsElement", "name") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7892,7 +8062,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLDialogElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "open", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "open", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLDialogElement) else { throw b.illegal("HTMLDialogElement", "open") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7902,7 +8072,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLDialogElement) else { throw b.illegal("HTMLDialogElement", "open") }
             return .bool(this.hasAttribute("open"))
         }
-        realm.defineGetter(p, "returnValue", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "returnValue", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLDialogElement) else { throw b.illegal("HTMLDialogElement", "returnValue") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7913,21 +8083,21 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLDialogElement) else { throw b.illegal("HTMLDialogElement", "returnValue") }
             return b.str(b.HTMLDialogElement_returnValue(this))
         }
-        realm.defineMethod(p, "show", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "show", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLDialogElement) else { throw b.illegal("HTMLDialogElement", "show") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             try b.HTMLDialogElement_show(this)
             return .undefined
         }
-        realm.defineMethod(p, "showModal", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "showModal", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLDialogElement) else { throw b.illegal("HTMLDialogElement", "showModal") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             try b.HTMLDialogElement_showModal(this)
             return .undefined
         }
-        realm.defineMethod(p, "close", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "close", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLDialogElement) else { throw b.illegal("HTMLDialogElement", "close") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7946,7 +8116,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLBodyElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "text", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "text", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "text") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7956,7 +8126,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "text") }
             return b.str(this.getAttribute("text") ?? "")
         }
-        realm.defineGetter(p, "link", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "link", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "link") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7966,7 +8136,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "link") }
             return b.str(this.getAttribute("link") ?? "")
         }
-        realm.defineGetter(p, "vLink", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "vLink", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "vLink") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7976,7 +8146,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "vLink") }
             return b.str(this.getAttribute("vlink") ?? "")
         }
-        realm.defineGetter(p, "aLink", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "aLink", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "aLink") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7986,7 +8156,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "aLink") }
             return b.str(this.getAttribute("alink") ?? "")
         }
-        realm.defineGetter(p, "bgColor", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "bgColor", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "bgColor") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -7996,7 +8166,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "bgColor") }
             return b.str(this.getAttribute("bgcolor") ?? "")
         }
-        realm.defineGetter(p, "background", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "background", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "background") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8006,7 +8176,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "background") }
             return b.str(this.getAttribute("background") ?? "")
         }
-        realm.defineGetter(p, "onafterprint", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onafterprint", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onafterprint") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8016,7 +8186,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onafterprint") }
             return b.getEventHandler(JSDOMTarget.node(this), "afterprint", forwardToWindow: true)
         }
-        realm.defineGetter(p, "onbeforeprint", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onbeforeprint", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onbeforeprint") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8026,7 +8196,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onbeforeprint") }
             return b.getEventHandler(JSDOMTarget.node(this), "beforeprint", forwardToWindow: true)
         }
-        realm.defineGetter(p, "onbeforeunload", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onbeforeunload", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onbeforeunload") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8036,7 +8206,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onbeforeunload") }
             return b.getEventHandler(JSDOMTarget.node(this), "beforeunload", forwardToWindow: true)
         }
-        realm.defineGetter(p, "onhashchange", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onhashchange", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onhashchange") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8046,7 +8216,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onhashchange") }
             return b.getEventHandler(JSDOMTarget.node(this), "hashchange", forwardToWindow: true)
         }
-        realm.defineGetter(p, "onlanguagechange", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onlanguagechange", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onlanguagechange") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8056,7 +8226,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onlanguagechange") }
             return b.getEventHandler(JSDOMTarget.node(this), "languagechange", forwardToWindow: true)
         }
-        realm.defineGetter(p, "onmessage", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmessage", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onmessage") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8066,7 +8236,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onmessage") }
             return b.getEventHandler(JSDOMTarget.node(this), "message", forwardToWindow: true)
         }
-        realm.defineGetter(p, "onoffline", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onoffline", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onoffline") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8076,7 +8246,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onoffline") }
             return b.getEventHandler(JSDOMTarget.node(this), "offline", forwardToWindow: true)
         }
-        realm.defineGetter(p, "ononline", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ononline", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "ononline") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8086,7 +8256,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "ononline") }
             return b.getEventHandler(JSDOMTarget.node(this), "online", forwardToWindow: true)
         }
-        realm.defineGetter(p, "onpagehide", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpagehide", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onpagehide") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8096,7 +8266,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onpagehide") }
             return b.getEventHandler(JSDOMTarget.node(this), "pagehide", forwardToWindow: true)
         }
-        realm.defineGetter(p, "onpageshow", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpageshow", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onpageshow") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8106,7 +8276,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onpageshow") }
             return b.getEventHandler(JSDOMTarget.node(this), "pageshow", forwardToWindow: true)
         }
-        realm.defineGetter(p, "onpopstate", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpopstate", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onpopstate") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8116,7 +8286,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onpopstate") }
             return b.getEventHandler(JSDOMTarget.node(this), "popstate", forwardToWindow: true)
         }
-        realm.defineGetter(p, "onrejectionhandled", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onrejectionhandled", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onrejectionhandled") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8126,7 +8296,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onrejectionhandled") }
             return b.getEventHandler(JSDOMTarget.node(this), "rejectionhandled", forwardToWindow: true)
         }
-        realm.defineGetter(p, "onstorage", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onstorage", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onstorage") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8136,7 +8306,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onstorage") }
             return b.getEventHandler(JSDOMTarget.node(this), "storage", forwardToWindow: true)
         }
-        realm.defineGetter(p, "onunhandledrejection", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onunhandledrejection", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onunhandledrejection") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8146,7 +8316,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onunhandledrejection") }
             return b.getEventHandler(JSDOMTarget.node(this), "unhandledrejection", forwardToWindow: true)
         }
-        realm.defineGetter(p, "onunload", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onunload", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLBodyElement) else { throw b.illegal("HTMLBodyElement", "onunload") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8167,38 +8337,38 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLTableElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "rows", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "rows", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTableElement) else { throw b.illegal("HTMLTableElement", "rows") }
-            return try b.sameObject(args.this, slot: 22) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 19) { () throws(JSThrow) -> JSValue in
                 return b.HTMLTableElement_rows(this)
             }
         }
-        realm.defineGetter(p, "tBodies", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "tBodies", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTableElement) else { throw b.illegal("HTMLTableElement", "tBodies") }
-            return try b.sameObject(args.this, slot: 23) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 20) { () throws(JSThrow) -> JSValue in
                 return b.HTMLTableElement_tBodies(this)
             }
         }
-        realm.defineGetter(p, "tHead", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "tHead", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTableElement) else { throw b.illegal("HTMLTableElement", "tHead") }
             return b.wrapNode(b.HTMLTableElement_tHead(this))
         }
-        realm.defineGetter(p, "tFoot", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "tFoot", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTableElement) else { throw b.illegal("HTMLTableElement", "tFoot") }
             return b.wrapNode(b.HTMLTableElement_tFoot(this))
         }
-        realm.defineGetter(p, "caption", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "caption", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTableElement) else { throw b.illegal("HTMLTableElement", "caption") }
             return b.wrapNode(b.HTMLTableElement_caption(this))
         }
-        realm.defineMethod(p, "insertRow", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "insertRow", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTableElement) else { throw b.illegal("HTMLTableElement", "insertRow") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             let a0: Int = args[0].isUndefined ? -1 : try b.toLong(args[0])
             return b.wrapNode(try b.HTMLTableElement_insertRow(this, a0))
         }
-        realm.defineMethod(p, "deleteRow", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "deleteRow", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTableElement) else { throw b.illegal("HTMLTableElement", "deleteRow") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8207,7 +8377,7 @@ extension JSDOMBindings {
             try b.HTMLTableElement_deleteRow(this, a0)
             return .undefined
         }
-        realm.defineGetter(p, "border", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "border", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTableElement) else { throw b.illegal("HTMLTableElement", "border") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8217,7 +8387,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLTableElement) else { throw b.illegal("HTMLTableElement", "border") }
             return b.str(this.getAttribute("border") ?? "")
         }
-        realm.defineGetter(p, "width", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "width", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTableElement) else { throw b.illegal("HTMLTableElement", "width") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8238,20 +8408,20 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLTableSectionElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "rows", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "rows", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTableSectionElement) else { throw b.illegal("HTMLTableSectionElement", "rows") }
-            return try b.sameObject(args.this, slot: 24) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 19) { () throws(JSThrow) -> JSValue in
                 return b.HTMLTableElement_rows(this)
             }
         }
-        realm.defineMethod(p, "insertRow", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "insertRow", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTableSectionElement) else { throw b.illegal("HTMLTableSectionElement", "insertRow") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             let a0: Int = args[0].isUndefined ? -1 : try b.toLong(args[0])
             return b.wrapNode(try b.HTMLTableElement_insertRow(this, a0))
         }
-        realm.defineMethod(p, "deleteRow", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "deleteRow", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTableSectionElement) else { throw b.illegal("HTMLTableSectionElement", "deleteRow") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8271,28 +8441,28 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLTableRowElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "rowIndex", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "rowIndex", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTableRowElement) else { throw b.illegal("HTMLTableRowElement", "rowIndex") }
             return JSValue.number(b.HTMLTableRowElement_rowIndex(this))
         }
-        realm.defineGetter(p, "sectionRowIndex", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "sectionRowIndex", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTableRowElement) else { throw b.illegal("HTMLTableRowElement", "sectionRowIndex") }
             return JSValue.number(b.HTMLTableRowElement_sectionRowIndex(this))
         }
-        realm.defineGetter(p, "cells", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "cells", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTableRowElement) else { throw b.illegal("HTMLTableRowElement", "cells") }
-            return try b.sameObject(args.this, slot: 25) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 21) { () throws(JSThrow) -> JSValue in
                 return b.HTMLTableRowElement_cells(this)
             }
         }
-        realm.defineMethod(p, "insertCell", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "insertCell", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTableRowElement) else { throw b.illegal("HTMLTableRowElement", "insertCell") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             let a0: Int = args[0].isUndefined ? -1 : try b.toLong(args[0])
             return b.wrapNode(try b.HTMLTableRowElement_insertCell(this, a0))
         }
-        realm.defineMethod(p, "deleteCell", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "deleteCell", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTableRowElement) else { throw b.illegal("HTMLTableRowElement", "deleteCell") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8312,7 +8482,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLTableCellElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "colSpan", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "colSpan", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTableCellElement) else { throw b.illegal("HTMLTableCellElement", "colSpan") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8322,7 +8492,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLTableCellElement) else { throw b.illegal("HTMLTableCellElement", "colSpan") }
             return .number(b.reflectInt(this, "colspan", default: 1, unsigned: true))
         }
-        realm.defineGetter(p, "rowSpan", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "rowSpan", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTableCellElement) else { throw b.illegal("HTMLTableCellElement", "rowSpan") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8332,11 +8502,11 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLTableCellElement) else { throw b.illegal("HTMLTableCellElement", "rowSpan") }
             return .number(b.reflectInt(this, "rowspan", default: 1, unsigned: true))
         }
-        realm.defineGetter(p, "cellIndex", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "cellIndex", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTableCellElement) else { throw b.illegal("HTMLTableCellElement", "cellIndex") }
             return JSValue.number(b.HTMLTableCellElement_cellIndex(this))
         }
-        realm.defineGetter(p, "headers", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "headers", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTableCellElement) else { throw b.illegal("HTMLTableCellElement", "headers") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8346,7 +8516,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLTableCellElement) else { throw b.illegal("HTMLTableCellElement", "headers") }
             return b.str(this.getAttribute("headers") ?? "")
         }
-        realm.defineGetter(p, "scope", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "scope", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTableCellElement) else { throw b.illegal("HTMLTableCellElement", "scope") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8356,7 +8526,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLTableCellElement) else { throw b.illegal("HTMLTableCellElement", "scope") }
             return b.str(this.getAttribute("scope") ?? "")
         }
-        realm.defineGetter(p, "abbr", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "abbr", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTableCellElement) else { throw b.illegal("HTMLTableCellElement", "abbr") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8377,7 +8547,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLLIElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "value", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "value", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLLIElement) else { throw b.illegal("HTMLLIElement", "value") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8387,7 +8557,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLLIElement) else { throw b.illegal("HTMLLIElement", "value") }
             return .number(b.reflectInt(this, "value", default: 0, unsigned: false))
         }
-        realm.defineGetter(p, "type", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "type", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLLIElement) else { throw b.illegal("HTMLLIElement", "type") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8408,7 +8578,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLOListElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "reversed", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "reversed", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLOListElement) else { throw b.illegal("HTMLOListElement", "reversed") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8418,7 +8588,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLOListElement) else { throw b.illegal("HTMLOListElement", "reversed") }
             return .bool(this.hasAttribute("reversed"))
         }
-        realm.defineGetter(p, "start", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "start", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLOListElement) else { throw b.illegal("HTMLOListElement", "start") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8428,7 +8598,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLOListElement) else { throw b.illegal("HTMLOListElement", "start") }
             return .number(b.reflectInt(this, "start", default: 1, unsigned: false))
         }
-        realm.defineGetter(p, "type", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "type", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLOListElement) else { throw b.illegal("HTMLOListElement", "type") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8449,7 +8619,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLProgressElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "value", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "value", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLProgressElement) else { throw b.illegal("HTMLProgressElement", "value") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8460,7 +8630,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLProgressElement) else { throw b.illegal("HTMLProgressElement", "value") }
             return JSValue.number(b.HTMLProgressElement_value(this))
         }
-        realm.defineGetter(p, "max", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "max", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLProgressElement) else { throw b.illegal("HTMLProgressElement", "max") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8482,7 +8652,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLOutputElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLOutputElement) else { throw b.illegal("HTMLOutputElement", "name") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8492,7 +8662,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLOutputElement) else { throw b.illegal("HTMLOutputElement", "name") }
             return b.str(this.getAttribute("name") ?? "")
         }
-        realm.defineGetter(p, "value", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "value", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLOutputElement) else { throw b.illegal("HTMLOutputElement", "value") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8514,7 +8684,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLDivElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "align", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "align", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLDivElement) else { throw b.illegal("HTMLDivElement", "align") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8546,7 +8716,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLParagraphElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "align", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "align", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLParagraphElement) else { throw b.illegal("HTMLParagraphElement", "align") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8567,7 +8737,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLHeadingElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "align", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "align", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLHeadingElement) else { throw b.illegal("HTMLHeadingElement", "align") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8654,7 +8824,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLHtmlElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "version", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "version", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLHtmlElement) else { throw b.illegal("HTMLHtmlElement", "version") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8675,7 +8845,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLTitleElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "text", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "text", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTitleElement) else { throw b.illegal("HTMLTitleElement", "text") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8697,7 +8867,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLQuoteElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "cite", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "cite", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLQuoteElement) else { throw b.illegal("HTMLQuoteElement", "cite") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8762,7 +8932,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLSourceElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "src", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "src", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSourceElement) else { throw b.illegal("HTMLSourceElement", "src") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8772,7 +8942,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLSourceElement) else { throw b.illegal("HTMLSourceElement", "src") }
             return b.str(b.reflectURL(this, "src"))
         }
-        realm.defineGetter(p, "type", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "type", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSourceElement) else { throw b.illegal("HTMLSourceElement", "type") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8782,7 +8952,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLSourceElement) else { throw b.illegal("HTMLSourceElement", "type") }
             return b.str(this.getAttribute("type") ?? "")
         }
-        realm.defineGetter(p, "srcset", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "srcset", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSourceElement) else { throw b.illegal("HTMLSourceElement", "srcset") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8792,7 +8962,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLSourceElement) else { throw b.illegal("HTMLSourceElement", "srcset") }
             return b.str(this.getAttribute("srcset") ?? "")
         }
-        realm.defineGetter(p, "media", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "media", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLSourceElement) else { throw b.illegal("HTMLSourceElement", "media") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8813,6 +8983,56 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLEmbedElement, length: 0, nil)
         _ = ctor
+        defineAttribute(p, "src", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLEmbedElement) else { throw b.illegal("HTMLEmbedElement", "src") }
+            let rd = b.heap.rootDepth
+            defer { b.heap.popRoots(to: rd) }
+            try b.reflectSetString(this, "src", try b.toStr(args[0]))
+            return .undefined
+        }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLEmbedElement) else { throw b.illegal("HTMLEmbedElement", "src") }
+            return b.str(b.reflectURL(this, "src"))
+        }
+        defineAttribute(p, "type", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLEmbedElement) else { throw b.illegal("HTMLEmbedElement", "type") }
+            let rd = b.heap.rootDepth
+            defer { b.heap.popRoots(to: rd) }
+            try b.reflectSetString(this, "type", try b.toStr(args[0]))
+            return .undefined
+        }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLEmbedElement) else { throw b.illegal("HTMLEmbedElement", "type") }
+            return b.str(this.getAttribute("type") ?? "")
+        }
+        defineAttribute(p, "width", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLEmbedElement) else { throw b.illegal("HTMLEmbedElement", "width") }
+            let rd = b.heap.rootDepth
+            defer { b.heap.popRoots(to: rd) }
+            try b.reflectSetString(this, "width", try b.toStr(args[0]))
+            return .undefined
+        }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLEmbedElement) else { throw b.illegal("HTMLEmbedElement", "width") }
+            return b.str(this.getAttribute("width") ?? "")
+        }
+        defineAttribute(p, "height", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLEmbedElement) else { throw b.illegal("HTMLEmbedElement", "height") }
+            let rd = b.heap.rootDepth
+            defer { b.heap.popRoots(to: rd) }
+            try b.reflectSetString(this, "height", try b.toStr(args[0]))
+            return .undefined
+        }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLEmbedElement) else { throw b.illegal("HTMLEmbedElement", "height") }
+            return b.str(this.getAttribute("height") ?? "")
+        }
+        defineAttribute(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLEmbedElement) else { throw b.illegal("HTMLEmbedElement", "name") }
+            let rd = b.heap.rootDepth
+            defer { b.heap.popRoots(to: rd) }
+            try b.reflectSetString(this, "name", try b.toStr(args[0]))
+            return .undefined
+        }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLEmbedElement) else { throw b.illegal("HTMLEmbedElement", "name") }
+            return b.str(this.getAttribute("name") ?? "")
+        }
     }
 }
 
@@ -8824,6 +9044,234 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLObjectElement, length: 0, nil)
         _ = ctor
+        defineAttribute(p, "data", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLObjectElement) else { throw b.illegal("HTMLObjectElement", "data") }
+            let rd = b.heap.rootDepth
+            defer { b.heap.popRoots(to: rd) }
+            try b.reflectSetString(this, "data", try b.toStr(args[0]))
+            return .undefined
+        }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLObjectElement) else { throw b.illegal("HTMLObjectElement", "data") }
+            return b.str(b.reflectURL(this, "data"))
+        }
+        defineAttribute(p, "type", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLObjectElement) else { throw b.illegal("HTMLObjectElement", "type") }
+            let rd = b.heap.rootDepth
+            defer { b.heap.popRoots(to: rd) }
+            try b.reflectSetString(this, "type", try b.toStr(args[0]))
+            return .undefined
+        }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLObjectElement) else { throw b.illegal("HTMLObjectElement", "type") }
+            return b.str(this.getAttribute("type") ?? "")
+        }
+        defineAttribute(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLObjectElement) else { throw b.illegal("HTMLObjectElement", "name") }
+            let rd = b.heap.rootDepth
+            defer { b.heap.popRoots(to: rd) }
+            try b.reflectSetString(this, "name", try b.toStr(args[0]))
+            return .undefined
+        }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLObjectElement) else { throw b.illegal("HTMLObjectElement", "name") }
+            return b.str(this.getAttribute("name") ?? "")
+        }
+        defineAttribute(p, "width", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLObjectElement) else { throw b.illegal("HTMLObjectElement", "width") }
+            let rd = b.heap.rootDepth
+            defer { b.heap.popRoots(to: rd) }
+            try b.reflectSetString(this, "width", try b.toStr(args[0]))
+            return .undefined
+        }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLObjectElement) else { throw b.illegal("HTMLObjectElement", "width") }
+            return b.str(this.getAttribute("width") ?? "")
+        }
+        defineAttribute(p, "height", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLObjectElement) else { throw b.illegal("HTMLObjectElement", "height") }
+            let rd = b.heap.rootDepth
+            defer { b.heap.popRoots(to: rd) }
+            try b.reflectSetString(this, "height", try b.toStr(args[0]))
+            return .undefined
+        }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLObjectElement) else { throw b.illegal("HTMLObjectElement", "height") }
+            return b.str(this.getAttribute("height") ?? "")
+        }
+        defineAttribute(p, "form", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLObjectElement) else { throw b.illegal("HTMLObjectElement", "form") }
+            return b.wrapNode(b.HTMLButtonElement_form(this))
+        }
+    }
+}
+
+extension JSDOMBindings {
+    func gen_HTMLDataListElement() {
+        unowned(unsafe) let b = self
+        let realm = self.realm
+        let p = protos[JSDOMInterface.HTMLDataListElement.rawValue]
+        _ = b; _ = realm; _ = p
+        let ctor = defineInterfaceObject(.HTMLDataListElement, length: 0, nil)
+        _ = ctor
+        defineAttribute(p, "options", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLDataListElement) else { throw b.illegal("HTMLDataListElement", "options") }
+            return try b.sameObject(args.this, slot: 16) { () throws(JSThrow) -> JSValue in
+                return b.HTMLSelectElement_options(this)
+            }
+        }
+    }
+}
+
+extension JSDOMBindings {
+    func gen_HTMLDirectoryElement() {
+        unowned(unsafe) let b = self
+        let realm = self.realm
+        let p = protos[JSDOMInterface.HTMLDirectoryElement.rawValue]
+        _ = b; _ = realm; _ = p
+        let ctor = defineInterfaceObject(.HTMLDirectoryElement, length: 0, nil)
+        _ = ctor
+        defineAttribute(p, "compact", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLDirectoryElement) else { throw b.illegal("HTMLDirectoryElement", "compact") }
+            let rd = b.heap.rootDepth
+            defer { b.heap.popRoots(to: rd) }
+            try b.reflectSetBool(this, "compact", b.heap.toBoolean(args[0]))
+            return .undefined
+        }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLDirectoryElement) else { throw b.illegal("HTMLDirectoryElement", "compact") }
+            return .bool(this.hasAttribute("compact"))
+        }
+    }
+}
+
+extension JSDOMBindings {
+    func gen_HTMLFrameElement() {
+        unowned(unsafe) let b = self
+        let realm = self.realm
+        let p = protos[JSDOMInterface.HTMLFrameElement.rawValue]
+        _ = b; _ = realm; _ = p
+        let ctor = defineInterfaceObject(.HTMLFrameElement, length: 0, nil)
+        _ = ctor
+        defineAttribute(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLFrameElement) else { throw b.illegal("HTMLFrameElement", "name") }
+            let rd = b.heap.rootDepth
+            defer { b.heap.popRoots(to: rd) }
+            try b.reflectSetString(this, "name", try b.toStr(args[0]))
+            return .undefined
+        }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLFrameElement) else { throw b.illegal("HTMLFrameElement", "name") }
+            return b.str(this.getAttribute("name") ?? "")
+        }
+        defineAttribute(p, "src", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLFrameElement) else { throw b.illegal("HTMLFrameElement", "src") }
+            let rd = b.heap.rootDepth
+            defer { b.heap.popRoots(to: rd) }
+            try b.reflectSetString(this, "src", try b.toStr(args[0]))
+            return .undefined
+        }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLFrameElement) else { throw b.illegal("HTMLFrameElement", "src") }
+            return b.str(b.reflectURL(this, "src"))
+        }
+    }
+}
+
+extension JSDOMBindings {
+    func gen_HTMLMeterElement() {
+        unowned(unsafe) let b = self
+        let realm = self.realm
+        let p = protos[JSDOMInterface.HTMLMeterElement.rawValue]
+        _ = b; _ = realm; _ = p
+        let ctor = defineInterfaceObject(.HTMLMeterElement, length: 0, nil)
+        _ = ctor
+        defineAttribute(p, "value", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLMeterElement) else { throw b.illegal("HTMLMeterElement", "value") }
+            let rd = b.heap.rootDepth
+            defer { b.heap.popRoots(to: rd) }
+            let v = try b.toDouble(args[0], b.ctx("HTMLMeterElement", "value"))
+            b.HTMLProgressElement_set_value(this, v)
+            return .undefined
+        }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLMeterElement) else { throw b.illegal("HTMLMeterElement", "value") }
+            return JSValue.number(b.HTMLProgressElement_value(this))
+        }
+        defineAttribute(p, "max", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLMeterElement) else { throw b.illegal("HTMLMeterElement", "max") }
+            let rd = b.heap.rootDepth
+            defer { b.heap.popRoots(to: rd) }
+            let v = try b.toDouble(args[0], b.ctx("HTMLMeterElement", "max"))
+            b.HTMLProgressElement_set_max(this, v)
+            return .undefined
+        }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLMeterElement) else { throw b.illegal("HTMLMeterElement", "max") }
+            return JSValue.number(b.HTMLProgressElement_max(this))
+        }
+    }
+}
+
+extension JSDOMBindings {
+    func gen_HTMLParamElement() {
+        unowned(unsafe) let b = self
+        let realm = self.realm
+        let p = protos[JSDOMInterface.HTMLParamElement.rawValue]
+        _ = b; _ = realm; _ = p
+        let ctor = defineInterfaceObject(.HTMLParamElement, length: 0, nil)
+        _ = ctor
+        defineAttribute(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLParamElement) else { throw b.illegal("HTMLParamElement", "name") }
+            let rd = b.heap.rootDepth
+            defer { b.heap.popRoots(to: rd) }
+            try b.reflectSetString(this, "name", try b.toStr(args[0]))
+            return .undefined
+        }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLParamElement) else { throw b.illegal("HTMLParamElement", "name") }
+            return b.str(this.getAttribute("name") ?? "")
+        }
+        defineAttribute(p, "value", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLParamElement) else { throw b.illegal("HTMLParamElement", "value") }
+            let rd = b.heap.rootDepth
+            defer { b.heap.popRoots(to: rd) }
+            try b.reflectSetString(this, "value", try b.toStr(args[0]))
+            return .undefined
+        }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLParamElement) else { throw b.illegal("HTMLParamElement", "value") }
+            return b.str(this.getAttribute("value") ?? "")
+        }
+    }
+}
+
+extension JSDOMBindings {
+    func gen_HTMLTrackElement() {
+        unowned(unsafe) let b = self
+        let realm = self.realm
+        let p = protos[JSDOMInterface.HTMLTrackElement.rawValue]
+        _ = b; _ = realm; _ = p
+        let ctor = defineInterfaceObject(.HTMLTrackElement, length: 0, nil)
+        _ = ctor
+        defineAttribute(p, "kind", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLTrackElement) else { throw b.illegal("HTMLTrackElement", "kind") }
+            let rd = b.heap.rootDepth
+            defer { b.heap.popRoots(to: rd) }
+            try b.reflectSetString(this, "kind", try b.toStr(args[0]))
+            return .undefined
+        }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLTrackElement) else { throw b.illegal("HTMLTrackElement", "kind") }
+            return b.str(this.getAttribute("kind") ?? "")
+        }
+        defineAttribute(p, "src", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLTrackElement) else { throw b.illegal("HTMLTrackElement", "src") }
+            let rd = b.heap.rootDepth
+            defer { b.heap.popRoots(to: rd) }
+            try b.reflectSetString(this, "src", try b.toStr(args[0]))
+            return .undefined
+        }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLTrackElement) else { throw b.illegal("HTMLTrackElement", "src") }
+            return b.str(b.reflectURL(this, "src"))
+        }
+        defineAttribute(p, "label", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLTrackElement) else { throw b.illegal("HTMLTrackElement", "label") }
+            let rd = b.heap.rootDepth
+            defer { b.heap.popRoots(to: rd) }
+            try b.reflectSetString(this, "label", try b.toStr(args[0]))
+            return .undefined
+        }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .HTMLTrackElement) else { throw b.illegal("HTMLTrackElement", "label") }
+            return b.str(this.getAttribute("label") ?? "")
+        }
     }
 }
 
@@ -8835,7 +9283,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLTimeElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "dateTime", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "dateTime", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLTimeElement) else { throw b.illegal("HTMLTimeElement", "dateTime") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8856,7 +9304,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLDataElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "value", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "value", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLDataElement) else { throw b.illegal("HTMLDataElement", "value") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8899,7 +9347,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLMapElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLMapElement) else { throw b.illegal("HTMLMapElement", "name") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8931,7 +9379,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.HTMLFontElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "color", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "color", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLFontElement) else { throw b.illegal("HTMLFontElement", "color") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8941,7 +9389,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLFontElement) else { throw b.illegal("HTMLFontElement", "color") }
             return b.str(this.getAttribute("color") ?? "")
         }
-        realm.defineGetter(p, "face", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "face", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLFontElement) else { throw b.illegal("HTMLFontElement", "face") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8951,7 +9399,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .HTMLFontElement) else { throw b.illegal("HTMLFontElement", "face") }
             return b.str(this.getAttribute("face") ?? "")
         }
-        realm.defineGetter(p, "size", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "size", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .HTMLFontElement) else { throw b.illegal("HTMLFontElement", "size") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8979,7 +9427,7 @@ extension JSDOMBindings {
             return try b.MutationObserver_constructor(a0, newTarget: args.newTarget)
         }
         _ = ctor
-        realm.defineMethod(p, "observe", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "observe", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.MutationObserver.unwrap(args.this) else { throw b.illegal("MutationObserver", "observe") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -8989,14 +9437,14 @@ extension JSDOMBindings {
             try b.MutationObserver_observe(this, a0, a1)
             return .undefined
         }
-        realm.defineMethod(p, "disconnect", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "disconnect", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.MutationObserver.unwrap(args.this) else { throw b.illegal("MutationObserver", "disconnect") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             b.MutationObserver_disconnect(this)
             return .undefined
         }
-        realm.defineMethod(p, "takeRecords", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "takeRecords", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.MutationObserver.unwrap(args.this) else { throw b.illegal("MutationObserver", "takeRecords") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9013,43 +9461,43 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.MutationRecord, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "type", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "type", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.MutationRecord.unwrap(args.this) else { throw b.illegal("MutationRecord", "type") }
             return b.str(b.MutationRecord_type(this))
         }
-        realm.defineGetter(p, "target", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "target", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.MutationRecord.unwrap(args.this) else { throw b.illegal("MutationRecord", "target") }
             return b.wrapNode(b.MutationRecord_target(this))
         }
-        realm.defineGetter(p, "addedNodes", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "addedNodes", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.MutationRecord.unwrap(args.this) else { throw b.illegal("MutationRecord", "addedNodes") }
-            return try b.sameObject(args.this, slot: 26) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 22) { () throws(JSThrow) -> JSValue in
                 return b.MutationRecord_addedNodes(this)
             }
         }
-        realm.defineGetter(p, "removedNodes", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "removedNodes", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.MutationRecord.unwrap(args.this) else { throw b.illegal("MutationRecord", "removedNodes") }
-            return try b.sameObject(args.this, slot: 27) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 23) { () throws(JSThrow) -> JSValue in
                 return b.MutationRecord_removedNodes(this)
             }
         }
-        realm.defineGetter(p, "previousSibling", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "previousSibling", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.MutationRecord.unwrap(args.this) else { throw b.illegal("MutationRecord", "previousSibling") }
             return b.wrapNode(b.MutationRecord_previousSibling(this))
         }
-        realm.defineGetter(p, "nextSibling", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "nextSibling", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.MutationRecord.unwrap(args.this) else { throw b.illegal("MutationRecord", "nextSibling") }
             return b.wrapNode(b.MutationRecord_nextSibling(this))
         }
-        realm.defineGetter(p, "attributeName", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "attributeName", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.MutationRecord.unwrap(args.this) else { throw b.illegal("MutationRecord", "attributeName") }
             return b.strOrNull(b.MutationRecord_attributeName(this))
         }
-        realm.defineGetter(p, "attributeNamespace", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "attributeNamespace", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.MutationRecord.unwrap(args.this) else { throw b.illegal("MutationRecord", "attributeNamespace") }
             return b.strOrNull(b.MutationRecord_attributeNamespace(this))
         }
-        realm.defineGetter(p, "oldValue", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "oldValue", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.MutationRecord.unwrap(args.this) else { throw b.illegal("MutationRecord", "oldValue") }
             return b.strOrNull(b.MutationRecord_oldValue(this))
         }
@@ -9064,19 +9512,19 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.DocumentType, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "name", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "name", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .DocumentType) else { throw b.illegal("DocumentType", "name") }
             return b.str(b.DocumentType_name(this))
         }
-        realm.defineGetter(p, "publicId", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "publicId", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .DocumentType) else { throw b.illegal("DocumentType", "publicId") }
             return b.str(b.DocumentType_publicId(this))
         }
-        realm.defineGetter(p, "systemId", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "systemId", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .DocumentType) else { throw b.illegal("DocumentType", "systemId") }
             return b.str(b.DocumentType_systemId(this))
         }
-        realm.defineMethod(p, "before", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "before", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .DocumentType) else { throw b.illegal("DocumentType", "before") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9086,7 +9534,7 @@ extension JSDOMBindings {
             try b.ChildNode_before(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "after", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "after", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .DocumentType) else { throw b.illegal("DocumentType", "after") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9096,7 +9544,7 @@ extension JSDOMBindings {
             try b.ChildNode_after(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "replaceWith", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "replaceWith", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .DocumentType) else { throw b.illegal("DocumentType", "replaceWith") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9106,7 +9554,7 @@ extension JSDOMBindings {
             try b.ChildNode_replaceWith(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "remove", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "remove", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .DocumentType) else { throw b.illegal("DocumentType", "remove") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9129,7 +9577,7 @@ extension JSDOMBindings {
             return try b.DocumentFragment_constructor(newTarget: args.newTarget)
         }
         _ = ctor
-        realm.defineMethod(p, "getElementById", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getElementById", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .DocumentFragment) else { throw b.illegal("DocumentFragment", "getElementById") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9137,25 +9585,25 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.wrapNode(b.NonElementParentNode_getElementById(this, a0))
         }
-        realm.defineGetter(p, "children", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "children", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .DocumentFragment) else { throw b.illegal("DocumentFragment", "children") }
-            return try b.sameObject(args.this, slot: 28) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 9) { () throws(JSThrow) -> JSValue in
                 return b.ParentNode_children(this)
             }
         }
-        realm.defineGetter(p, "firstElementChild", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "firstElementChild", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .DocumentFragment) else { throw b.illegal("DocumentFragment", "firstElementChild") }
             return b.wrapNode(b.ParentNode_firstElementChild(this))
         }
-        realm.defineGetter(p, "lastElementChild", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "lastElementChild", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .DocumentFragment) else { throw b.illegal("DocumentFragment", "lastElementChild") }
             return b.wrapNode(b.ParentNode_lastElementChild(this))
         }
-        realm.defineGetter(p, "childElementCount", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "childElementCount", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .DocumentFragment) else { throw b.illegal("DocumentFragment", "childElementCount") }
             return JSValue.number(b.ParentNode_childElementCount(this))
         }
-        realm.defineMethod(p, "prepend", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "prepend", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .DocumentFragment) else { throw b.illegal("DocumentFragment", "prepend") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9165,7 +9613,7 @@ extension JSDOMBindings {
             try b.ParentNode_prepend(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "append", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "append", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .DocumentFragment) else { throw b.illegal("DocumentFragment", "append") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9175,7 +9623,7 @@ extension JSDOMBindings {
             try b.ParentNode_append(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "replaceChildren", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "replaceChildren", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .DocumentFragment) else { throw b.illegal("DocumentFragment", "replaceChildren") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9185,7 +9633,7 @@ extension JSDOMBindings {
             try b.ParentNode_replaceChildren(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "querySelector", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "querySelector", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .DocumentFragment) else { throw b.illegal("DocumentFragment", "querySelector") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9193,7 +9641,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.wrapNode(try b.ParentNode_querySelector(this, a0))
         }
-        realm.defineMethod(p, "querySelectorAll", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "querySelectorAll", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .DocumentFragment) else { throw b.illegal("DocumentFragment", "querySelectorAll") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9212,31 +9660,31 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.ShadowRoot, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "mode", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "mode", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .ShadowRoot) else { throw b.illegal("ShadowRoot", "mode") }
             return b.str(b.ShadowRoot_mode(this))
         }
-        realm.defineGetter(p, "delegatesFocus", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "delegatesFocus", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .ShadowRoot) else { throw b.illegal("ShadowRoot", "delegatesFocus") }
             return .bool(b.ShadowRoot_delegatesFocus(this))
         }
-        realm.defineGetter(p, "slotAssignment", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "slotAssignment", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .ShadowRoot) else { throw b.illegal("ShadowRoot", "slotAssignment") }
             return b.str(b.ShadowRoot_slotAssignment(this))
         }
-        realm.defineGetter(p, "clonable", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "clonable", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .ShadowRoot) else { throw b.illegal("ShadowRoot", "clonable") }
             return .bool(b.ShadowRoot_clonable(this))
         }
-        realm.defineGetter(p, "serializable", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "serializable", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .ShadowRoot) else { throw b.illegal("ShadowRoot", "serializable") }
             return .bool(b.ShadowRoot_serializable(this))
         }
-        realm.defineGetter(p, "host", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "host", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .ShadowRoot) else { throw b.illegal("ShadowRoot", "host") }
             return b.wrapNode(b.ShadowRoot_host(this))
         }
-        realm.defineGetter(p, "innerHTML", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "innerHTML", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .ShadowRoot) else { throw b.illegal("ShadowRoot", "innerHTML") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9247,7 +9695,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .ShadowRoot) else { throw b.illegal("ShadowRoot", "innerHTML") }
             return b.str(b.ShadowRoot_innerHTML(this))
         }
-        realm.defineMethod(p, "setHTMLUnsafe", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "setHTMLUnsafe", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .ShadowRoot) else { throw b.illegal("ShadowRoot", "setHTMLUnsafe") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9256,14 +9704,14 @@ extension JSDOMBindings {
             b.ShadowRoot_setHTMLUnsafe(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "getHTML", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getHTML", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .ShadowRoot) else { throw b.illegal("ShadowRoot", "getHTML") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             let a0: JSValue = args[0]
             return b.str(b.ShadowRoot_getHTML(this, a0))
         }
-        realm.defineGetter(p, "onslotchange", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onslotchange", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .ShadowRoot) else { throw b.illegal("ShadowRoot", "onslotchange") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9273,7 +9721,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .ShadowRoot) else { throw b.illegal("ShadowRoot", "onslotchange") }
             return b.getEventHandler(JSDOMTarget.node(this), "slotchange", forwardToWindow: false)
         }
-        realm.defineGetter(p, "activeElement", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "activeElement", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .ShadowRoot) else { throw b.illegal("ShadowRoot", "activeElement") }
             return b.wrapNode(b.DocumentOrShadowRoot_activeElement(this))
         }
@@ -9288,7 +9736,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.CharacterData, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "data", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "data", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .CharacterData) else { throw b.illegal("CharacterData", "data") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9299,11 +9747,11 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .CharacterData) else { throw b.illegal("CharacterData", "data") }
             return b.str(b.CharacterData_data(this))
         }
-        realm.defineGetter(p, "length", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "length", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .CharacterData) else { throw b.illegal("CharacterData", "length") }
             return JSValue.number(b.CharacterData_length(this))
         }
-        realm.defineMethod(p, "substringData", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "substringData", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .CharacterData) else { throw b.illegal("CharacterData", "substringData") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9312,7 +9760,7 @@ extension JSDOMBindings {
             let a1: Int = try b.toUnsignedLong(args[1])
             return b.str(try b.CharacterData_substringData(this, a0, a1))
         }
-        realm.defineMethod(p, "appendData", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "appendData", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .CharacterData) else { throw b.illegal("CharacterData", "appendData") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9321,7 +9769,7 @@ extension JSDOMBindings {
             b.CharacterData_appendData(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "insertData", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "insertData", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .CharacterData) else { throw b.illegal("CharacterData", "insertData") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9331,7 +9779,7 @@ extension JSDOMBindings {
             try b.CharacterData_insertData(this, a0, a1)
             return .undefined
         }
-        realm.defineMethod(p, "deleteData", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "deleteData", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .CharacterData) else { throw b.illegal("CharacterData", "deleteData") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9341,7 +9789,7 @@ extension JSDOMBindings {
             try b.CharacterData_deleteData(this, a0, a1)
             return .undefined
         }
-        realm.defineMethod(p, "replaceData", length: 3) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "replaceData", length: 3) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .CharacterData) else { throw b.illegal("CharacterData", "replaceData") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9352,7 +9800,7 @@ extension JSDOMBindings {
             try b.CharacterData_replaceData(this, a0, a1, a2)
             return .undefined
         }
-        realm.defineMethod(p, "before", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "before", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .CharacterData) else { throw b.illegal("CharacterData", "before") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9362,7 +9810,7 @@ extension JSDOMBindings {
             try b.ChildNode_before(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "after", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "after", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .CharacterData) else { throw b.illegal("CharacterData", "after") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9372,7 +9820,7 @@ extension JSDOMBindings {
             try b.ChildNode_after(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "replaceWith", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "replaceWith", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .CharacterData) else { throw b.illegal("CharacterData", "replaceWith") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9382,18 +9830,18 @@ extension JSDOMBindings {
             try b.ChildNode_replaceWith(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "remove", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "remove", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .CharacterData) else { throw b.illegal("CharacterData", "remove") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             b.ChildNode_remove(this)
             return .undefined
         }
-        realm.defineGetter(p, "previousElementSibling", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "previousElementSibling", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .CharacterData) else { throw b.illegal("CharacterData", "previousElementSibling") }
             return b.wrapNode(b.NonDocumentTypeChildNode_previousElementSibling(this))
         }
-        realm.defineGetter(p, "nextElementSibling", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "nextElementSibling", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .CharacterData) else { throw b.illegal("CharacterData", "nextElementSibling") }
             return b.wrapNode(b.NonDocumentTypeChildNode_nextElementSibling(this))
         }
@@ -9414,7 +9862,7 @@ extension JSDOMBindings {
             return try b.Text_constructor(a0, newTarget: args.newTarget)
         }
         _ = ctor
-        realm.defineMethod(p, "splitText", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "splitText", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Text) else { throw b.illegal("Text", "splitText") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9422,11 +9870,11 @@ extension JSDOMBindings {
             let a0: Int = try b.toUnsignedLong(args[0])
             return b.wrapNode(try b.Text_splitText(this, a0))
         }
-        realm.defineGetter(p, "wholeText", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "wholeText", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Text) else { throw b.illegal("Text", "wholeText") }
             return b.str(b.Text_wholeText(this))
         }
-        realm.defineGetter(p, "assignedSlot", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "assignedSlot", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .Text) else { throw b.illegal("Text", "assignedSlot") }
             return b.wrapNode(b.Slottable_assignedSlot(this))
         }
@@ -9451,6 +9899,32 @@ extension JSDOMBindings {
 }
 
 extension JSDOMBindings {
+    func gen_ProcessingInstruction() {
+        unowned(unsafe) let b = self
+        let realm = self.realm
+        let p = protos[JSDOMInterface.ProcessingInstruction.rawValue]
+        _ = b; _ = realm; _ = p
+        let ctor = defineInterfaceObject(.ProcessingInstruction, length: 0, nil)
+        _ = ctor
+        defineAttribute(p, "target", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisNode(args.this, .ProcessingInstruction) else { throw b.illegal("ProcessingInstruction", "target") }
+            return b.str(b.ProcessingInstruction_target(this))
+        }
+    }
+}
+
+extension JSDOMBindings {
+    func gen_CDATASection() {
+        unowned(unsafe) let b = self
+        let realm = self.realm
+        let p = protos[JSDOMInterface.CDATASection.rawValue]
+        _ = b; _ = realm; _ = p
+        let ctor = defineInterfaceObject(.CDATASection, length: 0, nil)
+        _ = ctor
+    }
+}
+
+extension JSDOMBindings {
     func gen_SubmitEvent() {
         unowned(unsafe) let b = self
         let realm = self.realm
@@ -9466,7 +9940,7 @@ extension JSDOMBindings {
             return try b.SubmitEvent_constructor(a0, a1, newTarget: args.newTarget)
         }
         _ = ctor
-        realm.defineGetter(p, "submitter", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "submitter", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .SubmitEvent) else { throw b.illegal("SubmitEvent", "submitter") }
             return b.wrapNode(b.SubmitEvent_submitter(this))
         }
@@ -9489,7 +9963,7 @@ extension JSDOMBindings {
             return try b.PopStateEvent_constructor(a0, a1, newTarget: args.newTarget)
         }
         _ = ctor
-        realm.defineGetter(p, "state", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "state", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .PopStateEvent) else { throw b.illegal("PopStateEvent", "state") }
             return b.CustomEvent_detail(this)
         }
@@ -9512,11 +9986,11 @@ extension JSDOMBindings {
             return try b.HashChangeEvent_constructor(a0, a1, newTarget: args.newTarget)
         }
         _ = ctor
-        realm.defineGetter(p, "oldURL", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "oldURL", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .HashChangeEvent) else { throw b.illegal("HashChangeEvent", "oldURL") }
             return b.str(b.HashChangeEvent_oldURL(this))
         }
-        realm.defineGetter(p, "newURL", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "newURL", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .HashChangeEvent) else { throw b.illegal("HashChangeEvent", "newURL") }
             return b.str(b.HashChangeEvent_newURL(this))
         }
@@ -9539,23 +10013,23 @@ extension JSDOMBindings {
             return try b.ErrorEvent_constructor(a0, a1, newTarget: args.newTarget)
         }
         _ = ctor
-        realm.defineGetter(p, "message", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "message", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .ErrorEvent) else { throw b.illegal("ErrorEvent", "message") }
             return b.str(b.ErrorEvent_message(this))
         }
-        realm.defineGetter(p, "filename", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "filename", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .ErrorEvent) else { throw b.illegal("ErrorEvent", "filename") }
             return b.str(b.ErrorEvent_filename(this))
         }
-        realm.defineGetter(p, "lineno", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "lineno", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .ErrorEvent) else { throw b.illegal("ErrorEvent", "lineno") }
             return JSValue.number(b.ErrorEvent_lineno(this))
         }
-        realm.defineGetter(p, "colno", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "colno", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .ErrorEvent) else { throw b.illegal("ErrorEvent", "colno") }
             return JSValue.number(b.ErrorEvent_colno(this))
         }
-        realm.defineGetter(p, "error", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "error", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .ErrorEvent) else { throw b.illegal("ErrorEvent", "error") }
             return b.CustomEvent_detail(this)
         }
@@ -9578,11 +10052,11 @@ extension JSDOMBindings {
             return try b.MediaQueryListEvent_constructor(a0, a1, newTarget: args.newTarget)
         }
         _ = ctor
-        realm.defineGetter(p, "media", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "media", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .MediaQueryListEvent) else { throw b.illegal("MediaQueryListEvent", "media") }
             return b.str(b.MediaQueryListEvent_media(this))
         }
-        realm.defineGetter(p, "matches", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "matches", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .MediaQueryListEvent) else { throw b.illegal("MediaQueryListEvent", "matches") }
             return .bool(b.MediaQueryListEvent_matches(this))
         }
@@ -9605,23 +10079,23 @@ extension JSDOMBindings {
             return try b.MessageEvent_constructor(a0, a1, newTarget: args.newTarget)
         }
         _ = ctor
-        realm.defineGetter(p, "data", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "data", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .MessageEvent) else { throw b.illegal("MessageEvent", "data") }
             return b.CustomEvent_detail(this)
         }
-        realm.defineGetter(p, "origin", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "origin", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .MessageEvent) else { throw b.illegal("MessageEvent", "origin") }
             return b.str(b.MessageEvent_origin(this))
         }
-        realm.defineGetter(p, "lastEventId", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "lastEventId", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .MessageEvent) else { throw b.illegal("MessageEvent", "lastEventId") }
             return b.str(b.MessageEvent_lastEventId(this))
         }
-        realm.defineGetter(p, "source", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "source", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .MessageEvent) else { throw b.illegal("MessageEvent", "source") }
             return b.MessageEvent_source(this)
         }
-        realm.defineGetter(p, "ports", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ports", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .MessageEvent) else { throw b.illegal("MessageEvent", "ports") }
             return b.MessageEvent_ports(this)
         }
@@ -9636,15 +10110,15 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.SVGElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "ownerSVGElement", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ownerSVGElement", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ownerSVGElement") }
             return b.SVGElement_ownerSVGElement(this)
         }
-        realm.defineGetter(p, "viewportElement", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "viewportElement", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "viewportElement") }
             return b.SVGElement_viewportElement(this)
         }
-        realm.defineGetter(p, "onabort", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onabort", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onabort") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9654,7 +10128,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onabort") }
             return b.getEventHandler(JSDOMTarget.node(this), "abort", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onauxclick", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onauxclick", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onauxclick") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9664,7 +10138,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onauxclick") }
             return b.getEventHandler(JSDOMTarget.node(this), "auxclick", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onbeforeinput", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onbeforeinput", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onbeforeinput") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9674,7 +10148,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onbeforeinput") }
             return b.getEventHandler(JSDOMTarget.node(this), "beforeinput", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onblur", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onblur", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onblur") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9684,7 +10158,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onblur") }
             return b.getEventHandler(JSDOMTarget.node(this), "blur", forwardToWindow: false)
         }
-        realm.defineGetter(p, "oncancel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "oncancel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "oncancel") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9694,7 +10168,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "oncancel") }
             return b.getEventHandler(JSDOMTarget.node(this), "cancel", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onchange", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onchange", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onchange") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9704,7 +10178,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onchange") }
             return b.getEventHandler(JSDOMTarget.node(this), "change", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onclick", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onclick", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onclick") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9714,7 +10188,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onclick") }
             return b.getEventHandler(JSDOMTarget.node(this), "click", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onclose", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onclose", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onclose") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9724,7 +10198,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onclose") }
             return b.getEventHandler(JSDOMTarget.node(this), "close", forwardToWindow: false)
         }
-        realm.defineGetter(p, "oncontextmenu", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "oncontextmenu", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "oncontextmenu") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9734,7 +10208,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "oncontextmenu") }
             return b.getEventHandler(JSDOMTarget.node(this), "contextmenu", forwardToWindow: false)
         }
-        realm.defineGetter(p, "oncopy", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "oncopy", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "oncopy") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9744,7 +10218,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "oncopy") }
             return b.getEventHandler(JSDOMTarget.node(this), "copy", forwardToWindow: false)
         }
-        realm.defineGetter(p, "oncut", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "oncut", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "oncut") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9754,7 +10228,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "oncut") }
             return b.getEventHandler(JSDOMTarget.node(this), "cut", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpaste", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpaste", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onpaste") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9764,7 +10238,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onpaste") }
             return b.getEventHandler(JSDOMTarget.node(this), "paste", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondblclick", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondblclick", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ondblclick") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9774,7 +10248,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ondblclick") }
             return b.getEventHandler(JSDOMTarget.node(this), "dblclick", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondrag", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondrag", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ondrag") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9784,7 +10258,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ondrag") }
             return b.getEventHandler(JSDOMTarget.node(this), "drag", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondragend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondragend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ondragend") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9794,7 +10268,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ondragend") }
             return b.getEventHandler(JSDOMTarget.node(this), "dragend", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondragenter", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondragenter", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ondragenter") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9804,7 +10278,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ondragenter") }
             return b.getEventHandler(JSDOMTarget.node(this), "dragenter", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondragleave", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondragleave", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ondragleave") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9814,7 +10288,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ondragleave") }
             return b.getEventHandler(JSDOMTarget.node(this), "dragleave", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondragover", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondragover", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ondragover") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9824,7 +10298,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ondragover") }
             return b.getEventHandler(JSDOMTarget.node(this), "dragover", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondragstart", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondragstart", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ondragstart") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9834,7 +10308,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ondragstart") }
             return b.getEventHandler(JSDOMTarget.node(this), "dragstart", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondrop", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondrop", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ondrop") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9844,7 +10318,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ondrop") }
             return b.getEventHandler(JSDOMTarget.node(this), "drop", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onerror", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onerror", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onerror") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9854,7 +10328,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onerror") }
             return b.getEventHandler(JSDOMTarget.node(this), "error", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onfocus", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onfocus", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onfocus") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9864,7 +10338,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onfocus") }
             return b.getEventHandler(JSDOMTarget.node(this), "focus", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onfocusin", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onfocusin", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onfocusin") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9874,7 +10348,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onfocusin") }
             return b.getEventHandler(JSDOMTarget.node(this), "focusin", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onfocusout", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onfocusout", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onfocusout") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9884,7 +10358,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onfocusout") }
             return b.getEventHandler(JSDOMTarget.node(this), "focusout", forwardToWindow: false)
         }
-        realm.defineGetter(p, "oninput", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "oninput", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "oninput") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9894,7 +10368,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "oninput") }
             return b.getEventHandler(JSDOMTarget.node(this), "input", forwardToWindow: false)
         }
-        realm.defineGetter(p, "oninvalid", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "oninvalid", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "oninvalid") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9904,7 +10378,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "oninvalid") }
             return b.getEventHandler(JSDOMTarget.node(this), "invalid", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onkeydown", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onkeydown", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onkeydown") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9914,7 +10388,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onkeydown") }
             return b.getEventHandler(JSDOMTarget.node(this), "keydown", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onkeypress", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onkeypress", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onkeypress") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9924,7 +10398,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onkeypress") }
             return b.getEventHandler(JSDOMTarget.node(this), "keypress", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onkeyup", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onkeyup", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onkeyup") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9934,7 +10408,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onkeyup") }
             return b.getEventHandler(JSDOMTarget.node(this), "keyup", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onload", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onload", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onload") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9944,7 +10418,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onload") }
             return b.getEventHandler(JSDOMTarget.node(this), "load", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmousedown", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmousedown", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onmousedown") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9954,7 +10428,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onmousedown") }
             return b.getEventHandler(JSDOMTarget.node(this), "mousedown", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmouseenter", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmouseenter", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onmouseenter") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9964,7 +10438,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onmouseenter") }
             return b.getEventHandler(JSDOMTarget.node(this), "mouseenter", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmouseleave", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmouseleave", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onmouseleave") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9974,7 +10448,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onmouseleave") }
             return b.getEventHandler(JSDOMTarget.node(this), "mouseleave", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmousemove", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmousemove", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onmousemove") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9984,7 +10458,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onmousemove") }
             return b.getEventHandler(JSDOMTarget.node(this), "mousemove", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmouseout", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmouseout", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onmouseout") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -9994,7 +10468,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onmouseout") }
             return b.getEventHandler(JSDOMTarget.node(this), "mouseout", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmouseover", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmouseover", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onmouseover") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10004,7 +10478,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onmouseover") }
             return b.getEventHandler(JSDOMTarget.node(this), "mouseover", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmouseup", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmouseup", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onmouseup") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10014,7 +10488,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onmouseup") }
             return b.getEventHandler(JSDOMTarget.node(this), "mouseup", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointerdown", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointerdown", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onpointerdown") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10024,7 +10498,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onpointerdown") }
             return b.getEventHandler(JSDOMTarget.node(this), "pointerdown", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointerup", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointerup", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onpointerup") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10034,7 +10508,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onpointerup") }
             return b.getEventHandler(JSDOMTarget.node(this), "pointerup", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointermove", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointermove", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onpointermove") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10044,7 +10518,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onpointermove") }
             return b.getEventHandler(JSDOMTarget.node(this), "pointermove", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointerover", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointerover", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onpointerover") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10054,7 +10528,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onpointerover") }
             return b.getEventHandler(JSDOMTarget.node(this), "pointerover", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointerout", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointerout", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onpointerout") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10064,7 +10538,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onpointerout") }
             return b.getEventHandler(JSDOMTarget.node(this), "pointerout", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointerenter", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointerenter", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onpointerenter") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10074,7 +10548,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onpointerenter") }
             return b.getEventHandler(JSDOMTarget.node(this), "pointerenter", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointerleave", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointerleave", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onpointerleave") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10084,7 +10558,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onpointerleave") }
             return b.getEventHandler(JSDOMTarget.node(this), "pointerleave", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointercancel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointercancel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onpointercancel") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10094,7 +10568,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onpointercancel") }
             return b.getEventHandler(JSDOMTarget.node(this), "pointercancel", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onreset", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onreset", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onreset") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10104,7 +10578,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onreset") }
             return b.getEventHandler(JSDOMTarget.node(this), "reset", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onresize", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onresize", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onresize") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10114,7 +10588,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onresize") }
             return b.getEventHandler(JSDOMTarget.node(this), "resize", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onscroll", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onscroll", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onscroll") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10124,7 +10598,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onscroll") }
             return b.getEventHandler(JSDOMTarget.node(this), "scroll", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onselect", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onselect", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onselect") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10134,7 +10608,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onselect") }
             return b.getEventHandler(JSDOMTarget.node(this), "select", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onsubmit", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onsubmit", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onsubmit") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10144,7 +10618,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onsubmit") }
             return b.getEventHandler(JSDOMTarget.node(this), "submit", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ontoggle", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ontoggle", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ontoggle") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10154,7 +10628,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ontoggle") }
             return b.getEventHandler(JSDOMTarget.node(this), "toggle", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ontransitionend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ontransitionend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ontransitionend") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10164,7 +10638,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ontransitionend") }
             return b.getEventHandler(JSDOMTarget.node(this), "transitionend", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onanimationend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onanimationend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onanimationend") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10174,7 +10648,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onanimationend") }
             return b.getEventHandler(JSDOMTarget.node(this), "animationend", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onwheel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onwheel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onwheel") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10184,7 +10658,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "onwheel") }
             return b.getEventHandler(JSDOMTarget.node(this), "wheel", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ontouchstart", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ontouchstart", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ontouchstart") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10194,7 +10668,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ontouchstart") }
             return b.getEventHandler(JSDOMTarget.node(this), "touchstart", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ontouchend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ontouchend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ontouchend") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10204,7 +10678,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ontouchend") }
             return b.getEventHandler(JSDOMTarget.node(this), "touchend", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ontouchmove", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ontouchmove", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ontouchmove") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10214,7 +10688,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ontouchmove") }
             return b.getEventHandler(JSDOMTarget.node(this), "touchmove", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ontouchcancel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ontouchcancel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ontouchcancel") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10224,24 +10698,24 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "ontouchcancel") }
             return b.getEventHandler(JSDOMTarget.node(this), "touchcancel", forwardToWindow: false)
         }
-        realm.defineGetter(p, "style", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "style", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             let o = try realm.getV(args.this, b.heap.key("style"))
             if !o.isObject { throw realm.throwTypeError("SVGElement.style is not an object") }
             try realm.setV(o, b.heap.key("cssText"), args[0], strict: true)
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "style") }
-            return try b.sameObject(args.this, slot: 29) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 12) { () throws(JSThrow) -> JSValue in
                 return b.ElementCSSInlineStyle_style(this)
             }
         }
-        realm.defineGetter(p, "dataset", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "dataset", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "dataset") }
-            return try b.sameObject(args.this, slot: 30) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 13) { () throws(JSThrow) -> JSValue in
                 return b.HTMLOrSVGElement_dataset(this)
             }
         }
-        realm.defineGetter(p, "nonce", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "nonce", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "nonce") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10251,7 +10725,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "nonce") }
             return b.str(this.getAttribute("nonce") ?? "")
         }
-        realm.defineGetter(p, "autofocus", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "autofocus", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "autofocus") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10261,7 +10735,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "autofocus") }
             return .bool(this.hasAttribute("autofocus"))
         }
-        realm.defineGetter(p, "tabIndex", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "tabIndex", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "tabIndex") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10272,7 +10746,7 @@ extension JSDOMBindings {
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "tabIndex") }
             return JSValue.number(b.HTMLOrSVGElement_tabIndex(this))
         }
-        realm.defineMethod(p, "focus", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "focus", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "focus") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10280,7 +10754,7 @@ extension JSDOMBindings {
             b.HTMLOrSVGElement_focus(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "blur", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "blur", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGElement) else { throw b.illegal("SVGElement", "blur") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10298,20 +10772,20 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.SVGGraphicsElement, length: 0, nil)
         _ = ctor
-        realm.defineMethod(p, "getBBox", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getBBox", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGGraphicsElement) else { throw b.illegal("SVGGraphicsElement", "getBBox") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             let a0: JSValue = args[0]
             return b.SVGGraphicsElement_getBBox(this, a0)
         }
-        realm.defineMethod(p, "getCTM", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getCTM", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGGraphicsElement) else { throw b.illegal("SVGGraphicsElement", "getCTM") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             return b.SVGGraphicsElement_getCTM(this)
         }
-        realm.defineMethod(p, "getScreenCTM", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getScreenCTM", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGGraphicsElement) else { throw b.illegal("SVGGraphicsElement", "getScreenCTM") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10328,25 +10802,25 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.SVGSVGElement, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "viewBox", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "viewBox", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGSVGElement) else { throw b.illegal("SVGSVGElement", "viewBox") }
-            return try b.sameObject(args.this, slot: 31) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 24) { () throws(JSThrow) -> JSValue in
                 return b.SVGSVGElement_viewBox(this)
             }
         }
-        realm.defineGetter(p, "width", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "width", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGSVGElement) else { throw b.illegal("SVGSVGElement", "width") }
-            return try b.sameObject(args.this, slot: 32) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 25) { () throws(JSThrow) -> JSValue in
                 return b.SVGSVGElement_width(this)
             }
         }
-        realm.defineGetter(p, "height", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "height", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGSVGElement) else { throw b.illegal("SVGSVGElement", "height") }
-            return try b.sameObject(args.this, slot: 33) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 26) { () throws(JSThrow) -> JSValue in
                 return b.SVGSVGElement_height(this)
             }
         }
-        realm.defineMethod(p, "createSVGPoint", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "createSVGPoint", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGSVGElement) else { throw b.illegal("SVGSVGElement", "createSVGPoint") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10363,7 +10837,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.SVGGeometryElement, length: 0, nil)
         _ = ctor
-        realm.defineMethod(p, "getTotalLength", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getTotalLength", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisNode(args.this, .SVGGeometryElement) else { throw b.illegal("SVGGeometryElement", "getTotalLength") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10380,11 +10854,11 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.SVGAnimatedRect, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "baseVal", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "baseVal", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.SVGAnimatedRect.unwrap(args.this) else { throw b.illegal("SVGAnimatedRect", "baseVal") }
             return b.SVGAnimatedRect_baseVal(this)
         }
-        realm.defineGetter(p, "animVal", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "animVal", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.SVGAnimatedRect.unwrap(args.this) else { throw b.illegal("SVGAnimatedRect", "animVal") }
             return b.SVGAnimatedRect_animVal(this)
         }
@@ -10407,19 +10881,19 @@ extension JSDOMBindings {
             return try b.UIEvent_constructor(a0, a1, newTarget: args.newTarget)
         }
         _ = ctor
-        realm.defineGetter(p, "view", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "view", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .UIEvent) else { throw b.illegal("UIEvent", "view") }
             return b.UIEvent_view(this)
         }
-        realm.defineGetter(p, "detail", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "detail", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .UIEvent) else { throw b.illegal("UIEvent", "detail") }
             return JSValue.number(b.UIEvent_detail(this))
         }
-        realm.defineGetter(p, "which", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "which", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .UIEvent) else { throw b.illegal("UIEvent", "which") }
             return JSValue.number(b.UIEvent_which(this))
         }
-        realm.defineMethod(p, "initUIEvent", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "initUIEvent", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .UIEvent) else { throw b.illegal("UIEvent", "initUIEvent") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10451,75 +10925,75 @@ extension JSDOMBindings {
             return try b.MouseEvent_constructor(a0, a1, newTarget: args.newTarget)
         }
         _ = ctor
-        realm.defineGetter(p, "screenX", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "screenX", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .MouseEvent) else { throw b.illegal("MouseEvent", "screenX") }
             return JSValue.number(b.MouseEvent_screenX(this))
         }
-        realm.defineGetter(p, "screenY", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "screenY", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .MouseEvent) else { throw b.illegal("MouseEvent", "screenY") }
             return JSValue.number(b.MouseEvent_screenY(this))
         }
-        realm.defineGetter(p, "clientX", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "clientX", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .MouseEvent) else { throw b.illegal("MouseEvent", "clientX") }
             return JSValue.number(b.MouseEvent_clientX(this))
         }
-        realm.defineGetter(p, "clientY", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "clientY", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .MouseEvent) else { throw b.illegal("MouseEvent", "clientY") }
             return JSValue.number(b.MouseEvent_clientY(this))
         }
-        realm.defineGetter(p, "pageX", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "pageX", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .MouseEvent) else { throw b.illegal("MouseEvent", "pageX") }
             return JSValue.number(b.MouseEvent_pageX(this))
         }
-        realm.defineGetter(p, "pageY", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "pageY", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .MouseEvent) else { throw b.illegal("MouseEvent", "pageY") }
             return JSValue.number(b.MouseEvent_pageY(this))
         }
-        realm.defineGetter(p, "offsetX", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "offsetX", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .MouseEvent) else { throw b.illegal("MouseEvent", "offsetX") }
             return JSValue.number(b.MouseEvent_offsetX(this))
         }
-        realm.defineGetter(p, "offsetY", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "offsetY", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .MouseEvent) else { throw b.illegal("MouseEvent", "offsetY") }
             return JSValue.number(b.MouseEvent_offsetY(this))
         }
-        realm.defineGetter(p, "x", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "x", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .MouseEvent) else { throw b.illegal("MouseEvent", "x") }
             return JSValue.number(b.MouseEvent_x(this))
         }
-        realm.defineGetter(p, "y", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "y", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .MouseEvent) else { throw b.illegal("MouseEvent", "y") }
             return JSValue.number(b.MouseEvent_y(this))
         }
-        realm.defineGetter(p, "ctrlKey", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ctrlKey", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .MouseEvent) else { throw b.illegal("MouseEvent", "ctrlKey") }
             return .bool(b.MouseEvent_ctrlKey(this))
         }
-        realm.defineGetter(p, "shiftKey", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "shiftKey", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .MouseEvent) else { throw b.illegal("MouseEvent", "shiftKey") }
             return .bool(b.MouseEvent_shiftKey(this))
         }
-        realm.defineGetter(p, "altKey", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "altKey", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .MouseEvent) else { throw b.illegal("MouseEvent", "altKey") }
             return .bool(b.MouseEvent_altKey(this))
         }
-        realm.defineGetter(p, "metaKey", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "metaKey", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .MouseEvent) else { throw b.illegal("MouseEvent", "metaKey") }
             return .bool(b.MouseEvent_metaKey(this))
         }
-        realm.defineGetter(p, "button", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "button", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .MouseEvent) else { throw b.illegal("MouseEvent", "button") }
             return JSValue.number(b.MouseEvent_button(this))
         }
-        realm.defineGetter(p, "buttons", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "buttons", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .MouseEvent) else { throw b.illegal("MouseEvent", "buttons") }
             return JSValue.number(b.MouseEvent_buttons(this))
         }
-        realm.defineGetter(p, "relatedTarget", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "relatedTarget", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .MouseEvent) else { throw b.illegal("MouseEvent", "relatedTarget") }
             return b.wrapTarget(b.MouseEvent_relatedTarget(this))
         }
-        realm.defineMethod(p, "getModifierState", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getModifierState", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .MouseEvent) else { throw b.illegal("MouseEvent", "getModifierState") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10546,27 +11020,27 @@ extension JSDOMBindings {
             return try b.PointerEvent_constructor(a0, a1, newTarget: args.newTarget)
         }
         _ = ctor
-        realm.defineGetter(p, "pointerId", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "pointerId", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .PointerEvent) else { throw b.illegal("PointerEvent", "pointerId") }
             return JSValue.number(b.PointerEvent_pointerId(this))
         }
-        realm.defineGetter(p, "width", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "width", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .PointerEvent) else { throw b.illegal("PointerEvent", "width") }
             return JSValue.number(b.PointerEvent_width(this))
         }
-        realm.defineGetter(p, "height", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "height", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .PointerEvent) else { throw b.illegal("PointerEvent", "height") }
             return JSValue.number(b.PointerEvent_height(this))
         }
-        realm.defineGetter(p, "pressure", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "pressure", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .PointerEvent) else { throw b.illegal("PointerEvent", "pressure") }
             return JSValue.number(b.PointerEvent_pressure(this))
         }
-        realm.defineGetter(p, "pointerType", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "pointerType", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .PointerEvent) else { throw b.illegal("PointerEvent", "pointerType") }
             return b.str(b.PointerEvent_pointerType(this))
         }
-        realm.defineGetter(p, "isPrimary", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "isPrimary", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .PointerEvent) else { throw b.illegal("PointerEvent", "isPrimary") }
             return .bool(b.PointerEvent_isPrimary(this))
         }
@@ -10592,19 +11066,19 @@ extension JSDOMBindings {
         defineConstant(p, ctor, "DOM_DELTA_PIXEL", 0)
         defineConstant(p, ctor, "DOM_DELTA_LINE", 1)
         defineConstant(p, ctor, "DOM_DELTA_PAGE", 2)
-        realm.defineGetter(p, "deltaX", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "deltaX", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .WheelEvent) else { throw b.illegal("WheelEvent", "deltaX") }
             return JSValue.number(b.WheelEvent_deltaX(this))
         }
-        realm.defineGetter(p, "deltaY", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "deltaY", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .WheelEvent) else { throw b.illegal("WheelEvent", "deltaY") }
             return JSValue.number(b.WheelEvent_deltaY(this))
         }
-        realm.defineGetter(p, "deltaZ", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "deltaZ", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .WheelEvent) else { throw b.illegal("WheelEvent", "deltaZ") }
             return JSValue.number(b.WheelEvent_deltaZ(this))
         }
-        realm.defineGetter(p, "deltaMode", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "deltaMode", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .WheelEvent) else { throw b.illegal("WheelEvent", "deltaMode") }
             return JSValue.number(b.WheelEvent_deltaMode(this))
         }
@@ -10631,51 +11105,51 @@ extension JSDOMBindings {
         defineConstant(p, ctor, "DOM_KEY_LOCATION_LEFT", 1)
         defineConstant(p, ctor, "DOM_KEY_LOCATION_RIGHT", 2)
         defineConstant(p, ctor, "DOM_KEY_LOCATION_NUMPAD", 3)
-        realm.defineGetter(p, "key", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "key", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .KeyboardEvent) else { throw b.illegal("KeyboardEvent", "key") }
             return b.str(b.KeyboardEvent_key(this))
         }
-        realm.defineGetter(p, "code", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "code", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .KeyboardEvent) else { throw b.illegal("KeyboardEvent", "code") }
             return b.str(b.KeyboardEvent_code(this))
         }
-        realm.defineGetter(p, "location", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "location", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .KeyboardEvent) else { throw b.illegal("KeyboardEvent", "location") }
             return JSValue.number(b.KeyboardEvent_location(this))
         }
-        realm.defineGetter(p, "ctrlKey", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ctrlKey", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .KeyboardEvent) else { throw b.illegal("KeyboardEvent", "ctrlKey") }
             return .bool(b.MouseEvent_ctrlKey(this))
         }
-        realm.defineGetter(p, "shiftKey", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "shiftKey", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .KeyboardEvent) else { throw b.illegal("KeyboardEvent", "shiftKey") }
             return .bool(b.MouseEvent_shiftKey(this))
         }
-        realm.defineGetter(p, "altKey", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "altKey", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .KeyboardEvent) else { throw b.illegal("KeyboardEvent", "altKey") }
             return .bool(b.MouseEvent_altKey(this))
         }
-        realm.defineGetter(p, "metaKey", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "metaKey", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .KeyboardEvent) else { throw b.illegal("KeyboardEvent", "metaKey") }
             return .bool(b.MouseEvent_metaKey(this))
         }
-        realm.defineGetter(p, "repeat", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "repeat", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .KeyboardEvent) else { throw b.illegal("KeyboardEvent", "repeat") }
             return .bool(b.KeyboardEvent_repeat(this))
         }
-        realm.defineGetter(p, "isComposing", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "isComposing", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .KeyboardEvent) else { throw b.illegal("KeyboardEvent", "isComposing") }
             return .bool(b.KeyboardEvent_isComposing(this))
         }
-        realm.defineGetter(p, "charCode", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "charCode", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .KeyboardEvent) else { throw b.illegal("KeyboardEvent", "charCode") }
             return JSValue.number(b.KeyboardEvent_charCode(this))
         }
-        realm.defineGetter(p, "keyCode", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "keyCode", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .KeyboardEvent) else { throw b.illegal("KeyboardEvent", "keyCode") }
             return JSValue.number(b.KeyboardEvent_keyCode(this))
         }
-        realm.defineMethod(p, "getModifierState", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getModifierState", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .KeyboardEvent) else { throw b.illegal("KeyboardEvent", "getModifierState") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10702,17 +11176,40 @@ extension JSDOMBindings {
             return try b.InputEvent_constructor(a0, a1, newTarget: args.newTarget)
         }
         _ = ctor
-        realm.defineGetter(p, "data", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "data", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .InputEvent) else { throw b.illegal("InputEvent", "data") }
             return b.strOrNull(b.InputEvent_data(this))
         }
-        realm.defineGetter(p, "isComposing", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "isComposing", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .InputEvent) else { throw b.illegal("InputEvent", "isComposing") }
             return .bool(b.KeyboardEvent_isComposing(this))
         }
-        realm.defineGetter(p, "inputType", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "inputType", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .InputEvent) else { throw b.illegal("InputEvent", "inputType") }
             return b.str(b.InputEvent_inputType(this))
+        }
+    }
+}
+
+extension JSDOMBindings {
+    func gen_CompositionEvent() {
+        unowned(unsafe) let b = self
+        let realm = self.realm
+        let p = protos[JSDOMInterface.CompositionEvent.rawValue]
+        _ = b; _ = realm; _ = p
+        let ctor = defineInterfaceObject(.CompositionEvent, length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            if !args.isConstruct { throw realm.throwTypeError("Failed to construct 'CompositionEvent': Please use the 'new' operator") }
+            let rd = b.heap.rootDepth
+            defer { b.heap.popRoots(to: rd) }
+            if args.count < 1 { throw b.notEnoughArguments("CompositionEvent", "constructor", 1, args.count) }
+            let a0: String = try b.toStr(args[0])
+            let a1 = try b.dict_CompositionEventInit(args[1])
+            return try b.CompositionEvent_constructor(a0, a1, newTarget: args.newTarget)
+        }
+        _ = ctor
+        defineAttribute(p, "data", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+            guard let this = b.thisEvent(args.this, .CompositionEvent) else { throw b.illegal("CompositionEvent", "data") }
+            return b.str(b.CompositionEvent_data(this))
         }
     }
 }
@@ -10733,7 +11230,7 @@ extension JSDOMBindings {
             return try b.FocusEvent_constructor(a0, a1, newTarget: args.newTarget)
         }
         _ = ctor
-        realm.defineGetter(p, "relatedTarget", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "relatedTarget", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisEvent(args.this, .FocusEvent) else { throw b.illegal("FocusEvent", "relatedTarget") }
             return b.wrapTarget(b.MouseEvent_relatedTarget(this))
         }
@@ -10748,39 +11245,39 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.Window, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "window", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "window", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             try b.replaceAttribute(args.this, "window", args[0])
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "window") }
             return b.Window_window(this)
         }
-        realm.defineGetter(p, "self", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "self", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             try b.replaceAttribute(args.this, "self", args[0])
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "self") }
             return b.Window_self(this)
         }
-        realm.defineGetter(p, "frames", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "frames", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             try b.replaceAttribute(args.this, "frames", args[0])
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "frames") }
             return b.Window_frames(this)
         }
-        realm.defineGetter(p, "globalThis", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "globalThis", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             try b.replaceAttribute(args.this, "globalThis", args[0])
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "globalThis") }
             return b.Window_globalThis(this)
         }
-        realm.defineGetter(p, "document", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "document", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "document") }
             return b.Window_document(this)
         }
-        realm.defineGetter(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "name", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "name") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10791,7 +11288,7 @@ extension JSDOMBindings {
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "name") }
             return b.str(b.Window_name(this))
         }
-        realm.defineGetter(p, "location", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "location", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             let o = try realm.getV(args.this, b.heap.key("location"))
             if !o.isObject { throw realm.throwTypeError("Window.location is not an object") }
             try realm.setV(o, b.heap.key("href"), args[0], strict: true)
@@ -10800,117 +11297,117 @@ extension JSDOMBindings {
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "location") }
             return b.Window_location(this)
         }
-        realm.defineGetter(p, "history", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "history", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "history") }
             return b.Window_history(this)
         }
-        realm.defineGetter(p, "navigator", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "navigator", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "navigator") }
             return b.Window_navigator(this)
         }
-        realm.defineGetter(p, "screen", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "screen", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             try b.replaceAttribute(args.this, "screen", args[0])
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "screen") }
             return b.Window_screen(this)
         }
-        realm.defineGetter(p, "performance", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "performance", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             try b.replaceAttribute(args.this, "performance", args[0])
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "performance") }
             return b.Window_performance(this)
         }
-        realm.defineGetter(p, "parent", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "parent", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             try b.replaceAttribute(args.this, "parent", args[0])
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "parent") }
             return b.Window_parent(this)
         }
-        realm.defineGetter(p, "top", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "top", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             try b.replaceAttribute(args.this, "top", args[0])
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "top") }
             return b.Window_top(this)
         }
-        realm.defineGetter(p, "opener", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "opener", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "opener") }
             return b.Window_opener(this)
         }
-        realm.defineGetter(p, "frameElement", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "frameElement", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "frameElement") }
             return b.Window_frameElement(this)
         }
-        realm.defineGetter(p, "length", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "length", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             try b.replaceAttribute(args.this, "length", args[0])
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "length") }
             return JSValue.number(b.Window_length(this))
         }
-        realm.defineGetter(p, "closed", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "closed", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "closed") }
             return .bool(b.Window_closed(this))
         }
-        realm.defineGetter(p, "event", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "event", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             try b.replaceAttribute(args.this, "event", args[0])
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "event") }
             return b.Window_event(this)
         }
-        realm.defineGetter(p, "localStorage", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "localStorage", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "localStorage") }
             return b.Window_localStorage(this)
         }
-        realm.defineGetter(p, "sessionStorage", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "sessionStorage", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "sessionStorage") }
             return b.Window_sessionStorage(this)
         }
-        realm.defineGetter(p, "customElements", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "customElements", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "customElements") }
             return b.Window_customElements(this)
         }
-        realm.defineGetter(p, "isSecureContext", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "isSecureContext", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "isSecureContext") }
             return .bool(b.Window_isSecureContext(this))
         }
-        realm.defineGetter(p, "origin", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "origin", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "origin") }
             return b.str(b.Window_origin(this))
         }
-        realm.defineMethod(p, "close", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "close", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "close") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             b.Window_close(this)
             return .undefined
         }
-        realm.defineMethod(p, "stop", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "stop", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "stop") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             b.Window_stop(this)
             return .undefined
         }
-        realm.defineMethod(p, "focus", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "focus", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "focus") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             b.Window_focus(this)
             return .undefined
         }
-        realm.defineMethod(p, "blur", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "blur", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "blur") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             b.Window_blur(this)
             return .undefined
         }
-        realm.defineMethod(p, "open", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "open", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "open") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10919,7 +11416,7 @@ extension JSDOMBindings {
             let a2: String = args[2].isUndefined ? "" : try b.toStr(args[2])
             return b.Window_open(this, a0, a1, a2)
         }
-        realm.defineMethod(p, "alert", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "alert", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "alert") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10927,14 +11424,14 @@ extension JSDOMBindings {
             b.Window_alert(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "confirm", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "confirm", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "confirm") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             let a0: String = args[0].isUndefined ? "" : try b.toStr(args[0])
             return .bool(b.Window_confirm(this, a0))
         }
-        realm.defineMethod(p, "prompt", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "prompt", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "prompt") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10942,14 +11439,14 @@ extension JSDOMBindings {
             let a1: String = args[1].isUndefined ? "" : try b.toStr(args[1])
             return b.strOrNull(b.Window_prompt(this, a0, a1))
         }
-        realm.defineMethod(p, "print", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "print", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "print") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             b.Window_print(this)
             return .undefined
         }
-        realm.defineMethod(p, "postMessage", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "postMessage", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "postMessage") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10960,7 +11457,7 @@ extension JSDOMBindings {
             b.Window_postMessage(this, a0, a1, a2)
             return .undefined
         }
-        realm.defineMethod(p, "matchMedia", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "matchMedia", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "matchMedia") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -10968,98 +11465,98 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return try b.Window_matchMedia(this, a0)
         }
-        realm.defineGetter(p, "innerWidth", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "innerWidth", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             try b.replaceAttribute(args.this, "innerWidth", args[0])
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "innerWidth") }
             return JSValue.number(b.Window_innerWidth(this))
         }
-        realm.defineGetter(p, "innerHeight", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "innerHeight", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             try b.replaceAttribute(args.this, "innerHeight", args[0])
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "innerHeight") }
             return JSValue.number(b.Window_innerHeight(this))
         }
-        realm.defineGetter(p, "outerWidth", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "outerWidth", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             try b.replaceAttribute(args.this, "outerWidth", args[0])
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "outerWidth") }
             return JSValue.number(b.Window_outerWidth(this))
         }
-        realm.defineGetter(p, "outerHeight", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "outerHeight", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             try b.replaceAttribute(args.this, "outerHeight", args[0])
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "outerHeight") }
             return JSValue.number(b.Window_outerHeight(this))
         }
-        realm.defineGetter(p, "scrollX", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "scrollX", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             try b.replaceAttribute(args.this, "scrollX", args[0])
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "scrollX") }
             return JSValue.number(b.Window_scrollX(this))
         }
-        realm.defineGetter(p, "pageXOffset", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "pageXOffset", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             try b.replaceAttribute(args.this, "pageXOffset", args[0])
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "pageXOffset") }
             return JSValue.number(b.Window_scrollX(this))
         }
-        realm.defineGetter(p, "scrollY", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "scrollY", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             try b.replaceAttribute(args.this, "scrollY", args[0])
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "scrollY") }
             return JSValue.number(b.Window_scrollY(this))
         }
-        realm.defineGetter(p, "pageYOffset", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "pageYOffset", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             try b.replaceAttribute(args.this, "pageYOffset", args[0])
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "pageYOffset") }
             return JSValue.number(b.Window_scrollY(this))
         }
-        realm.defineGetter(p, "screenX", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "screenX", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             try b.replaceAttribute(args.this, "screenX", args[0])
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "screenX") }
             return JSValue.number(b.Window_screenX(this))
         }
-        realm.defineGetter(p, "screenLeft", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "screenLeft", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             try b.replaceAttribute(args.this, "screenLeft", args[0])
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "screenLeft") }
             return JSValue.number(b.Window_screenX(this))
         }
-        realm.defineGetter(p, "screenY", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "screenY", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             try b.replaceAttribute(args.this, "screenY", args[0])
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "screenY") }
             return JSValue.number(b.Window_screenY(this))
         }
-        realm.defineGetter(p, "screenTop", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "screenTop", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             try b.replaceAttribute(args.this, "screenTop", args[0])
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "screenTop") }
             return JSValue.number(b.Window_screenY(this))
         }
-        realm.defineGetter(p, "devicePixelRatio", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "devicePixelRatio", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             try b.replaceAttribute(args.this, "devicePixelRatio", args[0])
             return .undefined
         }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "devicePixelRatio") }
             return JSValue.number(b.Window_devicePixelRatio(this))
         }
-        realm.defineMethod(p, "scroll", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "scroll", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "scroll") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11068,7 +11565,7 @@ extension JSDOMBindings {
             b.Window_scroll(this, a0, a1)
             return .undefined
         }
-        realm.defineMethod(p, "scrollTo", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "scrollTo", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "scrollTo") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11077,7 +11574,7 @@ extension JSDOMBindings {
             b.Window_scroll(this, a0, a1)
             return .undefined
         }
-        realm.defineMethod(p, "scrollBy", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "scrollBy", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "scrollBy") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11086,7 +11583,7 @@ extension JSDOMBindings {
             b.Window_scrollBy(this, a0, a1)
             return .undefined
         }
-        realm.defineMethod(p, "moveTo", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "moveTo", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "moveTo") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11096,7 +11593,7 @@ extension JSDOMBindings {
             b.Window_moveTo(this, a0, a1)
             return .undefined
         }
-        realm.defineMethod(p, "resizeTo", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "resizeTo", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "resizeTo") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11106,7 +11603,7 @@ extension JSDOMBindings {
             b.Window_resizeTo(this, a0, a1)
             return .undefined
         }
-        realm.defineMethod(p, "getComputedStyle", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getComputedStyle", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "getComputedStyle") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11115,13 +11612,13 @@ extension JSDOMBindings {
             let a1: String?? = args[1].isUndefined ? nil : (args[1].isNullish ? nil : try b.toStr(args[1]))
             return try b.Window_getComputedStyle(this, a0, a1)
         }
-        realm.defineMethod(p, "getSelection", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getSelection", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "getSelection") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             return b.Window_getSelection(this)
         }
-        realm.defineMethod(p, "requestAnimationFrame", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "requestAnimationFrame", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "requestAnimationFrame") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11129,7 +11626,7 @@ extension JSDOMBindings {
             let a0: JSValue = try b.toCallbackFunction(args[0], nullable: false, b.ctx("Window", "requestAnimationFrame"))
             return JSValue.number(try b.Window_requestAnimationFrame(this, a0))
         }
-        realm.defineMethod(p, "cancelAnimationFrame", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "cancelAnimationFrame", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "cancelAnimationFrame") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11138,7 +11635,7 @@ extension JSDOMBindings {
             b.Window_cancelAnimationFrame(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "requestIdleCallback", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "requestIdleCallback", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "requestIdleCallback") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11147,7 +11644,7 @@ extension JSDOMBindings {
             let a1: JSValue = args[1]
             return JSValue.number(try b.Window_requestIdleCallback(this, a0, a1))
         }
-        realm.defineMethod(p, "cancelIdleCallback", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "cancelIdleCallback", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "cancelIdleCallback") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11156,7 +11653,7 @@ extension JSDOMBindings {
             b.Window_cancelIdleCallback(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "atob", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "atob", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "atob") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11164,7 +11661,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.str(try b.Window_atob(this, a0))
         }
-        realm.defineMethod(p, "btoa", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "btoa", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "btoa") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11172,7 +11669,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.str(try b.Window_btoa(this, a0))
         }
-        realm.defineMethod(p, "reportError", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "reportError", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "reportError") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11181,7 +11678,7 @@ extension JSDOMBindings {
             b.Window_reportError(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "structuredClone", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "structuredClone", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisWindow(args.this) else { throw b.illegal("Window", "structuredClone") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11190,7 +11687,7 @@ extension JSDOMBindings {
             let a1: JSValue = args[1]
             return try b.Window_structuredClone(this, a0, a1)
         }
-        realm.defineGetter(p, "onabort", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onabort", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onabort") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11200,7 +11697,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onabort") }
             return b.getEventHandler(JSDOMTarget.window, "abort", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onauxclick", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onauxclick", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onauxclick") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11210,7 +11707,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onauxclick") }
             return b.getEventHandler(JSDOMTarget.window, "auxclick", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onbeforeinput", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onbeforeinput", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onbeforeinput") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11220,7 +11717,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onbeforeinput") }
             return b.getEventHandler(JSDOMTarget.window, "beforeinput", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onblur", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onblur", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onblur") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11230,7 +11727,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onblur") }
             return b.getEventHandler(JSDOMTarget.window, "blur", forwardToWindow: false)
         }
-        realm.defineGetter(p, "oncancel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "oncancel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "oncancel") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11240,7 +11737,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "oncancel") }
             return b.getEventHandler(JSDOMTarget.window, "cancel", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onchange", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onchange", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onchange") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11250,7 +11747,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onchange") }
             return b.getEventHandler(JSDOMTarget.window, "change", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onclick", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onclick", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onclick") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11260,7 +11757,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onclick") }
             return b.getEventHandler(JSDOMTarget.window, "click", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onclose", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onclose", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onclose") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11270,7 +11767,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onclose") }
             return b.getEventHandler(JSDOMTarget.window, "close", forwardToWindow: false)
         }
-        realm.defineGetter(p, "oncontextmenu", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "oncontextmenu", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "oncontextmenu") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11280,7 +11777,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "oncontextmenu") }
             return b.getEventHandler(JSDOMTarget.window, "contextmenu", forwardToWindow: false)
         }
-        realm.defineGetter(p, "oncopy", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "oncopy", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "oncopy") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11290,7 +11787,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "oncopy") }
             return b.getEventHandler(JSDOMTarget.window, "copy", forwardToWindow: false)
         }
-        realm.defineGetter(p, "oncut", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "oncut", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "oncut") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11300,7 +11797,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "oncut") }
             return b.getEventHandler(JSDOMTarget.window, "cut", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpaste", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpaste", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onpaste") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11310,7 +11807,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onpaste") }
             return b.getEventHandler(JSDOMTarget.window, "paste", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondblclick", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondblclick", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ondblclick") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11320,7 +11817,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ondblclick") }
             return b.getEventHandler(JSDOMTarget.window, "dblclick", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondrag", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondrag", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ondrag") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11330,7 +11827,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ondrag") }
             return b.getEventHandler(JSDOMTarget.window, "drag", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondragend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondragend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ondragend") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11340,7 +11837,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ondragend") }
             return b.getEventHandler(JSDOMTarget.window, "dragend", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondragenter", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondragenter", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ondragenter") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11350,7 +11847,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ondragenter") }
             return b.getEventHandler(JSDOMTarget.window, "dragenter", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondragleave", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondragleave", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ondragleave") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11360,7 +11857,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ondragleave") }
             return b.getEventHandler(JSDOMTarget.window, "dragleave", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondragover", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondragover", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ondragover") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11370,7 +11867,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ondragover") }
             return b.getEventHandler(JSDOMTarget.window, "dragover", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondragstart", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondragstart", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ondragstart") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11380,7 +11877,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ondragstart") }
             return b.getEventHandler(JSDOMTarget.window, "dragstart", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ondrop", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ondrop", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ondrop") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11390,7 +11887,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ondrop") }
             return b.getEventHandler(JSDOMTarget.window, "drop", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onerror", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onerror", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onerror") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11400,7 +11897,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onerror") }
             return b.getEventHandler(JSDOMTarget.window, "error", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onfocus", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onfocus", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onfocus") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11410,7 +11907,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onfocus") }
             return b.getEventHandler(JSDOMTarget.window, "focus", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onfocusin", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onfocusin", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onfocusin") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11420,7 +11917,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onfocusin") }
             return b.getEventHandler(JSDOMTarget.window, "focusin", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onfocusout", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onfocusout", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onfocusout") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11430,7 +11927,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onfocusout") }
             return b.getEventHandler(JSDOMTarget.window, "focusout", forwardToWindow: false)
         }
-        realm.defineGetter(p, "oninput", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "oninput", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "oninput") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11440,7 +11937,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "oninput") }
             return b.getEventHandler(JSDOMTarget.window, "input", forwardToWindow: false)
         }
-        realm.defineGetter(p, "oninvalid", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "oninvalid", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "oninvalid") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11450,7 +11947,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "oninvalid") }
             return b.getEventHandler(JSDOMTarget.window, "invalid", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onkeydown", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onkeydown", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onkeydown") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11460,7 +11957,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onkeydown") }
             return b.getEventHandler(JSDOMTarget.window, "keydown", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onkeypress", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onkeypress", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onkeypress") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11470,7 +11967,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onkeypress") }
             return b.getEventHandler(JSDOMTarget.window, "keypress", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onkeyup", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onkeyup", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onkeyup") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11480,7 +11977,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onkeyup") }
             return b.getEventHandler(JSDOMTarget.window, "keyup", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onload", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onload", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onload") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11490,7 +11987,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onload") }
             return b.getEventHandler(JSDOMTarget.window, "load", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmousedown", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmousedown", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onmousedown") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11500,7 +11997,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onmousedown") }
             return b.getEventHandler(JSDOMTarget.window, "mousedown", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmouseenter", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmouseenter", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onmouseenter") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11510,7 +12007,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onmouseenter") }
             return b.getEventHandler(JSDOMTarget.window, "mouseenter", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmouseleave", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmouseleave", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onmouseleave") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11520,7 +12017,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onmouseleave") }
             return b.getEventHandler(JSDOMTarget.window, "mouseleave", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmousemove", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmousemove", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onmousemove") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11530,7 +12027,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onmousemove") }
             return b.getEventHandler(JSDOMTarget.window, "mousemove", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmouseout", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmouseout", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onmouseout") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11540,7 +12037,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onmouseout") }
             return b.getEventHandler(JSDOMTarget.window, "mouseout", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmouseover", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmouseover", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onmouseover") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11550,7 +12047,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onmouseover") }
             return b.getEventHandler(JSDOMTarget.window, "mouseover", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmouseup", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmouseup", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onmouseup") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11560,7 +12057,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onmouseup") }
             return b.getEventHandler(JSDOMTarget.window, "mouseup", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointerdown", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointerdown", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onpointerdown") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11570,7 +12067,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onpointerdown") }
             return b.getEventHandler(JSDOMTarget.window, "pointerdown", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointerup", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointerup", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onpointerup") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11580,7 +12077,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onpointerup") }
             return b.getEventHandler(JSDOMTarget.window, "pointerup", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointermove", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointermove", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onpointermove") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11590,7 +12087,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onpointermove") }
             return b.getEventHandler(JSDOMTarget.window, "pointermove", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointerover", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointerover", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onpointerover") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11600,7 +12097,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onpointerover") }
             return b.getEventHandler(JSDOMTarget.window, "pointerover", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointerout", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointerout", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onpointerout") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11610,7 +12107,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onpointerout") }
             return b.getEventHandler(JSDOMTarget.window, "pointerout", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointerenter", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointerenter", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onpointerenter") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11620,7 +12117,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onpointerenter") }
             return b.getEventHandler(JSDOMTarget.window, "pointerenter", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointerleave", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointerleave", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onpointerleave") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11630,7 +12127,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onpointerleave") }
             return b.getEventHandler(JSDOMTarget.window, "pointerleave", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpointercancel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpointercancel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onpointercancel") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11640,7 +12137,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onpointercancel") }
             return b.getEventHandler(JSDOMTarget.window, "pointercancel", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onreset", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onreset", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onreset") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11650,7 +12147,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onreset") }
             return b.getEventHandler(JSDOMTarget.window, "reset", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onresize", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onresize", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onresize") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11660,7 +12157,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onresize") }
             return b.getEventHandler(JSDOMTarget.window, "resize", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onscroll", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onscroll", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onscroll") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11670,7 +12167,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onscroll") }
             return b.getEventHandler(JSDOMTarget.window, "scroll", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onselect", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onselect", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onselect") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11680,7 +12177,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onselect") }
             return b.getEventHandler(JSDOMTarget.window, "select", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onsubmit", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onsubmit", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onsubmit") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11690,7 +12187,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onsubmit") }
             return b.getEventHandler(JSDOMTarget.window, "submit", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ontoggle", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ontoggle", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ontoggle") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11700,7 +12197,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ontoggle") }
             return b.getEventHandler(JSDOMTarget.window, "toggle", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ontransitionend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ontransitionend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ontransitionend") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11710,7 +12207,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ontransitionend") }
             return b.getEventHandler(JSDOMTarget.window, "transitionend", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onanimationend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onanimationend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onanimationend") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11720,7 +12217,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onanimationend") }
             return b.getEventHandler(JSDOMTarget.window, "animationend", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onwheel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onwheel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onwheel") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11730,7 +12227,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onwheel") }
             return b.getEventHandler(JSDOMTarget.window, "wheel", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ontouchstart", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ontouchstart", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ontouchstart") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11740,7 +12237,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ontouchstart") }
             return b.getEventHandler(JSDOMTarget.window, "touchstart", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ontouchend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ontouchend", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ontouchend") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11750,7 +12247,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ontouchend") }
             return b.getEventHandler(JSDOMTarget.window, "touchend", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ontouchmove", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ontouchmove", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ontouchmove") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11760,7 +12257,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ontouchmove") }
             return b.getEventHandler(JSDOMTarget.window, "touchmove", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ontouchcancel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ontouchcancel", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ontouchcancel") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11770,7 +12267,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ontouchcancel") }
             return b.getEventHandler(JSDOMTarget.window, "touchcancel", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onafterprint", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onafterprint", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onafterprint") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11780,7 +12277,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onafterprint") }
             return b.getEventHandler(JSDOMTarget.window, "afterprint", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onbeforeprint", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onbeforeprint", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onbeforeprint") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11790,7 +12287,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onbeforeprint") }
             return b.getEventHandler(JSDOMTarget.window, "beforeprint", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onbeforeunload", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onbeforeunload", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onbeforeunload") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11800,7 +12297,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onbeforeunload") }
             return b.getEventHandler(JSDOMTarget.window, "beforeunload", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onhashchange", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onhashchange", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onhashchange") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11810,7 +12307,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onhashchange") }
             return b.getEventHandler(JSDOMTarget.window, "hashchange", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onlanguagechange", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onlanguagechange", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onlanguagechange") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11820,7 +12317,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onlanguagechange") }
             return b.getEventHandler(JSDOMTarget.window, "languagechange", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onmessage", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onmessage", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onmessage") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11830,7 +12327,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onmessage") }
             return b.getEventHandler(JSDOMTarget.window, "message", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onoffline", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onoffline", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onoffline") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11840,7 +12337,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onoffline") }
             return b.getEventHandler(JSDOMTarget.window, "offline", forwardToWindow: false)
         }
-        realm.defineGetter(p, "ononline", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ononline", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ononline") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11850,7 +12347,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "ononline") }
             return b.getEventHandler(JSDOMTarget.window, "online", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpagehide", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpagehide", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onpagehide") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11860,7 +12357,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onpagehide") }
             return b.getEventHandler(JSDOMTarget.window, "pagehide", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpageshow", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpageshow", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onpageshow") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11870,7 +12367,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onpageshow") }
             return b.getEventHandler(JSDOMTarget.window, "pageshow", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onpopstate", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onpopstate", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onpopstate") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11880,7 +12377,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onpopstate") }
             return b.getEventHandler(JSDOMTarget.window, "popstate", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onrejectionhandled", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onrejectionhandled", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onrejectionhandled") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11890,7 +12387,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onrejectionhandled") }
             return b.getEventHandler(JSDOMTarget.window, "rejectionhandled", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onstorage", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onstorage", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onstorage") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11900,7 +12397,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onstorage") }
             return b.getEventHandler(JSDOMTarget.window, "storage", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onunhandledrejection", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onunhandledrejection", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onunhandledrejection") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11910,7 +12407,7 @@ extension JSDOMBindings {
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onunhandledrejection") }
             return b.getEventHandler(JSDOMTarget.window, "unhandledrejection", forwardToWindow: false)
         }
-        realm.defineGetter(p, "onunload", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onunload", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard b.thisWindow(args.this) != nil else { throw b.illegal("Window", "onunload") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11931,7 +12428,7 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.Location, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "href", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "href", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Location.unwrap(args.this) else { throw b.illegal("Location", "href") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11943,11 +12440,11 @@ extension JSDOMBindings {
             return b.str(try b.Location_href(this))
         }
         defineStringifierFrom(p, "href")
-        realm.defineGetter(p, "origin", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "origin", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Location.unwrap(args.this) else { throw b.illegal("Location", "origin") }
             return b.str(b.Location_origin(this))
         }
-        realm.defineGetter(p, "protocol", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "protocol", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Location.unwrap(args.this) else { throw b.illegal("Location", "protocol") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11958,7 +12455,7 @@ extension JSDOMBindings {
             guard let this = b.classes.Location.unwrap(args.this) else { throw b.illegal("Location", "protocol") }
             return b.str(try b.Location_protocol(this))
         }
-        realm.defineGetter(p, "host", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "host", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Location.unwrap(args.this) else { throw b.illegal("Location", "host") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11969,7 +12466,7 @@ extension JSDOMBindings {
             guard let this = b.classes.Location.unwrap(args.this) else { throw b.illegal("Location", "host") }
             return b.str(try b.Location_host(this))
         }
-        realm.defineGetter(p, "hostname", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "hostname", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Location.unwrap(args.this) else { throw b.illegal("Location", "hostname") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11980,7 +12477,7 @@ extension JSDOMBindings {
             guard let this = b.classes.Location.unwrap(args.this) else { throw b.illegal("Location", "hostname") }
             return b.str(try b.Location_hostname(this))
         }
-        realm.defineGetter(p, "port", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "port", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Location.unwrap(args.this) else { throw b.illegal("Location", "port") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -11991,7 +12488,7 @@ extension JSDOMBindings {
             guard let this = b.classes.Location.unwrap(args.this) else { throw b.illegal("Location", "port") }
             return b.str(try b.Location_port(this))
         }
-        realm.defineGetter(p, "pathname", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "pathname", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Location.unwrap(args.this) else { throw b.illegal("Location", "pathname") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12002,7 +12499,7 @@ extension JSDOMBindings {
             guard let this = b.classes.Location.unwrap(args.this) else { throw b.illegal("Location", "pathname") }
             return b.str(try b.Location_pathname(this))
         }
-        realm.defineGetter(p, "search", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "search", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Location.unwrap(args.this) else { throw b.illegal("Location", "search") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12013,7 +12510,7 @@ extension JSDOMBindings {
             guard let this = b.classes.Location.unwrap(args.this) else { throw b.illegal("Location", "search") }
             return b.str(try b.Location_search(this))
         }
-        realm.defineGetter(p, "hash", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "hash", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Location.unwrap(args.this) else { throw b.illegal("Location", "hash") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12024,7 +12521,7 @@ extension JSDOMBindings {
             guard let this = b.classes.Location.unwrap(args.this) else { throw b.illegal("Location", "hash") }
             return b.str(try b.Location_hash(this))
         }
-        realm.defineMethod(p, "assign", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "assign", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Location.unwrap(args.this) else { throw b.illegal("Location", "assign") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12033,7 +12530,7 @@ extension JSDOMBindings {
             try b.Location_assign(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "replace", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "replace", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Location.unwrap(args.this) else { throw b.illegal("Location", "replace") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12042,16 +12539,16 @@ extension JSDOMBindings {
             try b.Location_replace(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "reload", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "reload", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Location.unwrap(args.this) else { throw b.illegal("Location", "reload") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             b.Location_reload(this)
             return .undefined
         }
-        realm.defineGetter(p, "ancestorOrigins", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "ancestorOrigins", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Location.unwrap(args.this) else { throw b.illegal("Location", "ancestorOrigins") }
-            return try b.sameObject(args.this, slot: 34) { () throws(JSThrow) -> JSValue in
+            return try b.sameObject(args.this, slot: 27) { () throws(JSThrow) -> JSValue in
                 return b.Location_ancestorOrigins(this)
             }
         }
@@ -12066,11 +12563,11 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.History, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "length", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "length", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.History.unwrap(args.this) else { throw b.illegal("History", "length") }
             return JSValue.number(b.History_length(this))
         }
-        realm.defineGetter(p, "scrollRestoration", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "scrollRestoration", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.History.unwrap(args.this) else { throw b.illegal("History", "scrollRestoration") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12081,11 +12578,11 @@ extension JSDOMBindings {
             guard let this = b.classes.History.unwrap(args.this) else { throw b.illegal("History", "scrollRestoration") }
             return b.str(b.History_scrollRestoration(this))
         }
-        realm.defineGetter(p, "state", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "state", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.History.unwrap(args.this) else { throw b.illegal("History", "state") }
             return b.History_state(this)
         }
-        realm.defineMethod(p, "go", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "go", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.History.unwrap(args.this) else { throw b.illegal("History", "go") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12093,21 +12590,21 @@ extension JSDOMBindings {
             b.History_go(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "back", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "back", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.History.unwrap(args.this) else { throw b.illegal("History", "back") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             b.History_back(this)
             return .undefined
         }
-        realm.defineMethod(p, "forward", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "forward", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.History.unwrap(args.this) else { throw b.illegal("History", "forward") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             b.History_forward(this)
             return .undefined
         }
-        realm.defineMethod(p, "pushState", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "pushState", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.History.unwrap(args.this) else { throw b.illegal("History", "pushState") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12118,7 +12615,7 @@ extension JSDOMBindings {
             try b.History_pushState(this, a0, a1, a2)
             return .undefined
         }
-        realm.defineMethod(p, "replaceState", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "replaceState", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.History.unwrap(args.this) else { throw b.illegal("History", "replaceState") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12140,85 +12637,85 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.Navigator, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "userAgent", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "userAgent", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Navigator.unwrap(args.this) else { throw b.illegal("Navigator", "userAgent") }
             return b.str(b.Navigator_userAgent(this))
         }
-        realm.defineGetter(p, "appCodeName", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "appCodeName", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Navigator.unwrap(args.this) else { throw b.illegal("Navigator", "appCodeName") }
             return b.str(b.Navigator_appCodeName(this))
         }
-        realm.defineGetter(p, "appName", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "appName", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Navigator.unwrap(args.this) else { throw b.illegal("Navigator", "appName") }
             return b.str(b.Navigator_appName(this))
         }
-        realm.defineGetter(p, "appVersion", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "appVersion", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Navigator.unwrap(args.this) else { throw b.illegal("Navigator", "appVersion") }
             return b.str(b.Navigator_appVersion(this))
         }
-        realm.defineGetter(p, "platform", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "platform", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Navigator.unwrap(args.this) else { throw b.illegal("Navigator", "platform") }
             return b.str(b.Navigator_platform(this))
         }
-        realm.defineGetter(p, "product", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "product", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Navigator.unwrap(args.this) else { throw b.illegal("Navigator", "product") }
             return b.str(b.Navigator_product(this))
         }
-        realm.defineGetter(p, "productSub", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "productSub", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Navigator.unwrap(args.this) else { throw b.illegal("Navigator", "productSub") }
             return b.str(b.Navigator_productSub(this))
         }
-        realm.defineGetter(p, "vendor", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "vendor", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Navigator.unwrap(args.this) else { throw b.illegal("Navigator", "vendor") }
             return b.str(b.Navigator_vendor(this))
         }
-        realm.defineGetter(p, "vendorSub", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "vendorSub", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Navigator.unwrap(args.this) else { throw b.illegal("Navigator", "vendorSub") }
             return b.str(b.Navigator_vendorSub(this))
         }
-        realm.defineGetter(p, "language", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "language", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Navigator.unwrap(args.this) else { throw b.illegal("Navigator", "language") }
             return b.str(b.Navigator_language(this))
         }
-        realm.defineGetter(p, "languages", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "languages", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Navigator.unwrap(args.this) else { throw b.illegal("Navigator", "languages") }
             return b.Navigator_languages(this)
         }
-        realm.defineGetter(p, "onLine", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onLine", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Navigator.unwrap(args.this) else { throw b.illegal("Navigator", "onLine") }
             return .bool(b.Navigator_onLine(this))
         }
-        realm.defineGetter(p, "cookieEnabled", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "cookieEnabled", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Navigator.unwrap(args.this) else { throw b.illegal("Navigator", "cookieEnabled") }
             return .bool(b.Navigator_cookieEnabled(this))
         }
-        realm.defineGetter(p, "webdriver", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "webdriver", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Navigator.unwrap(args.this) else { throw b.illegal("Navigator", "webdriver") }
             return .bool(b.Navigator_webdriver(this))
         }
-        realm.defineGetter(p, "pdfViewerEnabled", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "pdfViewerEnabled", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Navigator.unwrap(args.this) else { throw b.illegal("Navigator", "pdfViewerEnabled") }
             return .bool(b.Navigator_pdfViewerEnabled(this))
         }
-        realm.defineGetter(p, "hardwareConcurrency", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "hardwareConcurrency", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Navigator.unwrap(args.this) else { throw b.illegal("Navigator", "hardwareConcurrency") }
             return JSValue.number(b.Navigator_hardwareConcurrency(this))
         }
-        realm.defineGetter(p, "maxTouchPoints", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "maxTouchPoints", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Navigator.unwrap(args.this) else { throw b.illegal("Navigator", "maxTouchPoints") }
             return JSValue.number(b.Navigator_maxTouchPoints(this))
         }
-        realm.defineGetter(p, "doNotTrack", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "doNotTrack", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Navigator.unwrap(args.this) else { throw b.illegal("Navigator", "doNotTrack") }
             return b.str(b.Navigator_doNotTrack(this))
         }
-        realm.defineMethod(p, "javaEnabled", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "javaEnabled", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Navigator.unwrap(args.this) else { throw b.illegal("Navigator", "javaEnabled") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             return .bool(b.Navigator_javaEnabled(this))
         }
-        realm.defineMethod(p, "sendBeacon", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "sendBeacon", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Navigator.unwrap(args.this) else { throw b.illegal("Navigator", "sendBeacon") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12227,11 +12724,11 @@ extension JSDOMBindings {
             let a1: JSValue = args[1]
             return .bool(b.Navigator_sendBeacon(this, a0, a1))
         }
-        realm.defineGetter(p, "clipboard", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "clipboard", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Navigator.unwrap(args.this) else { throw b.illegal("Navigator", "clipboard") }
             return b.Navigator_clipboard(this)
         }
-        realm.defineGetter(p, "serviceWorker", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "serviceWorker", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Navigator.unwrap(args.this) else { throw b.illegal("Navigator", "serviceWorker") }
             return b.Navigator_serviceWorker(this)
         }
@@ -12246,31 +12743,31 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.Screen, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "availWidth", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "availWidth", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Screen.unwrap(args.this) else { throw b.illegal("Screen", "availWidth") }
             return JSValue.number(b.Screen_availWidth(this))
         }
-        realm.defineGetter(p, "availHeight", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "availHeight", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Screen.unwrap(args.this) else { throw b.illegal("Screen", "availHeight") }
             return JSValue.number(b.Screen_availHeight(this))
         }
-        realm.defineGetter(p, "width", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "width", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Screen.unwrap(args.this) else { throw b.illegal("Screen", "width") }
             return JSValue.number(b.Screen_width(this))
         }
-        realm.defineGetter(p, "height", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "height", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Screen.unwrap(args.this) else { throw b.illegal("Screen", "height") }
             return JSValue.number(b.Screen_height(this))
         }
-        realm.defineGetter(p, "colorDepth", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "colorDepth", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Screen.unwrap(args.this) else { throw b.illegal("Screen", "colorDepth") }
             return JSValue.number(b.Screen_colorDepth(this))
         }
-        realm.defineGetter(p, "pixelDepth", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "pixelDepth", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Screen.unwrap(args.this) else { throw b.illegal("Screen", "pixelDepth") }
             return JSValue.number(b.Screen_pixelDepth(this))
         }
-        realm.defineGetter(p, "orientation", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "orientation", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Screen.unwrap(args.this) else { throw b.illegal("Screen", "orientation") }
             return b.Screen_orientation(this)
         }
@@ -12285,15 +12782,15 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.MediaQueryList, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "media", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "media", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisTargetObject(args.this, .MediaQueryList) else { throw b.illegal("MediaQueryList", "media") }
             return b.str(b.MediaQueryList_media(this))
         }
-        realm.defineGetter(p, "matches", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "matches", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisTargetObject(args.this, .MediaQueryList) else { throw b.illegal("MediaQueryList", "matches") }
             return .bool(b.MediaQueryList_matches(this))
         }
-        realm.defineMethod(p, "addListener", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "addListener", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisTargetObject(args.this, .MediaQueryList) else { throw b.illegal("MediaQueryList", "addListener") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12302,7 +12799,7 @@ extension JSDOMBindings {
             try b.MediaQueryList_addListener(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "removeListener", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "removeListener", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisTargetObject(args.this, .MediaQueryList) else { throw b.illegal("MediaQueryList", "removeListener") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12311,7 +12808,7 @@ extension JSDOMBindings {
             try b.MediaQueryList_removeListener(this, a0)
             return .undefined
         }
-        realm.defineGetter(p, "onchange", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "onchange", setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.thisTargetObject(args.this, .MediaQueryList) else { throw b.illegal("MediaQueryList", "onchange") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12332,35 +12829,35 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.Selection, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "anchorNode", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "anchorNode", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Selection.unwrap(args.this) else { throw b.illegal("Selection", "anchorNode") }
             return b.Selection_anchorNode(this)
         }
-        realm.defineGetter(p, "anchorOffset", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "anchorOffset", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Selection.unwrap(args.this) else { throw b.illegal("Selection", "anchorOffset") }
             return JSValue.number(b.Selection_anchorOffset(this))
         }
-        realm.defineGetter(p, "focusNode", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "focusNode", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Selection.unwrap(args.this) else { throw b.illegal("Selection", "focusNode") }
             return b.Selection_focusNode(this)
         }
-        realm.defineGetter(p, "focusOffset", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "focusOffset", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Selection.unwrap(args.this) else { throw b.illegal("Selection", "focusOffset") }
             return JSValue.number(b.Selection_focusOffset(this))
         }
-        realm.defineGetter(p, "isCollapsed", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "isCollapsed", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Selection.unwrap(args.this) else { throw b.illegal("Selection", "isCollapsed") }
             return .bool(b.Selection_isCollapsed(this))
         }
-        realm.defineGetter(p, "rangeCount", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "rangeCount", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Selection.unwrap(args.this) else { throw b.illegal("Selection", "rangeCount") }
             return JSValue.number(b.Selection_rangeCount(this))
         }
-        realm.defineGetter(p, "type", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "type", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Selection.unwrap(args.this) else { throw b.illegal("Selection", "type") }
             return b.str(b.Selection_type(this))
         }
-        realm.defineMethod(p, "getRangeAt", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getRangeAt", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Selection.unwrap(args.this) else { throw b.illegal("Selection", "getRangeAt") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12368,7 +12865,7 @@ extension JSDOMBindings {
             let a0: Int = try b.toUnsignedLong(args[0])
             return b.Selection_getRangeAt(this, a0)
         }
-        realm.defineMethod(p, "addRange", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "addRange", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Selection.unwrap(args.this) else { throw b.illegal("Selection", "addRange") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12377,21 +12874,21 @@ extension JSDOMBindings {
             b.Selection_addRange(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "removeAllRanges", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "removeAllRanges", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Selection.unwrap(args.this) else { throw b.illegal("Selection", "removeAllRanges") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             b.Selection_removeAllRanges(this)
             return .undefined
         }
-        realm.defineMethod(p, "empty", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "empty", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Selection.unwrap(args.this) else { throw b.illegal("Selection", "empty") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             b.Selection_removeAllRanges(this)
             return .undefined
         }
-        realm.defineMethod(p, "collapse", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "collapse", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Selection.unwrap(args.this) else { throw b.illegal("Selection", "collapse") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12400,7 +12897,7 @@ extension JSDOMBindings {
             b.Selection_collapse(this, a0, a1)
             return .undefined
         }
-        realm.defineMethod(p, "selectAllChildren", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "selectAllChildren", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Selection.unwrap(args.this) else { throw b.illegal("Selection", "selectAllChildren") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12409,7 +12906,7 @@ extension JSDOMBindings {
             b.Selection_selectAllChildren(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "toString", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "toString", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Selection.unwrap(args.this) else { throw b.illegal("Selection", "toString") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12427,17 +12924,17 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.Performance, length: 0, nil)
         _ = ctor
-        realm.defineMethod(p, "now", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "now", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Performance.unwrap(args.this) else { throw b.illegal("Performance", "now") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             return JSValue.number(b.Performance_now(this))
         }
-        realm.defineGetter(p, "timeOrigin", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "timeOrigin", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Performance.unwrap(args.this) else { throw b.illegal("Performance", "timeOrigin") }
             return JSValue.number(b.Performance_timeOrigin(this))
         }
-        realm.defineMethod(p, "getEntriesByType", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getEntriesByType", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Performance.unwrap(args.this) else { throw b.illegal("Performance", "getEntriesByType") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12445,7 +12942,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.Performance_getEntriesByType(this, a0)
         }
-        realm.defineMethod(p, "getEntriesByName", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getEntriesByName", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Performance.unwrap(args.this) else { throw b.illegal("Performance", "getEntriesByName") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12454,13 +12951,13 @@ extension JSDOMBindings {
             let a1: String? = args[1].isUndefined ? nil : try b.toStr(args[1])
             return b.Performance_getEntriesByName(this, a0, a1)
         }
-        realm.defineMethod(p, "getEntries", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getEntries", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Performance.unwrap(args.this) else { throw b.illegal("Performance", "getEntries") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
             return b.Performance_getEntries(this)
         }
-        realm.defineMethod(p, "mark", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "mark", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Performance.unwrap(args.this) else { throw b.illegal("Performance", "mark") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12470,7 +12967,7 @@ extension JSDOMBindings {
             b.Performance_mark(this, a0, a1)
             return .undefined
         }
-        realm.defineMethod(p, "measure", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "measure", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Performance.unwrap(args.this) else { throw b.illegal("Performance", "measure") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12481,7 +12978,7 @@ extension JSDOMBindings {
             b.Performance_measure(this, a0, a1, a2)
             return .undefined
         }
-        realm.defineMethod(p, "clearMarks", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "clearMarks", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Performance.unwrap(args.this) else { throw b.illegal("Performance", "clearMarks") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12489,7 +12986,7 @@ extension JSDOMBindings {
             b.Performance_clearMarks(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "clearMeasures", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "clearMeasures", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Performance.unwrap(args.this) else { throw b.illegal("Performance", "clearMeasures") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12497,7 +12994,7 @@ extension JSDOMBindings {
             b.Performance_clearMeasures(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "toJSON", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "toJSON", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Performance.unwrap(args.this) else { throw b.illegal("Performance", "toJSON") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12514,11 +13011,11 @@ extension JSDOMBindings {
         _ = b; _ = realm; _ = p
         let ctor = defineInterfaceObject(.Storage, length: 0, nil)
         _ = ctor
-        realm.defineGetter(p, "length", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineAttribute(p, "length", setter: nil) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Storage.unwrap(args.this) else { throw b.illegal("Storage", "length") }
             return JSValue.number(b.Storage_length(this))
         }
-        realm.defineMethod(p, "key", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "key", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Storage.unwrap(args.this) else { throw b.illegal("Storage", "key") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12526,7 +13023,7 @@ extension JSDOMBindings {
             let a0: Int = try b.toUnsignedLong(args[0])
             return b.strOrNull(b.Storage_key(this, a0))
         }
-        realm.defineMethod(p, "getItem", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "getItem", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Storage.unwrap(args.this) else { throw b.illegal("Storage", "getItem") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12534,7 +13031,7 @@ extension JSDOMBindings {
             let a0: String = try b.toStr(args[0])
             return b.strOrNull(b.Storage_getItem(this, a0))
         }
-        realm.defineMethod(p, "setItem", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "setItem", length: 2) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Storage.unwrap(args.this) else { throw b.illegal("Storage", "setItem") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12544,7 +13041,7 @@ extension JSDOMBindings {
             try b.Storage_setItem(this, a0, a1)
             return .undefined
         }
-        realm.defineMethod(p, "removeItem", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "removeItem", length: 1) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Storage.unwrap(args.this) else { throw b.illegal("Storage", "removeItem") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12553,7 +13050,7 @@ extension JSDOMBindings {
             b.Storage_removeItem(this, a0)
             return .undefined
         }
-        realm.defineMethod(p, "clear", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
+        defineOperation(p, "clear", length: 0) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
             guard let this = b.classes.Storage.unwrap(args.this) else { throw b.illegal("Storage", "clear") }
             let rd = b.heap.rootDepth
             defer { b.heap.popRoots(to: rd) }
@@ -12837,6 +13334,9 @@ let jsdomCEReactionMembers: [String] = [
     "HTMLMediaElement.controls",
     "HTMLMediaElement.defaultMuted",
     "HTMLMediaElement.preload",
+    "HTMLVideoElement.width",
+    "HTMLVideoElement.height",
+    "HTMLVideoElement.poster",
     "HTMLDetailsElement.open",
     "HTMLDetailsElement.name",
     "HTMLDialogElement.open",
@@ -12879,6 +13379,24 @@ let jsdomCEReactionMembers: [String] = [
     "HTMLSourceElement.type",
     "HTMLSourceElement.srcset",
     "HTMLSourceElement.media",
+    "HTMLEmbedElement.src",
+    "HTMLEmbedElement.type",
+    "HTMLEmbedElement.width",
+    "HTMLEmbedElement.height",
+    "HTMLEmbedElement.name",
+    "HTMLObjectElement.data",
+    "HTMLObjectElement.type",
+    "HTMLObjectElement.name",
+    "HTMLObjectElement.width",
+    "HTMLObjectElement.height",
+    "HTMLDirectoryElement.compact",
+    "HTMLFrameElement.name",
+    "HTMLFrameElement.src",
+    "HTMLParamElement.name",
+    "HTMLParamElement.value",
+    "HTMLTrackElement.kind",
+    "HTMLTrackElement.src",
+    "HTMLTrackElement.label",
     "HTMLTimeElement.dateTime",
     "HTMLDataElement.value",
     "HTMLMapElement.name",
@@ -12903,4 +13421,4 @@ let jsdomCEReactionMembers: [String] = [
 ]
 
 /// Number of [SameObject] cache slots a wrapper may need.
-let jsdomSameObjectSlotCount = 35
+let jsdomSameObjectSlotCount = 28

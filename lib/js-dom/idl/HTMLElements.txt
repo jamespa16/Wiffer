@@ -329,7 +329,6 @@ interface HTMLCanvasElement : HTMLElement {
   [Throws] USVString toDataURL(optional DOMString type = "image/png", optional any quality);
 };
 
-[Tags=video|audio]
 interface HTMLMediaElement : HTMLElement {
   [CEReactions, Reflect, URL] attribute USVString src;
   [CEReactions, Reflect] attribute boolean autoplay;
@@ -342,6 +341,17 @@ interface HTMLMediaElement : HTMLElement {
   undefined pause();
   undefined load();
   DOMString canPlayType(DOMString type);
+};
+
+[Tags=video]
+interface HTMLVideoElement : HTMLMediaElement {
+  [CEReactions, Reflect] attribute unsigned long width;
+  [CEReactions, Reflect] attribute unsigned long height;
+  [CEReactions, Reflect, URL] attribute USVString poster;
+};
+
+[Tags=audio]
+interface HTMLAudioElement : HTMLMediaElement {
 };
 
 [Tags=details]
@@ -488,9 +498,51 @@ interface HTMLSourceElement : HTMLElement {
   [CEReactions, Reflect] attribute DOMString media;
 };
 [Tags=embed]
-interface HTMLEmbedElement : HTMLElement {};
+interface HTMLEmbedElement : HTMLElement {
+  [CEReactions, Reflect, URL] attribute USVString src;
+  [CEReactions, Reflect] attribute DOMString type;
+  [CEReactions, Reflect] attribute DOMString width;
+  [CEReactions, Reflect] attribute DOMString height;
+  [CEReactions, Reflect] attribute DOMString name;
+};
 [Tags=object]
-interface HTMLObjectElement : HTMLElement {};
+interface HTMLObjectElement : HTMLElement {
+  [CEReactions, Reflect, URL] attribute USVString data;
+  [CEReactions, Reflect] attribute DOMString type;
+  [CEReactions, Reflect] attribute DOMString name;
+  [CEReactions, Reflect] attribute DOMString width;
+  [CEReactions, Reflect] attribute DOMString height;
+  [Impl=HTMLButtonElement_form] readonly attribute HTMLFormElement? form;
+};
+[Tags=datalist]
+interface HTMLDataListElement : HTMLElement {
+  [SameObject, Impl=HTMLSelectElement_options] readonly attribute HTMLCollection options;
+};
+[Tags=dir]
+interface HTMLDirectoryElement : HTMLElement {
+  [CEReactions, Reflect] attribute boolean compact;
+};
+[Tags=frame]
+interface HTMLFrameElement : HTMLElement {
+  [CEReactions, Reflect] attribute DOMString name;
+  [CEReactions, Reflect, URL] attribute USVString src;
+};
+[Tags=meter]
+interface HTMLMeterElement : HTMLElement {
+  [Impl=HTMLProgressElement_value] attribute double value;
+  [Impl=HTMLProgressElement_max] attribute double max;
+};
+[Tags=param]
+interface HTMLParamElement : HTMLElement {
+  [CEReactions, Reflect] attribute DOMString name;
+  [CEReactions, Reflect] attribute DOMString value;
+};
+[Tags=track]
+interface HTMLTrackElement : HTMLElement {
+  [CEReactions, Reflect] attribute DOMString kind;
+  [CEReactions, Reflect, URL] attribute USVString src;
+  [CEReactions, Reflect] attribute DOMString label;
+};
 [Tags=time]
 interface HTMLTimeElement : HTMLElement {
   [CEReactions, Reflect=datetime] attribute DOMString dateTime;

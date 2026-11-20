@@ -878,7 +878,7 @@ extension JSDOMBindings {
     /// Legacy-pre-activation behavior: checkboxes toggle (and radios check)
     /// before the click event is dispatched. Returns what to undo.
     func legacyPreActivation(_ n: HTMLNode) -> (HTMLNode, Bool, HTMLNode?)? {
-        guard n.isHTML("input"), !isDisabled(n) else { return nil }
+        guard n.isHTML("input") else { return nil }
         let t = inputType(n)
         if t == "checkbox" {
             let old = inputChecked(n)
@@ -911,8 +911,9 @@ extension JSDOMBindings {
             let u = resolveURL(href) ?? href
             host.followHyperlink(n, u, n.attribute("target") ?? "")
         case "input":
-            if isDisabled(n) { return }
-            switch inputType(n) {
+            let ty = inputType(n)
+            if isDisabled(n) && ty != "checkbox" && ty != "radio" { return }
+            switch ty {
             case "checkbox", "radio":
                 guard n.isConnected else { return }
                 fire("input", at: .node(n), bubbles: true, iface: .Event)

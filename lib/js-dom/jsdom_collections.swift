@@ -18,6 +18,7 @@ enum JSDOMCollectionKind {
     case tableRows
     case tBodies
     case rowCells
+    case documentNamed(String)
 }
 
 final class JSDOMHTMLCollection {
@@ -65,6 +66,8 @@ final class JSDOMAttr {
     let name: String
     var detachedValue: String
     let document: HTMLNode
+    /// createAttributeNS's namespace (attached attributes ask the bindings).
+    var namespace: String? = nil
     init(owner: HTMLNode?, name: String, value: String, document: HTMLNode) {
         self.owner = owner
         self.name = name
@@ -177,6 +180,8 @@ extension JSDOMBindings {
             return root.children.filter { $0.isHTML("tbody") }
         case .rowCells:
             return root.children.filter { $0.isHTML("td") || $0.isHTML("th") }
+        case .documentNamed(let name):
+            return documentNamedElements(root, name)
         }
     }
 
@@ -399,8 +404,8 @@ extension JSDOMBindings {
         return m.node.hasAttribute(n) ? attrObject(m.node, n) : .null
     }
     func NamedNodeMap_getNamedItemNS(_ m: JSDOMNamedNodeMap, _ ns: String?, _ local: String) -> JSValue {
-        let name = jsdomAttributeName(ns, local, m.node)
-        return name.map { m.node.hasAttribute($0) ? attrObject(m.node, $0) : .null } ?? .null
+        guard let i = findAttributeNS(m.node, ns, local) else { return .null }
+        return attrObject(m.node, m.node.attributes[i].name)
     }
     func NamedNodeMap_setNamedItem(_ m: JSDOMNamedNodeMap, _ a: JSDOMAttr) throws(JSThrow) -> JSValue {
         try setAttrNode(m.node, a)
@@ -420,10 +425,15 @@ extension JSDOMBindings {
         return a
     }
     func NamedNodeMap_removeNamedItemNS(_ m: JSDOMNamedNodeMap, _ ns: String?, _ local: String) throws(JSThrow) -> JSValue {
-        guard let name = jsdomAttributeName(ns, local, m.node), m.node.hasAttribute(name) else {
+        guard let i = findAttributeNS(m.node, ns, local) else {
             throw throwDOM("NotFoundError", "No item with that name was found.")
         }
-        return try NamedNodeMap_removeNamedItem(m, name)
+        let a = attrObject(m.node, m.node.attributes[i].name)
+        let d = heap.rootDepth
+        _ = heap.root(a)
+        removeAttributeNS(m.node, ns, local)
+        heap.popRoots(to: d)
+        return a
     }
 
     func setAttrNode(_ el: HTMLNode, _ a: JSDOMAttr) throws(JSThrow) -> JSValue {
@@ -433,6 +443,7 @@ extension JSDOMBindings {
         let d = heap.rootDepth
         _ = heap.root(old)
         if el.hasAttribute(a.name) { detachAttr(el, a.name) }
+        if let ns = a.namespace { attrNamespaces[JSDOMAttrKey(node: ObjectIdentifier(el), name: a.name)] = ns }
         el.setAttributeValue(a.name, a.detachedValue)
         a.owner = el
         attrCache[JSDOMAttrKey(node: ObjectIdentifier(el), name: a.name)] = a
@@ -441,10 +452,8 @@ extension JSDOMBindings {
     }
 
     func Attr_namespaceURI(_ a: JSDOMAttr) -> String? {
-        if a.name.hasPrefix("xlink:") { return "http://www.w3.org/1999/xlink" }
-        if a.name.hasPrefix("xml:") { return "http://www.w3.org/XML/1998/namespace" }
-        if a.name == "xmlns" || a.name.hasPrefix("xmlns:") { return "http://www.w3.org/2000/xmlns/" }
-        return nil
+        if let o = a.owner { return attrNamespace(o, a.name) }
+        return a.namespace
     }
     func Attr_prefix(_ a: JSDOMAttr) -> String? {
         guard Attr_namespaceURI(a) != nil, let i = a.name.firstIndex(of: ":") else { return nil }

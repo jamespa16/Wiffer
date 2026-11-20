@@ -154,3 +154,14 @@ Text includes Slottable;
 interface Comment : CharacterData {
   [Throws] constructor(optional DOMString data = "");
 };
+
+// ProcessingInstruction and CDATASection: lib/html has no such node kinds,
+// so they are a comment / text node with a side flag (see jsdom_node.swift).
+[Kind=node]
+interface ProcessingInstruction : CharacterData {
+  readonly attribute DOMString target;
+};
+
+[Kind=node]
+interface CDATASection : Text {
+};
