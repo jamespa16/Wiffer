@@ -4358,6 +4358,38 @@ In the order real sites need them:
   that the time budget terminates, a heap bomb that
   hits the cap) and the desktop stays responsive throughout.
 
+**Status, part 1 (/bin/js, console, event loop): done.** Part 2 (host
+objects) follows.
+- `lib/js/jsconsole.swift`: `jsInstallConsole(realm, now:, sink:)` (log,
+  info, debug, warn, error, trace, dir, table, assert, count, time*,
+  group*), `jsInspect` (Node-style util.inspect: depth 2, 80-column
+  breaking, numeric arrays in columns, `<ref *1>`, getters not run) and
+  `jsFormat` (%s %d %i %f %j %o %O %c %%). Map/Set/Promise printing waits
+  for 9E.
+- `lib/js/jseventloop.swift`: `JSEventLoop` (tasks, setTimeout/Interval
+  with the 4 ms clamp after nesting level 5, queueMicrotask,
+  `performMicrotaskCheckpoint()` = the one place to wire the VM job queue
+  (`drainVMJobs`), `nextDeadline()`, `runDueTasks`, `runUntilIdle`),
+  and `realm.runCallback` (a top-level call with evaluate's termination
+  handling). Natives retain the console/loop; they hold the realm
+  unowned, so the embedder must keep the realm alive.
+- `user/js` (`js file.js`, `js -e code...`, `js` REPL in raw mode with
+  line editing and history, multi-line on "unexpected end of input",
+  Ctrl-C via polling stdin while a script runs). Budget: wall clock per
+  task via `interruptHandler` (default 5000 ms for files, none in the REPL;
+  `--budget ms`), heap cap `--heap MiB` (default 64). Exit 0/1/2. The Wiffer
+  shell has no quoting, so `-e` takes the rest of the line.
+- Numbers (QEMU TCG, host Apple silicon): `swiftc` of lib/js + program
+  about 35 s and clang/lld about 6 s (whole `./build.sh` about 4.5 min,
+  unchanged by it); /bin/js 1.41 MB; startup of `js -e 1` about 0.1 s;
+  fib(25) 610 ms (60 ms native); 200 JSON round trips 40 ms; sort of
+  20 000 numbers 610 ms; 5000 string concats + regexp 720 ms; 100 000 small
+  objects 2.6 s (GC-heavy). The build is acceptable; no split needed yet.
+- Harness: `js_checks` (`--js-only` for one session) runs rootfs/js/fib.js,
+  timers.js, loop.js (5 s budget; shell, pointer and WM answer meanwhile),
+  bomb.js (64 MiB cap) and the REPL (multi-line, errors, timers, Ctrl-C,
+  Ctrl-D). Host tests: 2870 pass (jsembed_tests.swift).
+
 ## Phase 9G: DOM bindings (`lib/js-dom`, plus lib/html and lib/layout work)
 
 Groundwork, no engine needed (can start beside 9A):
