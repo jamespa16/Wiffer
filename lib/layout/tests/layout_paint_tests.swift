@@ -167,6 +167,11 @@ func layoutHitTests(_ t: Tests) {
 
 func layoutAPITests(_ t: Tests) {
     t.section("api")
+    // A closed <details> shows only its summary (9J: lobste.rs "caches").
+    let dt = layoutPage(t, "<!DOCTYPE html><details id=c><summary id=s>caches</summary><a id=x href=x>x</a></details><details open><summary>o</summary><a id=y href=y>y</a></details>")
+    t.check(dt.rect(of: dt.document.getElementById("s")!) != nil, "closed details: summary shown")
+    t.check(dt.rect(of: dt.document.getElementById("x")!) == nil, "closed details: content hidden")
+    t.check(dt.rect(of: dt.document.getElementById("y")!) != nil, "open details: content shown")
     // :hover restyle.
     var e = layoutPage(t, "<!DOCTYPE html><style>a:hover { color: #ff0000 } a { color: #0000ff }</style><a href=x id=a>link</a> <span id=s>s</span>")
     let a = e.document.getElementById("a")!

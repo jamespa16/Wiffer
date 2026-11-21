@@ -10,6 +10,7 @@ body { margin: 8px }
 [hidden], area, base, basefont, datalist, head, link, meta, noembed, noframes, param, rp,
 script, style, template, title { display: none }
 dialog:not([open]) { display: none }
+details:not([open]) > :not(summary:first-of-type) { display: none }
 audio:not([controls]) { display: none }
 slot { display: contents }
 
