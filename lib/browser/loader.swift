@@ -33,8 +33,11 @@ struct BrowserChanges {
 final class BrowserImageStore {
     var bitmaps: [String: ImageBitmap] = [:]
     var bytes = 0
+    /// Absolute URL -> key (img.naturalWidth asks by absolute URL).
+    var keyForURL: [String: String] = [:]
     init() {}
     func size(_ key: String) -> (Int, Int)? { bitmaps[key].map { ($0.width, $0.height) } }
+    func sizeByURL(_ u: String) -> (Int, Int)? { size(keyForURL[u] ?? u) }
 }
 
 final class BrowserPage {
@@ -49,6 +52,10 @@ final class BrowserPage {
     let images = BrowserImageStore()
     let isError: Bool
     let sourceSize: Int
+    /// The page's scripts (nil: JavaScript off, or a built-in page).
+    var scripts: BrowserScripts? = nil
+    /// Identifies the document (same-document history entries).
+    var documentID = 0
 
     init(url: URLRecord, displayURL: String, document: HTMLNode, engine: LayoutEngine, isError: Bool, sourceSize: Int) {
         self.url = url
@@ -108,13 +115,15 @@ private final class BrowserSheetNode {
 }
 
 private struct BrowserJob {
-    enum Kind { case sheet, image }
+    enum Kind { case sheet, image, script, module }
     var kind: Kind
     var key: String
     var url: URLRecord
     var transport: Int
-    var slot = -1
+    /// Sheets: the <link>/<style> element whose slot the sheet fills.
+    var owner: HTMLNode? = nil
     var sheet: BrowserSheetNode? = nil
+    var script: BrowserScriptItem? = nil
     var received = 0
 }
 
@@ -142,6 +151,30 @@ final class BrowserLoader {
     /// Debug log lines (the app sends them to serial).
     var log: ((String) -> Void)? = nil
 
+    // Scripts (Phase 9H).
+    /// Run page scripts (false: Part 8 behavior, `browse --nojs`).
+    var scriptsEnabled = false
+    var scriptHooks = BrowserScriptHooks()
+    var scriptHeapBytes = 128 * 1024 * 1024
+    /// Wall-clock budget of one script task (ms).
+    var scriptBudgetMs = 5000
+    /// localStorage / sessionStorage by origin (in memory).
+    var localStorage: [String: [(String, String)]] = [:]
+    var sessionStorage: [String: [(String, String)]] = [:]
+    /// ms between rendering steps while the DOM is dirty.
+    var frameInterval = 16
+    private var nextFrameAt = 0
+    private var frameRequested = false
+    private var scriptsWaiting = false
+    private var lastRestyleLog = -1_000_000
+    private var styleSourcesSeen = 0
+    private var lastTitle = ""
+    private var nextDocumentID = 1
+    private var fetchJobs: [Int: (transport: Int, done: (JSWebNetResult) -> Void)] = [:]
+    private var pendingImageURLs: Set<String> = []
+    /// Script errors on the current page (the status line).
+    private(set) var scriptErrors = 0
+
     private var nextID = 1
     private var docID: Int? = nil
     private var docTransport = 0
@@ -150,7 +183,9 @@ final class BrowserLoader {
     private var docReceived = 0
     private var docTotal: Int? = nil
     private var jobs: [Int: BrowserJob] = [:]
-    private var slotRoots: [Int: BrowserSheetNode] = [:]
+    /// Sheet trees still loading, by the owning element.
+    private var slotRoots: [ObjectIdentifier: (owner: HTMLNode, root: BrowserSheetNode)] = [:]
+    private var requestedSheets: Set<ObjectIdentifier> = []
     private var sheetCount = 0
     private var requestedImages: Set<String> = []
     private var laidOut = false
@@ -249,6 +284,8 @@ final class BrowserLoader {
         docID = nil
         for (id, j) in jobs { transports[j.transport].cancel(id) }
         jobs = [:]
+        for (id, f) in fetchJobs { transports[f.transport].cancel(id) }
+        fetchJobs = [:]
         relayoutAt = nil
     }
 
@@ -260,6 +297,7 @@ final class BrowserLoader {
         guard let p = page else { return }
         p.engine.setViewport(width: w, height: h)
         if laidOut { relayout(now: clock()) }
+        if let s = p.scripts, !s.stopped { s.beginTask(); s.page.viewportChanged() }
     }
 
     // MARK: The event loop
@@ -276,12 +314,17 @@ final class BrowserLoader {
         if let r = relayoutAt { consider(jobs.isEmpty ? now : r) }
         if phase == .subresources && laidOut && jobs.isEmpty { return 0 }
         for t in transports { if let d = t.nextDeadline(now: now) { consider(d) } }
+        if let p = page, let s = p.scripts, !s.stopped {
+            if scriptsWaiting { return 0 }
+            if let d = s.page.loop.nextDeadline() { consider(now + Int(d.rounded(.up))) }
+            if laidOut && (frameRequested || p.engine.hasPendingWork) { consider(nextFrameAt) }
+        }
         return best
     }
 
     private var sheetsPending: Int {
         var n = 0
-        for (_, r) in slotRoots where !r.complete { n += 1 }
+        for (_, r) in slotRoots where !r.root.complete { n += 1 }
         return n
     }
 
@@ -294,7 +337,8 @@ final class BrowserLoader {
             t.events = []
             for e in evs { handle(e, transport: i, now: now) }
         }
-        guard page != nil, phase == .subresources else { return }
+        runScripts(now: now)
+        guard page != nil, phase == .subresources else { renderStepIfDue(now: now); return }
         if !laidOut {
             if sheetsPending == 0 || now >= cssDeadline {
                 if sheetsPending > 0 { log?("css timeout: laying out without \(sheetsPending) sheet(s)") }
@@ -303,11 +347,13 @@ final class BrowserLoader {
         } else if let r = relayoutAt, now >= r || jobs.isEmpty {
             relayout(now: now)
         }
-        if laidOut && jobs.isEmpty && relayoutAt == nil && phase == .subresources {
+        renderStepIfDue(now: now)
+        if laidOut && jobs.isEmpty && relayoutAt == nil && phase == .subresources && (page?.scripts.map { $0.allDone || $0.stopped } ?? true) {
             phase = .done
             timings.totalMs = clock() - timings.started
             changes.finished = true
             changes.status = true
+            page?.scripts?.fireLoad()
             if let p = page {
                 log?("done " + p.displayURL + " in \(timings.totalMs) ms (document \(timings.documentMs), parse \(timings.parseMs), "
                      + "first layout \(timings.firstLayoutMs), style \(timings.styleMs), layout \(timings.layoutMs); "
@@ -317,6 +363,25 @@ final class BrowserLoader {
     }
 
     private func handle(_ e: BrowserTransportEvent, transport: Int, now: Int) {
+        switch e {
+        case .done(let id, let resp) where fetchJobs[id] != nil:
+            let f = fetchJobs.removeValue(forKey: id)
+            var r = JSWebResponse(url: resp.url)
+            r.status = resp.status
+            r.statusText = resp.statusText
+            for h in resp.headers { r.headers.append((name: String(decoding: h.name, as: UTF8.self), value: String(decoding: h.value, as: UTF8.self))) }
+            r.body = resp.body
+            f?.done(.response(r))
+            return
+        case .failed(let id, let err) where fetchJobs[id] != nil:
+            let f = fetchJobs.removeValue(forKey: id)
+            f?.done(.failure(err.title + ": " + err.detail))
+            return
+        case .progress(let id, _, _) where fetchJobs[id] != nil:
+            return
+        default:
+            break
+        }
         switch e {
         case .progress(let id, let received, let total):
             if id == docID {
@@ -347,7 +412,14 @@ final class BrowserLoader {
                 resourcesDone += 1
                 changes.status = true
                 log?("subresource failed: " + j.url.href + ": " + err.title)
-                if j.kind == .sheet, let n = j.sheet { n.pending = false; sheetSettled(j.slot) }
+                switch j.kind {
+                case .sheet: if let n = j.sheet { n.pending = false; sheetSettled(j.owner) }
+                case .script: if let it = j.script { page?.scripts?.scriptArrived(it, nil) }
+                case .module: page?.scripts?.moduleArrived(j.key, nil)
+                case .image:
+                    pendingImageURLs.remove(j.url.href)
+                    page?.scripts?.imageEvent(j.key, ok: false)
+                }
             }
         }
     }
@@ -418,7 +490,8 @@ final class BrowserLoader {
             if det.encoding != .utf8 || det.bomLength > 0 {
                 bytes = charsetDecodeToUTF8(resp.body, det.encoding, from: min(det.bomLength, resp.body.count))
             }
-            install(bytes, url: resp.url, display: display, isError: resp.status >= 400, now: now)
+            install(bytes, url: resp.url, display: display, isError: resp.status >= 400, now: now,
+                    scripted: scriptsEnabled, encoding: det.encoding)
         } else if type.hasPrefix("image/") {
             let key = resp.url.href
             install(Array(browserImagePage(url: key, title: name).utf8), url: resp.url, display: display, isError: false, now: now,
@@ -433,44 +506,75 @@ final class BrowserLoader {
         }
     }
 
-    /// Parse `html` (UTF-8) and make it the current page.
+    /// Parse `html` (UTF-8) and make it the current page. `scripted`: run its
+    /// scripts (the parser then treats <noscript> as raw text).
     private func install(_ html: [UInt8], url: URLRecord, display: String, isError: Bool, now: Int,
-                         seed: (String, [UInt8])? = nil) {
+                         seed: (String, [UInt8])? = nil, scripted: Bool = false, encoding: TextEncoding = .utf8) {
         let t0 = clock()
-        let doc = htmlParse(html)
+        let doc = htmlParse(html, scripting: scripted)
         let engine = LayoutEngine(document: doc, text: text, viewportWidth: viewportWidth, viewportHeight: viewportHeight)
         engine.clock = clock
         let p = BrowserPage(url: url, displayURL: display, document: doc, engine: engine, isError: isError, sourceSize: html.count)
+        p.documentID = nextDocumentID
+        nextDocumentID += 1
         let base = p.base
         engine.resolveURL = { s in base.resolve(s)?.href ?? s }
         let store = p.images
         engine.imageSize = { key in store.size(key) }
         timings.parseMs = clock() - t0
+        if let old = page?.scripts { old.tearDown() }
+        page?.scripts = nil
         page = p
         phase = .subresources
         laidOut = false
         relayoutAt = nil
         slotRoots = [:]
+        requestedSheets = []
         sheetCount = 0
         requestedImages = []
+        pendingImageURLs = []
         resourcesStarted = 0
         resourcesDone = 0
         bytesReceived = html.count
         cssDeadline = now + cssTimeout
+        scriptErrors = 0
+        lastTitle = engine.title
+        lastRestyleLog = -1_000_000
+        frameRequested = false
+        scriptsWaiting = false
         changes.newPage = true
         changes.title = true
         changes.status = true
         log?("page " + display + " title '" + p.title + "'")
         if let (k, b) = seed { storeImage(p, key: k, b) }
         // Stylesheets.
-        for (i, src) in engine.styleSources.enumerated() {
-            guard let href = src.href, let u = base.resolve(href) else { continue }
-            let node = BrowserSheetNode(media: nil, depth: 0)
-            if startSheet(u, node: node, slot: i, now: now) { slotRoots[i] = node }
+        startNewSheets(now: now)
+        styleSourcesSeen = engine.styleSourcesVersion
+        // Scripts: fetched beside the stylesheets.
+        if scripted {
+            let sc = BrowserScripts(document: doc, url: url, base: base, loader: self, encoding: encoding, started: timings.started)
+            sc.budgetMs = scriptBudgetMs
+            p.scripts = sc
+            sc.collect()
         }
         // Images in the markup (background images come after the first layout).
         for img in doc.getElementsByTagName("img") {
             if let src = img.attribute("src") { requestImage(src, now: now) }
+        }
+    }
+
+    /// Fetch every <link rel=stylesheet> not requested yet (the markup's,
+    /// then ones scripts add).
+    private func startNewSheets(now: Int) {
+        guard let p = page else { return }
+        for src in p.engine.styleSources {
+            guard let href = src.href else { continue }
+            let id = ObjectIdentifier(src.node)
+            if requestedSheets.contains(id) { continue }
+            requestedSheets.insert(id)
+            guard let u = p.base.resolve(href) else { continue }
+            let node = BrowserSheetNode(media: nil, depth: 0)
+            if startSheet(u, node: node, owner: src.node, now: now) { slotRoots[id] = (owner: src.node, root: node) }
         }
     }
 
@@ -485,13 +589,13 @@ final class BrowserLoader {
         return true
     }
 
-    private func startSheet(_ u: URLRecord, node: BrowserSheetNode, slot: Int, now: Int) -> Bool {
+    private func startSheet(_ u: URLRecord, node: BrowserSheetNode, owner: HTMLNode, now: Int) -> Bool {
         guard sheetCount < maxSheets, let ti = transportIndex(String(decoding: u.scheme, as: UTF8.self)) else { return false }
         sheetCount += 1
         var req = BrowserRequest(url: u)
         req.kind = .stylesheet
         var job = BrowserJob(kind: .sheet, key: u.href, url: u, transport: ti)
-        job.slot = slot
+        job.owner = owner
         job.sheet = node
         return start(job, req, now: now)
     }
@@ -519,42 +623,59 @@ final class BrowserLoader {
                     for imp in sheet.imports {
                         guard let u = sheetURL.resolve(imp.url) else { continue }
                         let child = BrowserSheetNode(media: imp.media, depth: node.depth + 1)
-                        if startSheet(u, node: child, slot: j.slot, now: now) { node.children.append(child) }
+                        if let o = j.owner, startSheet(u, node: child, owner: o, now: now) { node.children.append(child) }
                     }
                 }
                 sheet.imports = []
                 node.sheet = sheet
             }
-            sheetSettled(j.slot)
+            sheetSettled(j.owner)
         case .image:
-            if resp.status < 400 { storeImage(p, key: j.key, resp.body) }
+            pendingImageURLs.remove(j.url.href)
+            var ok = false
+            if resp.status < 400 { ok = storeImage(p, key: j.key, resp.body) }
+            p.images.keyForURL[j.url.href] = j.key
             relayoutAt = relayoutAt ?? (now + relayoutDelay)
+            p.scripts?.imageEvent(j.key, ok: ok)
+        case .script:
+            if let it = j.script { p.scripts?.scriptArrived(it, resp) }
+        case .module:
+            p.scripts?.moduleArrived(j.key, resp)
         }
     }
 
-    private func storeImage(_ p: BrowserPage, key: String, _ body: [UInt8]) {
-        if p.images.bytes >= pageImageBudget { return }
+    @discardableResult
+    private func storeImage(_ p: BrowserPage, key: String, _ body: [UInt8]) -> Bool {
+        if p.images.bytes >= pageImageBudget { return false }
         let cap = min(imageMaxBytes, pageImageBudget - p.images.bytes)
         do throws(ImageError) {
             let bmp = try imageDecode(body, maxBytes: cap)
             p.images.bitmaps[key] = bmp
             p.images.bytes += bmp.width * bmp.height * 4
             p.engine.imagesChanged()
+            return true
         } catch {
             log?("image " + key + ": can't decode")
+            return false
         }
     }
 
-    private func sheetSettled(_ slot: Int) {
-        guard let p = page, let root = slotRoots[slot], root.complete else { return }
+    private func sheetSettled(_ owner: HTMLNode?) {
+        guard let o = owner, let p = page else { return }
+        let id = ObjectIdentifier(o)
+        guard let entry = slotRoots[id], entry.root.complete else { return }
         var ctx = CSSContext()
         ctx.viewportWidth = Double(viewportWidth)
         ctx.viewportHeight = Double(viewportHeight)
         var sheets: [CSSStylesheet] = []
-        root.flatten(ctx, into: &sheets)
-        p.engine.setStyleSheets(slot: slot, sheets)
-        slotRoots[slot] = nil
-        if laidOut { relayoutAt = relayoutAt ?? clock() }
+        entry.root.flatten(ctx, into: &sheets)
+        slotRoots[id] = nil
+        // The element's slot now (scripts may have added or removed sources).
+        if let slot = p.engine.styleSources.firstIndex(where: { $0.node === o }) {
+            p.engine.setStyleSheets(slot: slot, sheets)
+            if laidOut { relayoutAt = relayoutAt ?? clock() }
+        }
+        if o.kind == .element && o.name == "link" { p.scripts?.elementEvent("load", o) }
     }
 
     /// Restyle/relayout now and fetch any newly referenced images.
@@ -569,10 +690,127 @@ final class BrowserLoader {
         laidOut = true
         relayoutAt = nil
         changes.layout = true
-        if phase == .subresources {
+        if phase == .subresources || p.scripts != nil {
             for k in p.engine.imageURLs { requestImage(k, now: now) }
         }
     }
+
+    // MARK: Scripts (Phase 9H)
+
+    /// Run ready scripts and due JS tasks (timers, network callbacks).
+    private func runScripts(now: Int) {
+        guard let p = page, let s = p.scripts, !s.stopped else { return }
+        scriptsWaiting = false
+        let stylesReady = laidOut || sheetsPending == 0 || now >= cssDeadline
+        s.pump(stylesReady: stylesReady)
+        if s.stopped { return }
+        s.page.loop.runDueTasks()
+        // Tasks may have inserted scripts.
+        if scriptsWaiting { scriptsWaiting = false; s.pump(stylesReady: stylesReady) }
+        afterScripts(now: now)
+    }
+
+    /// After script work (tasks, input events): new stylesheets, title changes.
+    func afterScripts(now: Int) {
+        guard let p = page, p.scripts != nil else { return }
+        if p.engine.styleSourcesVersion != styleSourcesSeen {
+            styleSourcesSeen = p.engine.styleSourcesVersion
+            startNewSheets(now: now)
+        }
+        if p.engine.title != lastTitle {
+            lastTitle = p.engine.title
+            changes.title = true
+        }
+    }
+
+    /// One rendering step at most every `frameInterval` ms while dirty:
+    /// requestAnimationFrame callbacks, restyle/layout, repaint.
+    private func renderStepIfDue(now: Int) {
+        guard laidOut, let p = page, let s = p.scripts else { return }
+        if !(frameRequested || p.engine.hasPendingWork) || now < nextFrameAt { return }
+        nextFrameAt = now + frameInterval
+        if frameRequested && !s.stopped {
+            frameRequested = false
+            s.beginTask()
+            s.page.runAnimationFrames(now: Double(now))
+        }
+        if !p.engine.hasPendingWork { return }
+        let before = p.engine.stats.styledElements
+        let t0 = clock()
+        p.engine.update()
+        let ms = clock() - t0
+        let n = p.engine.stats.styledElements &- before
+        if now - lastRestyleLog >= 250 || ms >= 50 {
+            lastRestyleLog = now
+            log?("restyle \(n) nodes \(ms) ms")
+        }
+        changes.layout = true
+        afterScripts(now: now)
+        for k in p.engine.imageURLs { requestImage(k, now: now) }
+    }
+
+    /// requestAnimationFrame was called.
+    func scheduleFrame() { frameRequested = true }
+
+    /// A script was inserted (pump soon).
+    func scheduleScripts() { scriptsWaiting = true }
+
+    /// A script stopped: the status line changes.
+    func scriptsChanged() { changes.status = true }
+    func noteScriptError() { scriptErrors += 1; changes.status = true }
+
+    /// An <img> got a src (script-made images).
+    func imageAdded(_ src: String) { requestImage(src, now: clock()) }
+
+    func imagePending(_ url: String) -> Bool { pendingImageURLs.contains(url) }
+
+    func fetchScript(_ u: URLRecord, item: BrowserScriptItem) {
+        guard let ti = transportIndex(String(decoding: u.scheme, as: UTF8.self)) else {
+            page?.scripts?.scriptArrived(item, nil)
+            return
+        }
+        var req = BrowserRequest(url: u)
+        req.kind = .script
+        var job = BrowserJob(kind: .script, key: u.href, url: u, transport: ti)
+        job.script = item
+        _ = start(job, req, now: clock())
+    }
+
+    func fetchModule(_ u: URLRecord, key: String) {
+        guard let ti = transportIndex(String(decoding: u.scheme, as: UTF8.self)) else {
+            page?.scripts?.moduleArrived(key, nil)
+            return
+        }
+        var req = BrowserRequest(url: u)
+        req.kind = .script
+        _ = start(BrowserJob(kind: .module, key: key, url: u, transport: ti), req, now: clock())
+    }
+
+    /// fetch() / XMLHttpRequest: through the same transports (pool, cookies, cache).
+    func startFetch(_ r: JSWebRequest, _ done: @escaping (JSWebNetResult) -> Void) -> Int {
+        guard let ti = transportIndex(String(decoding: r.url.scheme, as: UTF8.self)) else {
+            done(.failure("unsupported scheme"))
+            return 0
+        }
+        var req = BrowserRequest(url: r.url)
+        req.kind = .fetch
+        req.method = r.method
+        req.body = r.body
+        req.credentials = r.credentials
+        req.reload = r.reload || r.preflight
+        for h in r.headers { req.headers.append(HTTPHeader(h.name, h.value)) }
+        let id = nextID
+        nextID += 1
+        fetchJobs[id] = (transport: ti, done: done)
+        transports[ti].start(id, req, now: clock())
+        return id
+    }
+
+    func cancelFetch(_ id: Int) {
+        guard let f = fetchJobs.removeValue(forKey: id) else { return }
+        transports[f.transport].cancel(id)
+    }
+
 
     /// Progress text for the status line.
     var statusText: String {
@@ -592,7 +830,10 @@ final class BrowserLoader {
             return "Loading \(resourcesDone)/\(resourcesStarted) resources, \(bytesReceived / 1024) KB"
         case .done:
             if lastError != nil { return "Error" }
-            return "Done in \(timings.totalMs) ms"
+            var t = "Done in \(timings.totalMs) ms"
+            if page?.scripts?.stopped == true { t += " | script stopped" }
+            if scriptErrors > 0 { t += " | \(scriptErrors) script error" + (scriptErrors == 1 ? "" : "s") }
+            return t
         }
     }
 }

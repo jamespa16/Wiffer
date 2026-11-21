@@ -31,6 +31,7 @@ func libTests(_ t: Tests) {
     loaderTests(t)
     httpTests(t)
     hostileTests(t)
+    browserScriptTests(t)
 }
 
 private func inputTests(_ t: Tests) {
