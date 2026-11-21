@@ -157,6 +157,7 @@ public final class JSDOMPage {
         bindings.loop.reportRejection = { text in h.console(.error, text); h.reportError(text, "") }
         bindings.console = jsInstallConsole(realm, now: { h.now() }) { level, text in h.console(level, text) }
         bindings.install()
+        _ = realm.evaluate(source: jsdomPreludeSource, name: "wiffer:prelude")  // jsdom_prelude.swift (9J)
         observerID = document.addMutationObserver { m in b.domMutated(m) }
     }
 

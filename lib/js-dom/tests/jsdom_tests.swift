@@ -11,6 +11,7 @@ func libTests(_ t: Tests) {
     run("core", jsdomCore2Tests)
     run("ce", jsdomCETests)
     run("ce", jsdomLitTests)
+    run("core", jsdomPreludeTests)
     run("jquery", jsdomJQueryTests)
     run("fuzz", jsdomFuzzTests)
     run("bench", jsdomBenchTests)
