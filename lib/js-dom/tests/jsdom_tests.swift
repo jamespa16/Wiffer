@@ -9,6 +9,8 @@ func libTests(_ t: Tests) {
     run("generator", jsdomGeneratorTests)
     run("core", jsdomCoreTests)
     run("core", jsdomCore2Tests)
+    run("ce", jsdomCETests)
+    run("ce", jsdomLitTests)
     run("jquery", jsdomJQueryTests)
     run("fuzz", jsdomFuzzTests)
     run("wpt", jsdomWPTTests)

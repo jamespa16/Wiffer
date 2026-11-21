@@ -2,15 +2,18 @@
 """Vendor the WPT subset lib/js-dom's host tests run (ROADMAP Phase 9G).
 
     git clone --depth 1 --filter=blob:none --sparse https://github.com/web-platform-tests/wpt.git /tmp/wpt
-    git -C /tmp/wpt sparse-checkout set dom/nodes dom/events dom/collections dom/lists resources html/dom
+    git -C /tmp/wpt sparse-checkout set dom/nodes dom/events dom/collections dom/lists resources html/dom html/resources \
+        custom-elements shadow-dom
+    git -C /tmp/wpt checkout <the commit in fixtures/wpt/COMMIT>
     python3 lib/js-dom/tools/vendor_wpt.py /tmp/wpt
 
 Copies testharness.js, the WPT license, the selected tests and the helper
 scripts they load into lib/js-dom/fixtures/wpt/, and writes tests.txt (one
 test path per line) and COMMIT. Selection: testharness.js tests in the
 directories below that run without rendering, frames, workers, XML or
-WebDriver (see SKIP_PATTERNS); the floor in tests/wpt-floor.txt is a total
-subtest pass count over all of them.
+WebDriver (see SKIP_PATTERNS); the floors in tests/wpt-floor.txt are subtest
+pass counts per group (dom: the 9G directories; custom-elements and
+shadow-dom: Phase 9I's).
 """
 import os
 import re
@@ -18,7 +21,20 @@ import shutil
 import subprocess
 import sys
 
-DIRS = ["dom/nodes", "dom/events", "dom/collections", "dom/lists", "html/dom/documents/dom-tree-accessors"]
+DIRS = ["dom/nodes", "dom/events", "dom/collections", "dom/lists", "html/dom/documents/dom-tree-accessors",
+        # Phase 9I.
+        "custom-elements", "custom-elements/reactions", "custom-elements/upgrading", "custom-elements/parser",
+        "custom-elements/state", "custom-elements/htmlconstructor",
+        "shadow-dom", "shadow-dom/declarative", "shadow-dom/focus",
+        "shadow-dom/untriaged/events/event-dispatch", "shadow-dom/untriaged/events/event-retargeting",
+        "shadow-dom/untriaged/events/retargeting-relatedtarget", "shadow-dom/untriaged/events/retargeting-focus-events",
+        "shadow-dom/untriaged/shadow-trees", "shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation",
+        "shadow-dom/untriaged/shadow-trees/nested-shadow-trees", "shadow-dom/untriaged/shadow-trees/reprojection",
+        "shadow-dom/untriaged/elements-and-dom-objects/extensions-to-element-interface/attributes",
+        "shadow-dom/untriaged/elements-and-dom-objects/extensions-to-element-interface/methods",
+        "shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object",
+        "shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes",
+        "shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods"]
 TOP_FILES = ["dom/common.js", "dom/constants.js"]
 
 SKIP_PATTERNS = [
@@ -29,6 +45,9 @@ SKIP_PATTERNS = [
     r"focus-event-document-move", r"pointer-event-document-move", r"Document-constructor",
     r"Node-cloneNode-document", r"Node-cloneNode-external", r"Document-createEvent-touchevent",
     r"webkit-", r"scrolling", r"click-on-absolute", r"keypress", r"replace-event-listener",
+    # 9I: printing, XML parser, layout-dependent geometry, leak tests.
+    r"print", r"xml-parser", r"elementFromPoint", r"caretPosition", r"offsetParent", r"offsetTop",
+    r"HighlightRegistry", r"leak",
 ]
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
