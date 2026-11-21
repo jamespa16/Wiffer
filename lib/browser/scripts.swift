@@ -183,6 +183,11 @@ final class BrowserScripts {
     var hungLogged = false
     var maxScripts = 2000
     var maxModules = 500
+    /// Scripts may grow the document to this many nodes (9J: a million
+    /// script-made nodes, each with a JS wrapper and later layout boxes,
+    /// would exhaust a 1 GiB machine long before the JS heap cap). Past it
+    /// the running script is terminated and scripts are stopped for the page.
+    var maxDocumentNodes = 150_000
     /// ms since navigation start, for the event lines.
     let started: Int
 
@@ -302,6 +307,7 @@ final class BrowserScripts {
         switch why {
         case .heapLimit: log("js error " + (currentName.isEmpty ? url.href : currentName) + ":0: out of memory (heap limit)")
         case .interrupted: log("js stopped " + url.href)
+        case .regexSteps: log("js error " + (currentName.isEmpty ? url.href : currentName) + ":0: terminated (regular expression step limit)")
         default: log("js error " + (currentName.isEmpty ? url.href : currentName) + ":0: terminated")
         }
     }
@@ -316,6 +322,12 @@ final class BrowserScripts {
     /// The VM's interrupt check: true terminates the running script.
     func interrupt() -> Bool {
         if stopped { return true }
+        if page.document.arenaSlotCount > maxDocumentNodes {
+            log("js error " + (currentName.isEmpty ? url.href : currentName) + ":0: terminated (more than "
+                + String(maxDocumentNodes) + " document nodes)")
+            stop()
+            return true
+        }
         let now = loader.clock()
         if now < deadline { return false }
         if !hungLogged {
