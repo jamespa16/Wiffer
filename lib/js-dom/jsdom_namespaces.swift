@@ -131,8 +131,9 @@ extension JSDOMBindings {
         detachAttr(n, name)
         let old = n.attributes[i].value
         n.attributes.remove(at: i)
-        attrNamespaces[JSDOMAttrKey(node: ObjectIdentifier(n), name: name)] = nil
+        // Notify first: the custom element layer reads the namespace.
         if n.observed { n.notify(HTMLMutation(kind: .attributes, target: n, attributeName: name, oldValue: old)) }
+        attrNamespaces[JSDOMAttrKey(node: ObjectIdentifier(n), name: name)] = nil
     }
 
     // MARK: Namespace lookup

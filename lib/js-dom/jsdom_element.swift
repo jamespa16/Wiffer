@@ -45,7 +45,8 @@ struct JSDOMSelElement: CSSElement {
     }
     var cssIsRoot: Bool { node.parent?.kind == .document }
     var cssIsScope: Bool { scope == nil ? cssIsRoot : node === scope }
-    var cssIsFocused: Bool { b.focused === node }
+    var cssIsFocused: Bool { b.focused === node || b.hostHasDelegatedFocus(node) }
+    var cssIsFocusWithin: Bool { b.focusWithin(node) }
     var cssIsLink: Bool { (node.name == "a" || node.name == "area") && node.namespace == .html && node.attribute("href") != nil }
     var cssIsChecked: Bool {
         if node.isHTML("input") { return b.inputChecked(node) }
@@ -203,12 +204,19 @@ extension JSDOMBindings {
         do throws(HTMLDOMError) {
             return try n.attachShadow(mode: mode, delegatesFocus: d.delegatesFocus,
                                       slotAssignment: d.slotAssignment == "manual" ? .manual : .named,
-                                      clonable: d.clonable, serializable: d.serializable)
+                                      clonable: d.clonable, serializable: d.serializable,
+                                      customElementShadowDisabled: ceShadowDisabled(n))
         } catch {
             throw throwDOM(error)
         }
     }
     func Element_shadowRoot(_ n: HTMLNode) -> HTMLNode? { n.shadowRoot }
+
+    func ceShadowDisabled(_ n: HTMLNode) -> Bool {
+        if ce.definitions.isEmpty { return false }
+        let def = ce.elements[ObjectIdentifier(n)]?.definition ?? ceLookup(n.nodeDocument, n)
+        return def?.disableShadow ?? false
+    }
 
     // MARK: Collections
 
@@ -476,6 +484,34 @@ extension JSDOMBindings {
         }
         if !isFocusable(target) { return }
         setFocus(target)
+    }
+
+    /// `:focus` on a shadow host whose shadow tree (or a nested one) holds
+    /// the focused element.
+    func hostHasDelegatedFocus(_ n: HTMLNode) -> Bool {
+        guard let f = focused, let s = n.attachedShadowRoot, f !== n else { return false }
+        var cur: HTMLNode? = f.composedParent
+        var k = 0
+        while let c = cur, k < 100_000 {
+            if c === s { return true }
+            cur = c.composedParent
+            k += 1
+        }
+        return false
+    }
+
+    /// `:focus-within`: the focused element is `n` or a shadow-including
+    /// descendant of it (a focused element in a shadow tree also matches
+    /// its hosts).
+    func focusWithin(_ n: HTMLNode) -> Bool {
+        var cur = focused
+        var k = 0
+        while let c = cur, k < 100_000 {
+            if c === n { return true }
+            cur = c.assignedSlot ?? c.composedParent
+            k += 1
+        }
+        return false
     }
 
     func HTMLOrSVGElement_blur(_ n: HTMLNode) {

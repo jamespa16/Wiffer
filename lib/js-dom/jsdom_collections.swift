@@ -493,14 +493,16 @@ extension JSDOMBindings {
             guard let attr = jsdomDataAttributeName(name) else {
                 throw self.throwDOM("SyntaxError", "'" + name + "' is not a valid property name.")
             }
-            let s = try self.toStr(v)
-            if !htmlIsValidAttributeName(attr) { throw self.throwDOM("InvalidCharacterError", "Invalid data attribute name.") }
-            m.node.setAttributeValue(attr, s)
+            try self.ceRun { () throws(JSThrow) in
+                let s = try self.toStr(v)
+                if !htmlIsValidAttributeName(attr) { throw self.throwDOM("InvalidCharacterError", "Invalid data attribute name.") }
+                m.node.setAttributeValue(attr, s)
+            }
             return true
         }
-        e.namedDelete = { (realm: JSRealm, m: JSDOMStringMap, name: String) throws(JSThrow) -> Bool in
+        e.namedDelete = { [unowned(unsafe) self] (realm: JSRealm, m: JSDOMStringMap, name: String) throws(JSThrow) -> Bool in
             guard let attr = jsdomDataAttributeName(name), m.node.hasAttribute(attr) else { return false }
-            m.node.removeAttribute(attr)
+            try self.ceRun { () throws(JSThrow) in m.node.removeAttribute(attr) }
             return true
         }
         return e

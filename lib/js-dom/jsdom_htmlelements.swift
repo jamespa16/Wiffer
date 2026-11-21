@@ -763,7 +763,12 @@ extension JSDOMBindings {
 
     // MARK: template, slot, script, style, iframe, canvas, media, dialog
 
-    func HTMLTemplateElement_content(_ n: HTMLNode) -> HTMLNode? { n.templateContents }
+    func HTMLTemplateElement_content(_ n: HTMLNode) -> HTMLNode? {
+        let c = n.templateContents
+        // Custom elements moved into the inert document still get reactions.
+        if !ce.definitions.isEmpty, let d = c?.nodeDocument { hookDocument(d) }
+        return c
+    }
 
     func slotFlatten(_ options: JSValue) -> Bool {
         if options.isObject, case .value(let v) = heap.getProperty(options, heap.key("flatten")) { return heap.toBoolean(v) }
@@ -771,10 +776,35 @@ extension JSDOMBindings {
     }
     func HTMLSlotElement_assignedNodes(_ n: HTMLNode, _ o: JSValue) -> JSValue { nodeArray(n.assignedNodes(flatten: slotFlatten(o))) }
     func HTMLSlotElement_assignedElements(_ n: HTMLNode, _ o: JSValue) -> JSValue { nodeArray(n.assignedElements(flatten: slotFlatten(o))) }
-    func HTMLSlotElement_assign(_ n: HTMLNode, _ items: [JSValue]) {
+    func HTMLSlotElement_assign(_ n: HTMLNode, _ items: [JSValue]) throws(JSThrow) {
         var nodes: [HTMLNode] = []
-        for v in items { if let x = nodeClass.unwrap(v), x.isSlottable { nodes.append(x) } }
+        for v in items {
+            guard let x = nodeClass.unwrap(v), x.kind == .element || x.kind == .text else {
+                throw realm.throwTypeError("Failed to execute 'assign' on 'HTMLSlotElement': parameter is not of type '(Element or Text)'.")
+            }
+            nodes.append(x)
+        }
         n.assign(nodes)
+    }
+
+    /// input.list: the datalist with that id in the input's tree.
+    func HTMLInputElement_list(_ n: HTMLNode) -> HTMLNode? {
+        guard let id = n.attribute("list"), !id.isEmpty else { return nil }
+        let el = descendantsMatching(n.rootNode) { $0.attribute("id") == id }.first
+        return el.flatMap { $0.isHTML("datalist") ? $0 : nil }
+    }
+
+    // Enumerated reflections (limited to known values).
+    func HTMLTemplateElement_shadowRootMode(_ n: HTMLNode) -> String {
+        let v = htmlLowerASCII(n.attribute("shadowrootmode") ?? "")
+        return v == "open" || v == "closed" ? v : ""
+    }
+    func HTMLTemplateElement_set_shadowRootMode(_ n: HTMLNode, _ v: String) { n.setAttributeValue("shadowrootmode", v) }
+    func HTMLTemplateElement_shadowRootSlotAssignment(_ n: HTMLNode) -> String {
+        htmlLowerASCII(n.attribute("shadowrootslotassignment") ?? "") == "manual" ? "manual" : "named"
+    }
+    func HTMLTemplateElement_set_shadowRootSlotAssignment(_ n: HTMLNode, _ v: String) {
+        n.setAttributeValue("shadowrootslotassignment", v)
     }
 
     func HTMLScriptElement_text(_ n: HTMLNode) -> String {

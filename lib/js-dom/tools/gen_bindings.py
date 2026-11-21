@@ -1082,6 +1082,10 @@ class Gen:
             lines.append("THIS_GUARD")
         lines.append("            let rd = b.heap.rootDepth")
         lines.append("            defer { b.heap.popRoots(to: rd) }")
+        ce = "CEReactions" in ext
+        if ce:
+            lines.append("            return try b.ceReactions { () throws(JSThrow) -> JSValue in")
+        body_start = len(lines)
         ctx = 'b.ctx("%s", "%s")' % (n, name)
         if c == "handler":
             evname = name[2:] if name.startswith("on") else name
@@ -1109,6 +1113,9 @@ class Gen:
                 call = "try " + call
             lines.append("            " + call)
         lines.append("            return .undefined")
+        if ce:
+            lines[body_start:] = ["    " + l for l in lines[body_start:]]
+            lines.append("            }")
         lines.append("        }")
         if un:
             g = "            " + self.this_guard(un, ill, lines[2:])
@@ -1135,14 +1142,23 @@ class Gen:
             w('            guard let this = %s else { throw b.illegal("%s", "%s") }' % (self.unwrap(n), n, name))
         w("            let rd = b.heap.rootDepth")
         w("            defer { b.heap.popRoots(to: rd) }")
-        exprs = self.gen_args(n, name, m["args"], "            ")
+        ce = "CEReactions" in m["ext"]
+        ind = "            "
+        if ce:
+            # [CEReactions]: push an element queue, run the member, pop it
+            # (invoking the queued reactions) with the result rooted.
+            w("            return try b.ceReactions { () throws(JSThrow) -> JSValue in")
+            ind = "                "
+        exprs = self.gen_args(n, name, m["args"], ind)
         impl = self.impl_name(n, m, "static_" if m["static"] else "")
         self.sig(impl, None if m["static"] else n, [self.arg_sig(a) for a in m["args"]], self.ret_type(m["ret"]), "Throws" in m["ext"])
         allargs = ([] if m["static"] else ["this"]) + exprs
         call = "b.%s(%s)" % (impl, ", ".join(allargs))
         if "Throws" in m["ext"]:
             call = "try " + call
-        w("            " + self.ret(m["ret"], call))
+        w(ind + self.ret(m["ret"], call).replace("\n            ", "\n" + ind))
+        if ce:
+            w("            }")
         w("        }")
         if m["stringifier"]:
             w('        defineStringifierFrom(p, "%s", method: true)' % name)

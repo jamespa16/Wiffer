@@ -1,6 +1,8 @@
 // HTML: HTMLElement and the mixins it shares with SVGElement.
 [Kind=node]
 interface HTMLElement : Element {
+  // [HTMLConstructor]: `class extends HTMLElement` (jsdom_customelements.swift).
+  [Throws] constructor();
   [CEReactions, Reflect] attribute DOMString title;
   [CEReactions, Reflect] attribute DOMString lang;
   [CEReactions, Reflect] attribute boolean translate;
@@ -26,6 +28,9 @@ interface HTMLElement : Element {
   readonly attribute long offsetLeft;
   readonly attribute long offsetWidth;
   readonly attribute long offsetHeight;
+
+  // Custom elements (ElementInternals is a small subset).
+  [Throws] any attachInternals();
 };
 HTMLElement includes GlobalEventHandlers;
 HTMLElement includes ElementCSSInlineStyle;

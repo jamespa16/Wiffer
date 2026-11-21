@@ -89,6 +89,9 @@ interface mixin NonElementParentNode {
 
 interface mixin DocumentOrShadowRoot {
   readonly attribute Element? activeElement;
+  // Constructable stylesheets (a plain array here, read back when it
+  // changes; see jsdom_stylesheets.swift).
+  [Throws] attribute any adoptedStyleSheets;
 };
 
 interface mixin Slottable {

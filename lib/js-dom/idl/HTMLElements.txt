@@ -71,6 +71,7 @@ interface HTMLInputElement : HTMLElement {
   attribute boolean checked;
   [CEReactions, Reflect] attribute DOMString dirName;
   [CEReactions, Reflect] attribute boolean disabled;
+  readonly attribute HTMLElement? list;
   readonly attribute HTMLFormElement? form;
   readonly attribute any files;
   [CEReactions, Reflect=formaction, URL] attribute USVString formAction;
@@ -244,7 +245,11 @@ interface HTMLImageElement : HTMLElement {
 [Tags=template]
 interface HTMLTemplateElement : HTMLElement {
   readonly attribute DocumentFragment content;
-  [CEReactions, Reflect=shadowrootmode] attribute DOMString shadowRootMode;
+  [CEReactions] attribute DOMString shadowRootMode;
+  [CEReactions, Reflect=shadowrootdelegatesfocus] attribute boolean shadowRootDelegatesFocus;
+  [CEReactions, Reflect=shadowrootclonable] attribute boolean shadowRootClonable;
+  [CEReactions, Reflect=shadowrootserializable] attribute boolean shadowRootSerializable;
+  [CEReactions] attribute DOMString shadowRootSlotAssignment;
 };
 
 [Tags=slot]
@@ -252,7 +257,7 @@ interface HTMLSlotElement : HTMLElement {
   [CEReactions, Reflect] attribute DOMString name;
   any assignedNodes(optional any options);
   any assignedElements(optional any options);
-  undefined assign((Element or Text)... nodes);
+  [Throws] undefined assign((Element or Text)... nodes);
 };
 
 [Tags=script]
