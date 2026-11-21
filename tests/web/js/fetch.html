@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html><head><meta charset=utf-8><title>JS fetch start</title>
+<style>body { margin: 0 } #out { width: 200px; height: 80px; background: #C0C0C0 } #out.ok { background: #20C040 }</style>
+</head><body>
+<div id=out>waiting</div>
+<script>
+fetch('/json?x=42&y=wiffer', { headers: { 'Accept': 'application/json' } })
+  .then(function (r) { return r.json(); })
+  .then(function (j) {
+    var out = document.getElementById('out');
+    out.textContent = j.method + ' ' + j.query.x + ' ' + j.query.y;
+    out.className = 'ok';
+    document.title = 'JS fetch ' + j.method + ' x=' + j.query.x + ' y=' + j.query.y;
+  })
+  .catch(function (e) { document.title = 'JS fetch failed ' + e; });
+</script>
+</body></html>

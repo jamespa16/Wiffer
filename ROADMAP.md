@@ -4897,6 +4897,99 @@ Results:
   event DOMContentLoaded|load N ms`, `browse: js budget exceeded <url>`,
   `browse: restyle N nodes N ms`.
 
+**Status: done (first cut).** Results:
+- **lib/html:** a scripting flag (`htmlParse(_, scripting: true)`,
+  `htmlParseFragment(..., scripting:)`): `<noscript>` parses as raw text
+  in head and body. The 8 html5lib `#script-on` cases now run: 1703/1709,
+  floor raised. `HTMLNode.scriptAlreadyStarted` (the fragment parser sets
+  it, so innerHTML scripts never run; lib/js-dom's document.write clears
+  it so written scripts do).
+- **lib/js-web** (new, DEPS js js-dom url text; host-tested with a fake
+  network, 67 checks, also under `WIFFER_JSWEB_GCSTRESS=1`): URL (setters
+  rebuild and reparse; canParse/parse), URLSearchParams (live with
+  url.searchParams), TextEncoder (encode/encodeInto), TextDecoder (UTF-8,
+  UTF-16LE/BE, windows-1252 labels; fatal, ignoreBOM, stream), Blob,
+  File, FormData (incl. `new FormData(form, submitter)` from the page's
+  control state, multipart bodies), Headers (guards, forbidden headers),
+  Request, Response (text/json/arrayBuffer/bytes/blob/formData,
+  clone, error/redirect/json statics; `body` streams read as null),
+  fetch() with AbortSignal and data: URLs, XMLHttpRequest (async only;
+  `open(..., false)` throws InvalidAccessError; events, responseType
+  text/json/arraybuffer/blob/document, timeout, abort, upload stub). The
+  CORS layer is shared: same-origin (file: pages fetch file: URLs), modes
+  same-origin / no-cors (opaque) / cors with Origin, no cookies unless
+  `credentials: 'include'` (then exact ACAO + ACAC), a preflight for
+  non-simple methods/headers (ACAM, ACAH), exposed headers filtered, and
+  a Chrome-style console message on a block. The network is two closures
+  (`JSWebNetwork.start/cancel`). lib/js-dom change (small):
+  `JSDOMEventTargetObject.protoOverride/hostData` so XHRs are
+  EventTargets.
+- **lib/browser:** `BrowserScripts` (scripts.swift) per scripted page,
+  created by the loader when `scriptsEnabled`: collects the parser's
+  scripts (classic by JavaScript MIME type / `language`, modules, nomodule
+  skipped, other types ignored), fetches external ones and the module
+  graph (realm.moduleRequests, then the realm's synchronous loader from the
+  fetched sources) beside the stylesheets; runs the ordered list after
+  the parse once the document's stylesheets are in (or the CSS timeout),
+  async scripts as they arrive; then DOMContentLoaded; `load` when the
+  loader's subresources and all scripts are done (before the `done` line).
+  Script-inserted scripts (createElement/appendChild, src set later,
+  document.write) via a mutation observer, run as the next task (not
+  synchronously inside the DOM call). Charset: BOM, Content-Type, charset
+  attribute, document encoding. Script/link/img `load`/`error` events,
+  img.naturalWidth / complete via the image store. Rendering step: rAF
+  callbacks then `engine.update()` at most every 16 ms while dirty
+  (whole repaint; damage rectangles not done), stylesheets and images
+  that scripts add are fetched, title changes reported. fetch/XHR go
+  through the loader's transports (`BrowserRequest.headers/credentials`,
+  kind `.fetch`; cookies only with credentials; preflights uncached), so
+  they share the pool, cookies and cache. localStorage/sessionStorage per
+  origin in memory. Budget: 5 s per task (`beginTask` for every task,
+  script, event dispatch and rAF), then `hooks.hung` (Stop terminates
+  and switches the page's scripts off; Wait extends). lib/layout:
+  `stats.styledElements` for the restyle line. History entries carry
+  `documentID`/`stateID`.
+- **/bin/browse:** `--nojs` and a JS/no JS toolbar button (reloads);
+  input dispatches pointer/mouse/click (on release), mouseover/out/
+  enter/leave/move, wheel (cancelable), keydown/keypress/keyup, input/
+  change, focus; link following, checkboxes, submit/reset buttons, labels
+  are the page's activation (the browser's own versions are used only
+  with scripts off); Enter in a field clicks the default button
+  (implicit submission); the page owns focus and control values (mirrored
+  into the engine on `controlChanged`). Navigation requested by scripts
+  is deferred until the script returns. pushState/replaceState/fragment
+  changes become history entries; Alt-Left/Right between entries of one
+  document call popState. "This page's script is not responding" bar
+  (drawn from the interrupt check, which polls the window: Stop script /
+  Escape, Wait / Enter). Console: an in-window panel (Ctrl-Shift-J) with
+  the page's console output and an input line (`evaluateForConsole`).
+  Status line counts script errors. Serial lines as listed above, plus
+  `script stopped`, `console open|closed`, `console eval <text>`,
+  `popstate <url>`, `alert '<text>'`.
+- **Timings** (QEMU TCG on Apple silicon, loaded host): jQuery 3.7.1
+  (285 KB) compile + run 300-380 ms (`browse: script .../jquery.js`); a
+  class toggle on the small toggle page restyles 6 nodes in 0-10 ms (the
+  clock is 10 ms granular); DOMContentLoaded of a small scripted page
+  ~250 ms after navigation; /bin/browse is 5.8 MB (lib/js + lib/js-dom +
+  lib/js-web linked in). Web harness: 120 checks pass (about 25 new);
+  `./run.sh --test` and `--test --uefi`: 510 PASS each, no FAIL.
+- **libwiffer:** `free` (the Embedded runtime frees some coroutine frames
+  with it, reached by lib/js-dom's 9I code once linked into a program).
+- **Tests:** `./run.sh --hosttest js-web` (67) and `browser` (116, incl.
+  the script tests: order, async, modules, noscript, events, errors with
+  url:line, inserted scripts, fetch through the loader, CORS, budget
+  Stop/Wait, location, --nojs). Harness (`web_js_checks` in the web
+  session): tests/web/js/ title, toggle (click + pixels + console eval),
+  fetch (/json), cors (`-r o.t:10.0.2.2`: blocked, allowed with ACAO,
+  XHR error), timers, loop (budget, Escape stops, browser alive), jquery.
+- **Gaps:** dynamic `import()` of a module that was not pre-fetched
+  fails; no import maps; inline script-inserted scripts run one task
+  late; alert/confirm/prompt only log (confirm is false, prompt null);
+  the console is a panel, not a window; whole-view repaint per rendering
+  step; no ReadableStream bodies; events read while the hang bar is up
+  (other than its buttons) are dropped; XHR wrappers with listeners stay
+  alive for the page's lifetime.
+
 ## Phase 9I: custom elements and Shadow DOM (`lib/js-dom`, lib/html, lib/css, lib/layout)
 
 Why a phase of its own: GitHub, YouTube, Salesforce, Microsoft's and

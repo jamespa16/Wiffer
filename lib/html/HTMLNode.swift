@@ -80,6 +80,10 @@ public final class HTMLNode {
     /// Document only: true if a parse limit (input bytes, node count) cut the
     /// parse short. Fragments from htmlParseFragment too.
     public internal(set) var truncated: Bool
+    /// `<script>`: the HTML "already started" flag. The fragment parser sets
+    /// it (innerHTML scripts never run); a browser sets it on the scripts it
+    /// runs (Phase 9H).
+    public var scriptAlreadyStarted = false
     /// The document this node belongs to (itself for a document).
     unowned(unsafe) var nodeDocument: HTMLNode?
     /// Slot in nodeDocument's arena.

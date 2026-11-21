@@ -312,6 +312,7 @@ extension HTMLTreeBuilder {
         case .html: bodyStart(t)
         case .base, .basefont, .bgsound, .link, .meta: insertVoid(t)
         case .title: genericRaw(t, rcdata: true)
+        case .noscript where scripting: genericRaw(t, rcdata: false)
         case .noscript:
             insertHTML(t)
             mode = .inHeadNoscript
@@ -611,6 +612,8 @@ extension HTMLTreeBuilder {
             framesetOK = false
             genericRaw(t, rcdata: false)
         case .noembed:
+            genericRaw(t, rcdata: false)
+        case .noscript where scripting:
             genericRaw(t, rcdata: false)
         case .select:
             reconstructFormatting()

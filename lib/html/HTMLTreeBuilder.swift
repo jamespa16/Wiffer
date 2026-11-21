@@ -76,6 +76,8 @@ final class HTMLTreeBuilder {
     /// The document's "allow declarative shadow roots" (htmlParse: true;
     /// fragment parsing only for the setHTMLUnsafe-style entry points).
     var allowDeclarativeShadowRoots = false
+    /// The scripting flag (Phase 9H): <noscript> parses as raw text.
+    var scripting = false
     /// Shadow roots attached by declarative shadow DOM (slots are assigned
     /// once the parse is done).
     var shadowRoots: [HTMLNode] = []

@@ -147,6 +147,17 @@ public func wifferTruncf(_ x: Float) -> Float { Float(wifferTrunc(Double(x))) }
 @_cdecl("fmodf")
 public func wifferFmodf(_ x: Float, _ y: Float) -> Float { Float(wifferFmod(Double(x), Double(y))) }
 
+// MARK: free (Phase 9H)
+
+/// The Embedded runtime frees some coroutine frames (yield-once accessors,
+/// e.g. Dictionary's _modify in lib/js-dom) with libc's free; the memory came
+/// from _swift_allocate, so hand it back to the same heap.
+@_cdecl("free")
+public func wifferFree(_ p: UnsafeMutableRawPointer?) {
+    guard let p else { return }
+    swiftDeallocate(p, 0, 0, 0)
+}
+
 // MARK: Process entry and exit (start.S)
 
 var wifferArgc = 0

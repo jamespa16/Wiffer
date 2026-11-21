@@ -159,18 +159,21 @@ final class BrowserHTTPTransport: BrowserTransport {
         c.job = j.id
         c.sawBytes = false
         c.parser = HTTPResponseParser(requestMethod: j.method)
-        var headers: [HTTPHeader] = []
-        switch j.req.kind {
-        case .image: headers.append(HTTPHeader("Accept", "image/png,image/jpeg,image/gif,image/*;q=0.8,*/*;q=0.5"))
-        case .stylesheet: headers.append(HTTPHeader("Accept", "text/css,*/*;q=0.1"))
-        case .document: break
+        var headers: [HTTPHeader] = j.req.headers
+        if !headers.httpHas("Accept") {
+            switch j.req.kind {
+            case .image: headers.append(HTTPHeader("Accept", "image/png,image/jpeg,image/gif,image/*;q=0.8,*/*;q=0.5"))
+            case .stylesheet: headers.append(HTTPHeader("Accept", "text/css,*/*;q=0.1"))
+            case .script, .fetch: headers.append(HTTPHeader("Accept", "*/*"))
+            case .document: break
+            }
         }
         j.conditional = false
         if j.method == Array("GET".utf8) && !j.req.reload {
             let cond = cache.conditionalHeaders(for: j.url)
             if !cond.isEmpty { headers += cond; j.conditional = true }
         }
-        let cookie = cookies.cookieHeader(for: j.url, now: unixTime())
+        let cookie = j.req.credentials ? cookies.cookieHeader(for: j.url, now: unixTime()) : nil
         let ct: [UInt8]? = j.body.isEmpty ? nil : j.req.contentType.map { Array($0.utf8) }
         c.stream.send(httpBuildRequest(method: j.method, url: j.url, headers: headers, body: j.body, contentType: ct,
                                        cookie: cookie, options: options))
@@ -253,7 +256,7 @@ final class BrowserHTTPTransport: BrowserTransport {
             case .head(let h):
                 if h.status >= 100 && h.status < 200 { continue }
                 j.head = h
-                for sc in h.setCookies { _ = cookies.setCookie(sc, from: j.url, now: unixTime()) }
+                if j.req.credentials { for sc in h.setCookies { _ = cookies.setCookie(sc, from: j.url, now: unixTime()) } }
                 var total: Int? = nil
                 if let cl = h.header("Content-Length") { total = httpParseDecimal(httpTrim(cl)) }
                 events.append(.progress(id: j.id, received: 0, total: total))
@@ -283,6 +286,11 @@ final class BrowserHTTPTransport: BrowserTransport {
         guard let h = j.head else { fail(j, nil, .badResponse("no response")); return }
         if h.status == 304 && j.conditional, let e = cache.revalidated(j.url, newHeaders: h.headers, now: unixTime()) {
             deliver(j, status: e.status, headers: e.headers, body: e.body)
+            return
+        }
+        // A CORS preflight is answered as is (no redirects).
+        if j.method == Array("OPTIONS".utf8) && j.req.kind == .fetch {
+            deliver(j, status: h.status, headers: h.headers, body: j.raw, reason: h.reason)
             return
         }
         switch httpRedirectDecision(status: h.status, method: j.method, location: h.location, current: j.url,
@@ -319,14 +327,15 @@ final class BrowserHTTPTransport: BrowserTransport {
         }
         var stored = h
         stored.headers.removeAll { httpEqualsIgnoreCase($0.name, "Content-Encoding") }
-        _ = cache.store(url: j.url, method: j.method, head: stored, body: body, now: unixTime())
-        deliver(j, status: h.status, headers: stored.headers, body: body)
+        if j.req.credentials { _ = cache.store(url: j.url, method: j.method, head: stored, body: body, now: unixTime()) }
+        deliver(j, status: h.status, headers: stored.headers, body: body, reason: h.reason)
     }
 
-    private func deliver(_ j: Job, status: Int, headers: [HTTPHeader], body: [UInt8]) {
+    private func deliver(_ j: Job, status: Int, headers: [HTTPHeader], body: [UInt8], reason: [UInt8]? = nil) {
         jobs[j.id] = nil
         var r = BrowserResponse(url: j.url)
         r.status = status
+        r.statusText = reason.map { String(decoding: $0, as: UTF8.self) } ?? (status == 200 ? "OK" : "")
         r.headers = headers
         r.contentType = headers.httpValue("Content-Type")
         r.body = body

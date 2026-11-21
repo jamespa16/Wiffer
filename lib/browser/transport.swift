@@ -9,7 +9,7 @@
 // Every request has an id chosen by the loader; cancel(id) drops it and no
 // further events for it are delivered.
 
-enum BrowserResourceKind: Equatable { case document, stylesheet, image }
+enum BrowserResourceKind: Equatable { case document, stylesheet, image, script, fetch }
 
 struct BrowserRequest {
     var url: URLRecord
@@ -19,6 +19,10 @@ struct BrowserRequest {
     var kind = BrowserResourceKind.document
     /// Skip fresh cache entries (reload).
     var reload = false
+    /// Extra request headers (fetch/XHR: author headers, Origin).
+    var headers: [HTTPHeader] = []
+    /// Send cookies and store Set-Cookie (false for cross-origin fetches).
+    var credentials = true
 
     init(url: URLRecord) { self.url = url }
 }
@@ -27,6 +31,8 @@ struct BrowserResponse {
     /// The final URL (after redirects).
     var url: URLRecord
     var status = 200
+    /// The reason phrase ("OK"), for fetch's statusText.
+    var statusText = ""
     var contentType: [UInt8]? = nil
     var headers: [HTTPHeader] = []
     var body: [UInt8] = []

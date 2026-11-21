@@ -2857,6 +2857,9 @@ def web_checks_run(s, timeout, check, find, browsers, kill_all, srv, tsrv, base,
     check(len(browsers()) == 1, "hostile endless: the browser is still running")
     kill_all()
 
+    # ---- Phase 9H: scripts in the browser.
+    web_js_checks(s, timeout, check, find, browsers, kill_all, launch, load, pixel_in_page, origin, read_title, srv, base)
+
     # The system is still sound afterwards: a fresh browser loads a page.
     got, found = load(f"{base}/layout/lists.html")
     check(found and "title 'Layout: lists'" in got, "a fresh browser still loads a page after all the hostile servers", got[-300:])
@@ -2865,6 +2868,126 @@ def web_checks_run(s, timeout, check, find, browsers, kill_all, srv, tsrv, base,
         print(f"harness: memory in use at the end of the web checks: {m.group(2)} MiB")
     kill_all()
     return 0
+
+
+def web_js_checks(s, timeout, check, find, browsers, kill_all, launch, load, pixel_in_page, origin, read_title, srv, base):
+    """Phase 9H: tests/web/js/ pages with scripts (title, a click handler with a
+    pixel check, fetch of /json rendered into the page, a cross-origin fetch
+    that must fail, timer ordering, an endless loop stopped by the time
+    budget, jQuery, the console panel) and --nojs. Timings go to stdout."""
+    def line_ms(text, pat):
+        m = re.search(pat, text)
+        return int(m.group(1)) if m else None
+
+    # A script sets the title and a style; <noscript> is not rendered.
+    got, found = load(f"{base}/js/title.html")
+    if found and "title 'JS title ok'" not in got:
+        got += read_title("JS title ok", 20)[1]
+    check(found and "title 'JS title ok'" in got, "js/title.html: document.title set by a script", got[-400:])
+    check(f"browse: script {base}/js/title.js " in got and "console log external script ran, body present" in got,
+          "js/title.html: the external script ran after the parse", got[-400:])
+    check("event DOMContentLoaded" in got and "event load" in got, "js/title.html: DOMContentLoaded and load", got[-400:])
+    time.sleep(0.8)
+    px = pixel_in_page("JS title ok", 10, 10, "30A060")
+    check(px == bytes.fromhex("30A060"), "js/title.html: the script's style is painted", px.hex() if px else "no window")
+    px = pixel_in_page("JS title ok", 150, 130, "FFFFFF")
+    check(px == b"\xff\xff\xff", "js/title.html: <noscript> content is not rendered", px.hex() if px else "no window")
+    kill_all()
+    got, found = load(f"{base}/js/title.html", "--nojs")
+    check(found and "title 'JS title ok'" not in got and "browse: script" not in got, "--nojs: no script runs", got[-300:])
+    time.sleep(0.8)
+    px = pixel_in_page("JS title start", 150, 130, "FF0000")
+    check(px == bytes.fromhex("FF0000"), "--nojs: <noscript> content is rendered", px.hex() if px else "no window")
+    kill_all()
+
+    # A click handler toggles a class: the restyle is painted.
+    got, found = load(f"{base}/js/toggle.html")
+    check(found, "js/toggle.html loads", got[-300:])
+    time.sleep(0.8)
+    px = pixel_in_page("JS toggle", 100, 40, "2040C0")
+    check(px == bytes.fromhex("2040C0"), "js/toggle.html: the box before a click", px.hex() if px else "no window")
+    o = origin("JS toggle")
+    restyles = []
+    if o:
+        for n, state, want in ((1, "on", "C04020"), (2, "off", "2040C0")):
+            s.click(o[0] + 100, o[1] + 40)
+            ok, got = read_title(f"JS toggle {n} {state}", 30)
+            got += s.read_until(b"browse: restyle", 10).decode(errors="replace") + s.read_until(b"\n", 5).decode(errors="replace")
+            check(ok and "console log clicked at 100,40" in got, f"js/toggle.html: click {n} runs the handler", got[-300:])
+            ms = line_ms(got, r"browse: restyle \d+ nodes (\d+) ms")
+            s.warp(4, 4)  # the pointer sprite would cover the pixel
+            if ms is not None:
+                restyles.append(ms)
+            px = pixel_in_page(f"JS toggle {n} {state}", 100, 40, want)
+            check(px == bytes.fromhex(want), f"js/toggle.html: after click {n} the box is #{want}", px.hex() if px else "no window")
+        print(f"harness: restyle per class toggle (TCG): {restyles} ms")
+        # The console panel evaluates in the page's realm.
+        s.sendkeys(["ctrl-shift-j"])
+        got = s.read_until(b"browse: console open", 10).decode(errors="replace")
+        check("browse: console open" in got, "Ctrl-Shift-J opens the console", got[-200:])
+        time.sleep(0.3)
+        s.sendkeys(list("document") + ["dot"] + list("title") + ["ret"])
+        got = s.read_until(b"browse: console eval", 20).decode(errors="replace") + s.read_until(b"\n", 5).decode(errors="replace")
+        check("browse: console eval 'JS toggle 2 off'" in got, "the console evaluates an expression in the page", got[-200:])
+    kill_all()
+
+    # fetch() of JSON, rendered into the page.
+    s.warp(4, 4)
+    launch(f"{base}/js/fetch.html")
+    ok, got = read_title("JS fetch GET x=42 y=wiffer", 60)
+    check(ok, "js/fetch.html: fetch('/json') resolved and rendered", got[-300:])
+    req = srv.last("/json?x=42")
+    check(req is not None and req["headers"].get("accept") == "application/json" and req["headers"].get("origin") is None,
+          "js/fetch.html: the request the server saw (author Accept header, same-origin: no Origin)", str(req and req["headers"]))
+    time.sleep(0.8)
+    px = pixel_in_page("JS fetch GET x=42 y=wiffer", 150, 60, "20C040")
+    check(px == bytes.fromhex("20C040"), "js/fetch.html: the fetched result is painted", px.hex() if px else "no window")
+    kill_all()
+
+    # Cross-origin: o.t is the same server under another origin.
+    launch(f"{base}/js/cors.html", "-r o.t:10.0.2.2")
+    ok, got = read_title("JS cors blocked-TypeError allowed-2 xhr-error", 60)
+    check(ok, "js/cors.html: a cross-origin fetch without CORS fails, one with ACAO works, XHR errors", got[-400:])
+    check("browse: console error Access to fetch at" in got, "js/cors.html: the CORS block is logged", got[-400:])
+    req = srv.last("/json?x=1")
+    check(req is not None and req["headers"].get("origin", "").startswith("http://10.0.2.2:") and "cookie" not in req["headers"],
+          "js/cors.html: Origin sent, no cookies cross-origin", str(req and req["headers"]))
+    kill_all()
+
+    # Timers and microtasks in order.
+    launch(f"{base}/js/timers.html")
+    got = s.read_until(b"browse: title 'JS timers sync", 60).decode(errors="replace") + s.read_until(b"\n", 5).decode(errors="replace")
+    m = re.search(r"title 'JS timers ([a-z0-9,]+)'", got)
+    order = m.group(1).split(",") if m else []
+    check(order[:5] == ["sync", "m1", "q1", "t0", "m2"] and "raf" in order and order.index("t10") < order.index("t50") == len(order) - 1,
+          "js/timers.html: microtasks, then timers by delay, rAF", got[-300:])
+    kill_all()
+
+    # while (true) {}: the budget stops it; Escape chooses "Stop script".
+    launch(f"{base}/js/loop.html")
+    got = s.read_until(b"browse: js budget exceeded", 90).decode(errors="replace") + s.read_until(b"\n", 5).decode(errors="replace")
+    check(f"browse: js budget exceeded {base}/js/loop.html" in got and "console log about to loop forever" in got,
+          "js/loop.html: the endless loop runs past its budget", got[-300:])
+    got += s.read_until(b"script not responding", 10).decode(errors="replace")
+    time.sleep(0.5)
+    s.sendkeys(["esc"])
+    more = s.read_until(f"browse: done {base}/js/loop.html".encode(), 60).decode(errors="replace")
+    check("browse: script stopped" in more and f"browse: done {base}/js/loop.html" in more and "JS loop survived" not in more,
+          "js/loop.html: Stop terminates the script, the page finishes loading", more[-300:])
+    check(len(browsers()) == 1, "js/loop.html: the browser is still running")
+    time.sleep(0.8)
+    px = pixel_in_page("JS loop", 10, 10, "6040A0")
+    check(px == bytes.fromhex("6040A0"), "js/loop.html: the page is painted after the stop", px.hex() if px else "no window")
+    kill_all()
+
+    # jQuery 3.7.1 (a 285 KB bundle): load time under TCG.
+    got, found = load(f"{base}/js/jquery.html", t=180.0)
+    if found and "title 'JS jquery 3.7.1 10'" not in got:
+        got += read_title("JS jquery 3.7.1 10", 30)[1]
+    check(found and "title 'JS jquery 3.7.1 10'" in got, "js/jquery.html: jQuery runs and builds the list", got[-400:])
+    ms = line_ms(got, r"browse: script \S+/js/jquery.js (\d+) ms")
+    print(f"harness: jQuery 3.7.1 script time (TCG): {ms} ms")
+    kill_all()
 
 
 def wait_exit(s: Session, timeout: float):

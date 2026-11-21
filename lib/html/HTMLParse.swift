@@ -8,10 +8,14 @@
 /// Declarative shadow DOM (`<template shadowrootmode>`) is on by default,
 /// as for a navigated document; `declarativeShadowRoots: false` parses
 /// those templates as plain templates (DOMParser).
+///
+/// `scripting: true` (a browser running scripts) parses `<noscript>` as
+/// raw text, so its content is never rendered.
 public func htmlParse(_ bytes: [UInt8], limits: HTMLParseLimits = HTMLParseLimits(),
-                      declarativeShadowRoots: Bool = true) -> HTMLNode {
+                      declarativeShadowRoots: Bool = true, scripting: Bool = false) -> HTMLNode {
     let (scalars, cut) = htmlDecodeInput(bytes, maxBytes: limits.maxInputBytes)
     let tb = HTMLTreeBuilder(input: scalars, limits: limits)
+    tb.scripting = scripting
     tb.allowDeclarativeShadowRoots = declarativeShadowRoots
     tb.doc.docState?.allowDeclarativeShadowRoots = declarativeShadowRoots
     tb.run()
@@ -37,10 +41,11 @@ public func htmlParse(_ bytes: [UInt8], limits: HTMLParseLimits = HTMLParseLimit
 /// element itself.
 public func htmlParseFragment(_ bytes: [UInt8], context: HTMLNode,
                               limits: HTMLParseLimits = HTMLParseLimits(),
-                              declarativeShadowRoots: Bool = false) -> HTMLNode {
+                              declarativeShadowRoots: Bool = false, scripting: Bool = false) -> HTMLNode {
     let owner = context.documentForCreation
     let (scalars, cut) = htmlDecodeInput(bytes, maxBytes: limits.maxInputBytes)
     let tb = HTMLTreeBuilder(input: scalars, limits: limits)
+    tb.scripting = scripting
     tb.allowDeclarativeShadowRoots = declarativeShadowRoots
     tb.doc.docState?.allowDeclarativeShadowRoots = declarativeShadowRoots
     tb.quirks = owner.quirksMode
@@ -52,7 +57,8 @@ public func htmlParseFragment(_ bytes: [UInt8], context: HTMLNode,
         case .style, .xmp, .iframe, .noembed, .noframes: tb.tokenizer.state = .rawtext
         case .script: tb.tokenizer.state = .scriptData
         case .plaintext: tb.tokenizer.state = .plaintext
-        default: break   // noscript: data (scripting is off)
+        case .noscript where scripting: tb.tokenizer.state = .rawtext
+        default: break   // noscript with scripting off: data
         }
     }
     let root = tb.newNode(.element, name: "html", tag: .html)
@@ -76,6 +82,10 @@ public func htmlParseFragment(_ bytes: [UInt8], context: HTMLNode,
     root.children = []
     for c in kids { frag.parserAppend(c) }   // adopts into the owner document
     frag.truncated = tb.doc.truncated || cut
+    frag.walk { n in
+        if n.kind == .element && n.name == "script" { n.scriptAlreadyStarted = true }
+        return true
+    }
     frag.assignIndices()
     for s in tb.shadowRoots {
         if s.host === context { s.assignIndices() }

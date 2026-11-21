@@ -167,6 +167,7 @@ extension LayoutEngine {
     }
 
     private func restyleOne(_ b: LayoutBox, _ n: HTMLNode, _ parent: LayoutBox?) -> Bool {
+        stats.styledElements &+= 1
         var s = resolver.computeStyle(LayoutElement(n, state), parent: parent?.style, hints: layoutHints(n))
         if s.fontSize > limits.maxFontSize { s.fontSize = limits.maxFontSize }
         if s.fontSize != s.fontSize { s.fontSize = 16 }

@@ -15,6 +15,8 @@ final class LayoutBuilder {
     let state: LayoutStyleState
     let limits: LayoutLimits
     var boxCount = 0
+    /// Element styles computed.
+    var styled = 0
     var nodeBoxes: [ObjectIdentifier: LayoutBox] = [:]
     var imageURLs: [String] = []
     var controls: [LayoutBox] = []
@@ -59,6 +61,7 @@ final class LayoutBuilder {
                                 _ deco: UInt8, _ decoColor: CSSColor, _ center: Bool) -> LayoutBox? {
         if node.namespace != .html && node.name != "svg" && node.name != "math" { return nil }
         let el = LayoutElement(node, state)
+        styled &+= 1
         var style = resolver.computeStyle(el, parent: parentStyle?.style, hints: layoutHints(node))
         if style.display == .none { return nil }
         if style.fontSize > limits.maxFontSize { style.fontSize = limits.maxFontSize }

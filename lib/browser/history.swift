@@ -12,6 +12,12 @@ struct BrowserHistoryEntry {
     var method = "GET"
     var body: [UInt8] = []
     var contentType: String? = nil
+    /// Phase 9H: the document this entry belongs to (BrowserPage.documentID;
+    /// 0: none) and its history state id (pushState / fragment entries), so
+    /// back/forward between entries of one document fire popstate instead of
+    /// loading.
+    var documentID = 0
+    var stateID = 0
 
     init(url: String) { self.url = url }
 }
@@ -57,6 +63,13 @@ struct BrowserHistory {
     mutating func setURL(_ u: String) {
         guard index >= 0 else { return }
         entries[index].url = u
+    }
+
+    /// A new document was shown for the current entry.
+    mutating func setDocument(_ id: Int) {
+        guard index >= 0 else { return }
+        entries[index].documentID = id
+        entries[index].stateID = 0
     }
 
     /// Move back one entry; the entry to show, or nil at the start.

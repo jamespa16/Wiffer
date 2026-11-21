@@ -11,6 +11,9 @@ dynamic endpoints, over plain HTTP or HTTPS (the test PKI in tests/certs):
   /cookie/set           Set-Cookie, then a redirect to /cookie/echo
   /cookie/echo          a page whose <title> shows the request's Cookie header
   /testca.der           the test CA (for `fetch -o /ca.der`)
+  /json                 Phase 9H: the request as JSON (method, query, body, origin,
+                        cookie); ?cors=1 allows cross-origin reads (and preflights)
+  /js/jquery.js         lib/js's jQuery 3.7.1 fixture (tests/web/js/jquery.html)
   /hostile/stall-headers, stall-body, truncated, reset, garbage, hugeheaders,
   /hostile/endless, bomb, pngdims (+ lying.png)
 
@@ -27,7 +30,9 @@ WEB = os.path.join(ROOT, "tests", "web")
 CERTS = os.path.join(ROOT, "tests", "certs")
 
 TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css", ".png": "image/png", ".jpg": "image/jpeg",
-         ".gif": "image/gif", ".svg": "image/svg+xml", ".txt": "text/plain", ".der": "application/x-x509-ca-cert"}
+         ".gif": "image/gif", ".svg": "image/svg+xml", ".txt": "text/plain", ".der": "application/x-x509-ca-cert",
+         ".js": "text/javascript", ".mjs": "text/javascript", ".json": "application/json"}
+JQUERY = os.path.join(ROOT, "lib", "js", "fixtures", "corpus", "jquery-3.7.1.js")
 
 def html(title, body=""):
     return f"<!DOCTYPE html><html><head><meta charset=utf-8><title>{title}</title></head><body>{body}</body></html>".encode()
@@ -162,6 +167,22 @@ class WebServer:
             text = "&".join(f"{k}={v}" for k, v in fields)
             ctype = req["headers"].get("content-type", "")
             self.page(c, html(escape(f"Echo {method} {text}"), f"<pre style='position:absolute;left:300px;top:0;margin:0'>{escape(method)} {escape(text)}\n{escape(ctype)}</pre>"))
+        elif path == "/json":
+            # Phase 9H: JSON for fetch/XHR. ?cors=1 adds Access-Control-Allow-Origin
+            # (and answers a preflight); otherwise cross-origin reads must fail.
+            import json
+            q = dict(urllib.parse.parse_qsl(u.query, keep_blank_values=True))
+            cors = [("Access-Control-Allow-Origin", req["headers"].get("origin", "*")),
+                    ("Access-Control-Allow-Methods", "GET, POST, PUT"), ("Access-Control-Allow-Headers", "X-Test")] if "cors" in q else []
+            if method == "OPTIONS":
+                self.send(c, 204, cors, b"", "No Content")
+            else:
+                body = json.dumps({"method": method, "query": q, "body": req["body"].decode("latin-1"),
+                                   "origin": req["headers"].get("origin", ""), "cookie": req["headers"].get("cookie", "")}).encode()
+                self.send(c, 200, [("Content-Type", "application/json"), *cors], body)
+        elif path == "/js/jquery.js":
+            with open(JQUERY, "rb") as f:
+                self.send(c, 200, [("Content-Type", "text/javascript")], f.read())
         elif path == "/redir/ok":
             self.page(c, html("Redirect target", "<p>arrived"))
         elif path in ("/redir/301", "/redir/302", "/redir/303", "/redir/307"):
