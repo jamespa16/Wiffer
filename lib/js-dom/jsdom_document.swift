@@ -240,6 +240,7 @@ extension JSDOMBindings {
         if let anchor = writeTarget ?? currentScript, let p = anchor.parent {
             let context = p.kind == .element ? p : (document.body ?? p)
             let frag = htmlParseFragment(s, context: context)
+            jsdomWrittenScriptsRun(frag)
             let last = frag.lastChild
             _ = try Node_insertBefore(p, frag, anchor.nextSibling)
             if let l = last { writeTarget = l }
@@ -247,6 +248,7 @@ extension JSDOMBindings {
         }
         guard let body = document.body ?? document.documentElement else { return }
         let frag = htmlParseFragment(s, context: body.kind == .element ? body : document.makeElement("body", .html))
+        jsdomWrittenScriptsRun(frag)
         _ = try Node_appendChild(body, frag)
     }
 
@@ -373,4 +375,13 @@ func jsdomStripCollapse(_ s: String) -> String {
         out.append(b)
     }
     return String(decoding: out, as: UTF8.self)
+}
+
+/// document.write'n scripts may run (unlike innerHTML's): clear the fragment
+/// parser's "already started" flag (the browser runs them once inserted).
+func jsdomWrittenScriptsRun(_ frag: HTMLNode) {
+    frag.walk { n in
+        if n.kind == .element && n.name == "script" { n.scriptAlreadyStarted = false }
+        return true
+    }
 }

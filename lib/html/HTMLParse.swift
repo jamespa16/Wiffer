@@ -82,6 +82,10 @@ public func htmlParseFragment(_ bytes: [UInt8], context: HTMLNode,
     root.children = []
     for c in kids { frag.parserAppend(c) }   // adopts into the owner document
     frag.truncated = tb.doc.truncated || cut
+    frag.walk { n in
+        if n.kind == .element && n.name == "script" { n.scriptAlreadyStarted = true }
+        return true
+    }
     frag.assignIndices()
     for s in tb.shadowRoots {
         if s.host === context { s.assignIndices() }

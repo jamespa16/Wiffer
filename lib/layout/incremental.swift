@@ -40,6 +40,9 @@ struct LayoutUpdateStats {
     var subtreeRebuilds = 0
     /// Whole-document style rebuilds.
     var fullRebuilds = 0
+    /// Element styles computed (box building and in-place restyles), for
+    /// the browser's "restyle N nodes" line.
+    var styledElements = 0
     init() {}
 }
 
@@ -346,6 +349,7 @@ extension LayoutEngine {
         let b = LayoutBuilder(resolver: resolver, state: state, limits: limits)
         let holder = LayoutBox(kind: .block, node: nil, style: layoutAnonStyle(CSSComputedStyle(), .block))
         b.buildElement(e, into: holder, parentStyle: p, depth: old.depth, deco: p.deco, decoColor: p.decoColor, center: p.legacyCenter)
+        stats.styledElements &+= b.styled
         guard holder.children.count == 1, let nb = holder.children.first, nb.node === e,
               layoutCanRebuildResult(nb) else { return false }
 

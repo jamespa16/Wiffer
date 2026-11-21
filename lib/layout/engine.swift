@@ -391,6 +391,7 @@ final class LayoutEngine {
             let b = LayoutBuilder(resolver: resolver, state: state, limits: limits)
             root?.items = nil
             root = b.build(document)
+            stats.styledElements &+= b.styled
             nodeBoxes = b.nodeBoxes
             controlBoxes = b.controls
             imageURLs = b.imageURLs
