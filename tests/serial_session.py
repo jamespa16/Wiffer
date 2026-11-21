@@ -2940,7 +2940,7 @@ def web_js_checks(s, timeout, check, find, browsers, kill_all, launch, load, pix
     check(req is not None and req["headers"].get("accept") == "application/json" and req["headers"].get("origin") is None,
           "js/fetch.html: the request the server saw (author Accept header, same-origin: no Origin)", str(req and req["headers"]))
     time.sleep(0.8)
-    px = pixel_in_page("JS fetch GET x=42 y=wiffer", 10, 10, "20C040")
+    px = pixel_in_page("JS fetch GET x=42 y=wiffer", 150, 60, "20C040")
     check(px == bytes.fromhex("20C040"), "js/fetch.html: the fetched result is painted", px.hex() if px else "no window")
     kill_all()
 
