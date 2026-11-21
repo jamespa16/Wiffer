@@ -51,5 +51,9 @@ func jsdomPreludeTests(_ t: Tests) {
         navigator.serviceWorker.getRegistrations().then(function (r) { console.log('sw ' + r.length + ' ' + ('serviceWorker' in navigator)); });
         navigator.serviceWorker.register('/sw.js').catch(function (e) { console.log(e.name); });
         """), "sw 0 true\nNotSupportedError", "navigator.serviceWorker: no registrations, register() rejects")
+    t.equal(run("""
+        navigator.clipboard.writeText('copied').then(function () { return navigator.clipboard.readText(); })
+          .then(function (s) { console.log(s + ' ' + typeof navigator.clipboard.read); });
+        """), "copied function", "navigator.clipboard: a page-local clipboard")
     p.page.tearDown()
 }

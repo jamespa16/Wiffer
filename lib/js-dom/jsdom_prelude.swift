@@ -15,6 +15,7 @@
 //   * HTMLDocument: an alias of Document.
 //   * navigator.serviceWorker: a container with no registrations whose
 //     register() rejects (sites call it unguarded).
+//   * navigator.clipboard: writeText/readText on a page-local string.
 //
 // Nothing here can hang: work happens only in response to the page's own
 // calls and events, each check is linear in the observed targets.
@@ -181,6 +182,21 @@ let jsdomPreludeSource = """
       oncontrollerchange: null, onmessage: null, onmessageerror: null
     };
     Object.defineProperty(g.navigator, 'serviceWorker', { value: sw, configurable: true, enumerable: true });
+  }
+
+  // A page-local clipboard ('clipboard' in navigator was true but the value
+  // undefined; GitHub's copy buttons call navigator.clipboard.read).
+  if (g.navigator && !g.navigator.clipboard) {
+    var clip = '';
+    var cb = {
+      writeText: function (t) { clip = String(t); return Promise.resolve(); },
+      readText: function () { return Promise.resolve(clip); },
+      write: function () { return Promise.resolve(); },
+      read: function () { return Promise.resolve([]); },
+      addEventListener: function () {},
+      removeEventListener: function () {}
+    };
+    Object.defineProperty(g.navigator, 'clipboard', { value: cb, configurable: true, enumerable: true });
   }
 
   def('IntersectionObserver', IntersectionObserver);

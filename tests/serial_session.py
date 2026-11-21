@@ -3183,6 +3183,27 @@ def web_js9j_checks(s, timeout, check, find, browsers, kill_all, launch, load, p
     check(px == b"\xff\xff\xff", "js/ce.html --nojs: the undefined element stays hidden", px.hex() if px else "no window")
     kill_all()
 
+    # TodoMVC (tests/web/todomvc, vanilla JS): add two items with Enter (the
+    # field keeps the focus), complete one, filter by URL hash.
+    act()
+    got, found = load(f"{base}/todomvc/index.html")
+    if found and "title 'TodoMVC 0 0 all'" not in got:
+        got += title_seen("TodoMVC 0 0 all", 10)[1]
+    check("title 'TodoMVC 0 0 all'" in got, "todomvc: the app starts empty", got[-300:])
+    time.sleep(0.8)
+    if click_page("TodoMVC 0 0 all", 406, 99):
+        time.sleep(0.3)
+        keys(["m", "i", "l", "k", "ret"])
+        title_seen("TodoMVC 1 1 all")
+        keys(["e", "g", "g", "s", "ret"])
+        ok, got = title_seen("TodoMVC 2 2 all")
+        check(ok, "todomvc: two items added with Enter", got[-300:])
+        time.sleep(0.8)
+        click_page("TodoMVC 2 2 all", 238, 164)
+        ok, got = title_seen("TodoMVC 2 1 all")
+        check(ok, "todomvc: an item completed by its checkbox", got[-300:])
+    kill_all()
+
     # Hostile scripts. Each must cost the page at most its script, never
     # the browser: the next script still runs (where the engine can go on),
     # the page is painted, and the browser loads a page typed into its
