@@ -4966,7 +4966,16 @@ Results:
   Status line counts script errors. Serial lines as listed above, plus
   `script stopped`, `console open|closed`, `console eval <text>`,
   `popstate <url>`, `alert '<text>'`.
-- **Tests:** `./run.sh --hosttest js-web` (67) and `browser` (114, incl.
+- **Timings** (QEMU TCG on Apple silicon, loaded host): jQuery 3.7.1
+  (285 KB) compile + run 300-380 ms (`browse: script .../jquery.js`); a
+  class toggle on the small toggle page restyles 6 nodes in 0-10 ms (the
+  clock is 10 ms granular); DOMContentLoaded of a small scripted page
+  ~250 ms after navigation; /bin/browse is 5.8 MB (lib/js + lib/js-dom +
+  lib/js-web linked in). Web harness: 120 checks pass (about 25 new);
+  `./run.sh --test` and `--test --uefi`: 510 PASS each, no FAIL.
+- **libwiffer:** `free` (the Embedded runtime frees some coroutine frames
+  with it, reached by lib/js-dom's 9I code once linked into a program).
+- **Tests:** `./run.sh --hosttest js-web` (67) and `browser` (116, incl.
   the script tests: order, async, modules, noscript, events, errors with
   url:line, inserted scripts, fetch through the loader, CORS, budget
   Stop/Wait, location, --nojs). Harness (`web_js_checks` in the web
