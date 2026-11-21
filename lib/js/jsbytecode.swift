@@ -267,8 +267,16 @@ final class JSCode {
     /// Stable copies of `constants` and `keys` for the VM (no ARC traffic).
     private(set) var constPtr: UnsafeMutablePointer<JSValue>
     private(set) var keyPtr: UnsafeMutablePointer<JSPropertyKey>
+    /// Global inline caches (9J), one per key: UInt64.max empty, else the
+    /// property's slot index in the low 32 bits, bit 63 set for a global
+    /// lexical binding, and for a global object property the realm's
+    /// globalLexCount when it was filled in bits 32...62 (a later `let`
+    /// of the same name would shadow it). See JSRealm.cachedGlobal.
+    private(set) var globalCache: UnsafeMutablePointer<UInt64>
 
     init() {
+        globalCache = UnsafeMutablePointer<UInt64>.allocate(capacity: 1)
+        globalCache.initialize(to: UInt64.max)
         code = UnsafeMutablePointer<UInt8>.allocate(capacity: 1)
         code.initialize(to: 0)
         constPtr = UnsafeMutablePointer<JSValue>.allocate(capacity: 1)
@@ -280,6 +288,7 @@ final class JSCode {
         code.deallocate()
         constPtr.deallocate()
         keyPtr.deallocate()
+        globalCache.deallocate()
     }
 
     func finish() {
@@ -297,6 +306,9 @@ final class JSCode {
         keyPtr = UnsafeMutablePointer<JSPropertyKey>.allocate(capacity: max(1, keys.count))
         keyPtr.initialize(repeating: .index(0), count: max(1, keys.count))
         for i in 0..<keys.count { keyPtr[i] = keys[i] }
+        globalCache.deallocate()
+        globalCache = UnsafeMutablePointer<UInt64>.allocate(capacity: max(1, keys.count))
+        globalCache.initialize(repeating: UInt64.max, count: max(1, keys.count))
     }
 
     func setConstant(_ i: Int, _ v: JSValue) {

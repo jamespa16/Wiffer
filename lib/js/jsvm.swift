@@ -453,14 +453,22 @@ extension JSRealm {
                         push(f); push(th); pc += 5
                     case .deleteName:
                         push(.bool(try deleteName(keys[jsReadU32(bc, pc + 1)]))); pc += 5
-                    case .getGlobal, .getGlobalOrUndef:
-                        push(try getGlobal(keys[jsReadU32(bc, pc + 1)], orUndefined: op == .getGlobalOrUndef))
+                    case .getGlobal, .getGlobalOrUndef, .getGlobalForCall:
+                        let ki = jsReadU32(bc, pc + 1)
+                        if let v = cachedGlobal(code, ki) {
+                            push(v)
+                        } else {
+                            push(try getGlobal(keys[ki], orUndefined: op == .getGlobalOrUndef))
+                            fillGlobalCache(code, ki)
+                        }
+                        if op == .getGlobalForCall { push(.undefined) }
                         pc += 5
-                    case .getGlobalForCall:
-                        push(try getGlobal(keys[jsReadU32(bc, pc + 1)], orUndefined: false))
-                        push(.undefined); pc += 5
                     case .putGlobal:
-                        try putGlobal(keys[jsReadU32(bc, pc + 1)], stack[sp - 1], strict: code.strict)
+                        let ki = jsReadU32(bc, pc + 1)
+                        if !cachedPutGlobal(code, ki, stack[sp - 1]) {
+                            try putGlobal(keys[ki], stack[sp - 1], strict: code.strict)
+                            fillGlobalCache(code, ki)
+                        }
                         sp -= 1; pc += 5
                     case .declareVar:
                         try declareVar(keys[jsReadU32(bc, pc + 1)], isEval: code.kind == .eval)

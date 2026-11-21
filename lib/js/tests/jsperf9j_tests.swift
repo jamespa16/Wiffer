@@ -31,6 +31,26 @@ func jsPerf9JTests(_ t: Tests) {
             t.equal(realm.evaluateToString(src), want, (stress ? "[gc] " : "") + src)
         }
     }
+    // Global inline caches: each step reuses the functions compiled in step
+    // one, whose caches were filled before the global changed.
+    let g = rt.makeRealm()
+    let steps: [(String, String)] = [
+        ("var gx = 1; var gy = 2; function rx() { return gx } function wx(v) { gx = v; return gx } function ry() { return typeof gy === 'undefined' ? 'none' : gy } rx() + wx(5) + ry()", "8"),
+        ("rx() + ':' + wx(6)", "5:6"),
+        ("delete globalThis.gy; ry()", "2"),
+        ("globalThis.gz = 3; Object.defineProperty(globalThis, 'gq', {value: 9, configurable: true, writable: false}); function rq() { return gq } function wq() { gq = 10; return gq } rq() + wq()", "18"),
+        ("Object.defineProperty(globalThis, 'gq', {get: function () { return 42 }, configurable: true}); rq()", "42"),
+        ("let gl = 7; function rl() { return gl } function wl() { gl++; return gl } rl() + wl()", "15"),
+        ("rl() + wl()", "17"),
+        ("const gc = 1; function wc() { gc = 2 } try { wc() } catch (e) { e.name }", "TypeError"),
+        ("try { wc() } catch (e) { e.name }", "TypeError"),
+        ("function rt() { return tdz } try { rt() } catch (e) { e.name }", "ReferenceError"),
+        ("let tdz = 'ok'; rt()", "ok"),
+        ("for (var i = 0; i < 40; i++) globalThis['pad' + i] = i; for (var i = 0; i < 40; i += 2) delete globalThis['pad' + i]; rx() + ':' + pad39", "6:39"),
+        ("var shadow = 'var'; function rs() { return shadow } rs()", "var"),
+    ]
+    for (src, want) in steps { t.equal(g.evaluateToString(src), want, "global IC: " + src) }
+
     // A rope over the length limit is a RangeError, not a trap.
     var lim = JSLimits()
     lim.maxStringLength = 1000
