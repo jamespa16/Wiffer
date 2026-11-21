@@ -95,6 +95,145 @@ struct JSBigIntCell {
     return false
 }
 
+/// An object's property slots (9J): a manually managed buffer owned by
+/// its cell, freed by the sweep (or the heap's deinit). Reading a slot is
+/// an address computation, where a Swift array in a cell in an array had
+/// to be retained and released on every probe. A copy of a cell shares the
+/// buffer: copies are for reading only; every mutation goes through
+/// `objects[i].props`.
+struct JSPropStore: Sequence {
+    private(set) var base: UnsafeMutablePointer<JSPropertySlot>? = nil
+    private(set) var count = 0
+    private(set) var capacity = 0
+
+    init() {}
+
+    var isEmpty: Bool { count == 0 }
+
+    subscript(j: Int) -> JSPropertySlot {
+        unsafeAddress {
+            precondition(j >= 0 && j < count, "property slot out of range")
+            return UnsafePointer(base.unsafelyUnwrapped + j)
+        }
+        nonmutating unsafeMutableAddress {
+            precondition(j >= 0 && j < count, "property slot out of range")
+            return base.unsafelyUnwrapped + j
+        }
+    }
+
+    mutating func append(_ s: JSPropertySlot) {
+        if count == capacity {
+            let newCap = capacity == 0 ? 4 : capacity * 2
+            let nb = UnsafeMutablePointer<JSPropertySlot>.allocate(capacity: newCap)
+            if let b = base {
+                nb.moveInitialize(from: b, count: count)
+                b.deallocate()
+            }
+            base = nb
+            capacity = newCap
+        }
+        (base.unsafelyUnwrapped + count).initialize(to: s)
+        count += 1
+    }
+
+    /// Removes the matching slots, keeping order.
+    mutating func removeAll(where drop: (JSPropertySlot) -> Bool) {
+        guard let b = base else { return }
+        var w = 0
+        var r = 0
+        while r < count {
+            if !drop(b[r]) {
+                if w != r { b[w] = b[r] }
+                w += 1
+            }
+            r += 1
+        }
+        count = w
+    }
+
+    func withUnsafeBufferPointer<R>(_ body: (UnsafeBufferPointer<JSPropertySlot>) -> R) -> R {
+        body(UnsafeBufferPointer(start: base, count: count))
+    }
+
+    /// Frees the buffer (the slots are plain values).
+    mutating func free() {
+        base?.deallocate()
+        base = nil
+        count = 0
+        capacity = 0
+    }
+
+    struct Iterator: IteratorProtocol {
+        let base: UnsafeMutablePointer<JSPropertySlot>?
+        let count: Int
+        var i = 0
+        mutating func next() -> JSPropertySlot? {
+            guard i < count, let b = base else { return nil }
+            i += 1
+            return b[i - 1]
+        }
+    }
+    func makeIterator() -> Iterator { Iterator(base: base, count: count) }
+}
+
+/// A growable buffer of cells owned by one JSHeap (freed by its deinit).
+/// Subscripts are addressors: `objects[i].props[j]` borrows the cell in
+/// place instead of copying it or retaining the store. Out-of-range
+/// indices trap, as an Array's do (callers check `count`).
+struct JSCellStore<Cell> {
+    private(set) var base: UnsafeMutablePointer<Cell>? = nil
+    private(set) var count = 0
+    private(set) var capacity = 0
+
+    init() {}
+
+    subscript(i: Int) -> Cell {
+        unsafeAddress {
+            precondition(i >= 0 && i < count, "cell index out of range")
+            return UnsafePointer(base.unsafelyUnwrapped + i)
+        }
+        nonmutating unsafeMutableAddress {
+            precondition(i >= 0 && i < count, "cell index out of range")
+            return base.unsafelyUnwrapped + i
+        }
+    }
+
+    mutating func append(_ c: Cell) {
+        if count == capacity {
+            let newCap = max(64, capacity * 2)
+            let nb = UnsafeMutablePointer<Cell>.allocate(capacity: newCap)
+            if let b = base {
+                nb.moveInitialize(from: b, count: count)
+                b.deallocate()
+            }
+            base = nb
+            capacity = newCap
+        }
+        (base.unsafelyUnwrapped + count).initialize(to: c)
+        count += 1
+    }
+
+    func withUnsafeBufferPointer<R>(_ body: (UnsafeBufferPointer<Cell>) -> R) -> R {
+        body(UnsafeBufferPointer(start: base, count: count))
+    }
+
+    func withUnsafeMutableBufferPointer<R>(_ body: (inout UnsafeMutableBufferPointer<Cell>) -> R) -> R {
+        var b = UnsafeMutableBufferPointer(start: base, count: count)
+        return body(&b)
+    }
+
+    /// Destroys every cell and frees the buffer.
+    mutating func release() {
+        if let b = base {
+            b.deinitialize(count: count)
+            b.deallocate()
+        }
+        base = nil
+        count = 0
+        capacity = 0
+    }
+}
+
 public final class JSHeap {
     public var limits: JSLimits
     /// Stress mode: collect at every allocation.
@@ -106,7 +245,9 @@ public final class JSHeap {
     // Cells, liveness and mark bits, free lists.
     var strings: [JSStringCell] = []
     var symbols: [JSSymbolCell] = []
-    var objects: [JSObjectCell] = []
+    /// Object cells: a manually managed buffer, not a Swift array, so a cell
+    /// access is an address computation with no retain of the store (9J).
+    var objects = JSCellStore<JSObjectCell>()
     var bigints: [JSBigIntCell] = []
     var stringLive: [UInt64] = [], symbolLive: [UInt64] = [], objectLive: [UInt64] = [], bigintLive: [UInt64] = []
     var stringMarks: [UInt64] = [], symbolMarks: [UInt64] = [], objectMarks: [UInt64] = [], bigintMarks: [UInt64] = []
@@ -156,6 +297,12 @@ public final class JSHeap {
         _ = allocObjectSlot(dead)
         _ = allocBigIntSlot(JSBigIntCell())
         makeNames()
+    }
+
+    deinit {
+        var i = 0
+        while i < objects.count { objects[i].props.free(); i += 1 }
+        objects.release()
     }
 
     private func makeNames() {
@@ -444,6 +591,7 @@ public final class JSHeap {
                         f(JSHandle(i), objects[i].internalInt)
                     }
                     if objects[i].kind == .arrayBuffer { releaseByteStore(objects[i].internalInt) }
+                    objects[i].props.free()
                     objects[i] = JSObjectCell()
                     jsBitClear(&objectLive, i)
                     objectFree.append(JSHandle(i))

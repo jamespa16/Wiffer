@@ -208,7 +208,7 @@ struct JSObjectCell {
     var arrayLength: UInt32 = 0
     var deletedCount: Int32 = 0
     var internalInt: Int64 = 0
-    var props: [JSPropertySlot] = []
+    var props = JSPropStore()
     var index: [Int32] = []
     var elements: [JSValue] = []
     var sparse: [UInt32: JSPropertySlot] = [:]
@@ -381,25 +381,49 @@ extension JSHeap {
 
     // MARK: Slot lookup (the hash index)
 
+    /// The slot of key k in cell i, or -1. Borrows the cell's arrays in
+    /// place: plain `objects[i].props[j]` reads retained and released the
+    /// arrays on every probe (9J: half of all VM time in richards).
     func findSlot(_ i: Int, _ k: JSPropertyKey) -> Int {
-        let n = objects[i].props.count
-        if objects[i].index.isEmpty {
-            var j = 0
-            while j < n {
-                if objects[i].props[j].key == k { return j }
-                j += 1
+        return objects.withUnsafeBufferPointer { ob -> Int in
+            guard i >= 0 && i < ob.count, let base = ob.baseAddress else { return -1 }
+            let c = base + i
+            let pb = c.pointee.props
+            do {
+                let n = pb.count
+                let m = c.pointee.index.count
+                if m == 0 {
+                    var j = 0
+                    while j < n {
+                        if pb[j].key == k { return j }
+                        j += 1
+                    }
+                    return -1
+                }
+                return c.pointee.index.withUnsafeBufferPointer { ib -> Int in
+                    let mask = m - 1
+                    var p = Int(k.hashValue32) & mask
+                    var probes = 0
+                    while probes < m {
+                        let e = Int(ib[p])
+                        if e < 0 { return -1 }
+                        if e < n && pb[e].key == k { return e }
+                        p = (p + 1) & mask
+                        probes += 1
+                    }
+                    return -1
+                }
             }
-            return -1
-        }
-        let mask = objects[i].index.count - 1
-        var p = Int(k.hashValue32) & mask
-        while true {
-            let e = Int(objects[i].index[p])
-            if e < 0 { return -1 }
-            if objects[i].props[e].key == k { return e }
-            p = (p + 1) & mask
         }
     }
+
+    /// Kind, flags and prototype of cell i (in range), read in place.
+    @inline(__always) func cellHeader(_ i: Int) -> (kind: JSObjectKind, flags: JSObjectFlags, proto: JSValue) {
+        return objects.withUnsafeBufferPointer { ob in (ob[i].kind, ob[i].flags, ob[i].proto) }
+    }
+
+    /// Slot j of cell i (both in range), read in place.
+    @inline(__always) func propSlot(_ i: Int, _ j: Int) -> JSPropertySlot { objects[i].props[j] }
 
     func rebuildIndex(_ i: Int) {
         let n = objects[i].props.count
@@ -492,7 +516,7 @@ extension JSHeap {
             }
         }
         let j = findSlot(i, k)
-        return j < 0 ? nil : JSHeap.property(objects[i].props[j])
+        return j < 0 ? nil : JSHeap.property(propSlot(i, j))
     }
 
     /// A one-unit string (Latin-1 units are cached and pinned).
@@ -758,6 +782,26 @@ extension JSHeap {
     public func getProperty(_ o: JSValue, _ k: JSPropertyKey) -> JSGetResult {
         var cur = o
         var steps = 0
+        // Fast path (9J): string and symbol keys on ordinary cells read the
+        // slot in place, with no JSProperty built and no array retained.
+        if !k.isIndex {
+            let isLength = k == names.length
+            while let i = objectIndex(cur) {
+                let h = cellHeader(i)
+                if h.flags.contains(.exotic) { return .exotic(cur) }
+                if h.kind == .typedArray || (isLength && (h.kind == .array || h.kind == .stringWrapper)) { break }
+                let j = findSlot(i, k)
+                if j >= 0 {
+                    let p = propSlot(i, j)
+                    if p.attributes.contains(.accessor) { return p.value.isUndefined ? .value(.undefined) : .getter(p.value) }
+                    return .value(p.value)
+                }
+                cur = h.proto
+                steps += 1
+                if steps > JSHeap.maxProtoChain { return .value(.undefined) }
+            }
+            if !cur.isObject { return .value(.undefined) }
+        }
         while let i = objectIndex(cur) {
             if objects[i].flags.contains(.exotic) { return .exotic(cur) }
             if objects[i].kind == .typedArray, let x = typedArrayNumericIndex(k) {
@@ -813,9 +857,12 @@ extension JSHeap {
                 }
             } else if k != names.length || (objects[i].kind != .array && objects[i].kind != .stringWrapper) {
                 let j = findSlot(i, k)
-                if j >= 0 && objects[i].props[j].attributes.contains(.writable) {
-                    objects[i].props[j].value = v
-                    return .done
+                if j >= 0 {
+                    let a = objects[i].props[j].attributes
+                    if a.contains(.writable) && !a.contains(.accessor) {
+                        objects[i].props[j].value = v
+                        return .done
+                    }
                 }
             }
         }
