@@ -120,6 +120,25 @@ func browserScriptTests(_ t: Tests) {
             r.log.filter { $0.hasPrefix("js") }.joined(separator: "; "))
     t.check(r.loader.statusText.hasSuffix("2 script errors"), "status line counts errors: " + r.loader.statusText)
 
+    // Import maps (9J: GitHub imports "react"): bare specifiers, a "/"
+    // prefix key, a scope, and an unmapped bare specifier failing cleanly.
+    r.mem.add("http://s.test/im.html", """
+    <title>IM</title><script type=importmap>{"imports": {"lib": "/libs/lib.js", "pkg/": "/pkgs/", "bad": 3},
+      "scopes": {"/scoped/": {"lib": "/libs/lib2.js"}}}</script>
+    <script type=module>import {v} from 'lib'; import {w} from 'pkg/w.js'; import {x} from '/scoped/x.js'; console.log('im ' + v + w + x)</script>
+    <script type=module>import 'nope'; console.log('not here')</script>
+    """)
+    r.mem.add("http://s.test/libs/lib.js", "export const v = 'v';", type: "text/javascript")
+    r.mem.add("http://s.test/libs/lib2.js", "export const v = 'V';", type: "text/javascript")
+    r.mem.add("http://s.test/pkgs/w.js", "export const w = 'w';", type: "text/javascript")
+    r.mem.add("http://s.test/scoped/x.js", "import {v} from 'lib'; export const x = v;", type: "text/javascript")
+    r.load("http://s.test/im.html")
+    t.equal(r.consoleText, "im vwV", "import map: imports, prefixes and scopes")
+    t.check(r.log.contains { $0.hasPrefix("js error") && $0.hasSuffix("Failed to resolve module specifier \"nope\"") },
+            "an unmapped bare specifier is an error", r.log.filter { $0.hasPrefix("js") }.joined(separator: "; "))
+    t.check(BrowserJSONLite.parseObject(Array("{\"a\": [1, {\"b\": \"\\u00e9\"}], \"c\": \"d\"".utf8)) == nil, "JSON reader: truncated input is nil")
+    t.check(BrowserJSONLite.parseObject(Array("{\"a\": [1, {\"b\": \"\\u00e9\"}], \"c\": \"d\\n\"}".utf8))?.count == 2, "JSON reader: nested values")
+
     // Script-inserted scripts, a class toggle (incremental restyle), fetch.
     r.mem.add("http://s.test/dyn.html", """
     <title>Dyn</title><style>.on { color: red }</style><div id=t>x</div><script>

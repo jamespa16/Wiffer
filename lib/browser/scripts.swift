@@ -371,6 +371,11 @@ final class BrowserScripts {
     /// HTML "prepare the script element", simplified.
     func prepare(_ n: HTMLNode, dynamic: Bool) {
         if n.scriptAlreadyStarted || stopped { return }
+        if let t = n.attribute("type"), browserLowerTrim(t) == "importmap" {
+            n.scriptAlreadyStarted = true
+            registerImportMap(n)
+            return
+        }
         guard let kind = browserScriptKind(n) else { return }
         let hasSrc = n.hasAttribute("src")
         if !hasSrc && n.textContent.isEmpty && dynamic { return }   // may get text or src later
@@ -500,16 +505,74 @@ final class BrowserScripts {
         loader.fetchModule(rec, key: u)
     }
 
-    /// Resolve a module specifier (no import maps: relative or absolute URLs only).
+    /// Resolve a module specifier: relative or absolute URLs, and bare
+    /// specifiers through the page's import map (9J: GitHub's React bundles
+    /// import "react").
     func resolveModule(_ spec: String, referrer: String) -> String? {
         let b = Array(spec.utf8)
         let relative = spec.hasPrefix("/") || spec.hasPrefix("./") || spec.hasPrefix("../")
+        var asURL: String? = nil
         if relative {
             guard let base = URLRecord.parseOrNil(referrer) ?? loader.page?.base else { return nil }
-            return base.resolve(b)?.href
+            asURL = base.resolve(b)?.href
+        } else if let u = URLRecord.parseOrNil(spec) {
+            asURL = u.href
         }
-        guard let u = URLRecord.parseOrNil(spec) else { return nil }
-        return u.href
+        if !importMap.isEmpty, let mapped = importMapLookup(asURL ?? spec, referrer: referrer) { return mapped }
+        return asURL
+    }
+
+    /// An import map: (scope URL prefix, "" for top-level imports) with its
+    /// specifier map, scopes longest first. Values are absolute URLs.
+    var importMap: [(scope: String, map: [(key: String, url: String)])] = []
+
+    /// <script type=importmap>: merged into the page's map (inline only; a
+    /// map after the first module fetch still applies to later ones).
+    func registerImportMap(_ n: HTMLNode) {
+        guard n.attribute("src") == nil, let base = loader.page?.base else {
+            log("js error " + url.href + ":0: external import maps are not supported")
+            return
+        }
+        guard let top = BrowserJSONLite.parseObject(Array(n.textContent.utf8)) else {
+            log("js error " + url.href + ":0: invalid import map")
+            return
+        }
+        func entries(_ v: BrowserJSONLite.Value) -> [(key: String, url: String)] {
+            guard case .object(let pairs) = v else { return [] }
+            var out: [(key: String, url: String)] = []
+            for (k, val) in pairs {
+                guard case .string(let target) = val, let u = base.resolve(Array(target.utf8)) else { continue }
+                var key = k
+                if k.hasPrefix("/") || k.hasPrefix("./") || k.hasPrefix("../") { key = base.resolve(Array(k.utf8))?.href ?? k }
+                out.append((key: key, url: u.href))
+            }
+            return out
+        }
+        for (k, v) in top {
+            if k == "imports" {
+                importMap.append((scope: "", map: entries(v)))
+            } else if k == "scopes", case .object(let scopes) = v {
+                for (sk, sv) in scopes {
+                    let prefix = base.resolve(Array(sk.utf8))?.href ?? sk
+                    importMap.append((scope: prefix, map: entries(sv)))
+                }
+            }
+        }
+        importMap.sort { $0.scope.utf8.count > $1.scope.utf8.count }
+    }
+
+    /// The import map's URL for `spec` (exact key, else the longest key
+    /// ending in "/" that prefixes it), scopes matching the referrer first.
+    func importMapLookup(_ spec: String, referrer: String) -> String? {
+        for (scope, map) in importMap where scope.isEmpty || referrer.hasPrefix(scope) {
+            if let e = map.first(where: { $0.key == spec }) { return e.url }
+            var best: (key: String, url: String)? = nil
+            for e in map where e.key.hasSuffix("/") && spec.hasPrefix(e.key) {
+                if best == nil || e.key.utf8.count > best!.key.utf8.count { best = e }
+            }
+            if let e = best { return e.url + String(decoding: Array(spec.utf8).dropFirst(e.key.utf8.count), as: UTF8.self) }
+        }
+        return nil
     }
 
     /// Count (and fetch) the modules `source` imports, transitively through
@@ -630,7 +693,7 @@ final class BrowserScripts {
         unowned(unsafe) let me = self
         realm.moduleLoader = { (realm: JSRealm, specifier: String, referrer: String) -> JSModuleLoadResult in
             guard let u = me.resolveModule(specifier, referrer: referrer) else {
-                return .error("Failed to resolve module specifier \"" + specifier + "\" (no import maps)")
+                return .error("Failed to resolve module specifier \"" + specifier + "\"")
             }
             if let s = me.moduleSources[u] ?? sources[u] { return .source(url: u, bytes: s) }
             return .error("Failed to fetch module " + u + " (dynamic import() of a module that was not pre-fetched)")
@@ -678,5 +741,112 @@ final class BrowserScripts {
 
     func queueElementEvent(_ type: String, _ n: HTMLNode) {
         page.loop.queueTask { [unowned(unsafe) self] in self.page.fireElementEvent(type, at: n) }
+    }
+}
+
+/// A small JSON reader for import maps: objects, strings (with escapes),
+/// and other values skipped. Bounded depth and size; nil on bad input.
+enum BrowserJSONLite {
+    indirect enum Value { case string(String), object([(String, Value)]), other }
+
+    static func parseObject(_ b: [UInt8]) -> [(String, Value)]? {
+        guard b.count <= 1 << 20 else { return nil }
+        var i = 0
+        guard let v = value(b, &i, depth: 0) else { return nil }
+        skipSpace(b, &i)
+        guard i == b.count, case .object(let pairs) = v else { return nil }
+        return pairs
+    }
+
+    static func skipSpace(_ b: [UInt8], _ i: inout Int) {
+        while i < b.count, b[i] == 0x20 || b[i] == 0x09 || b[i] == 0x0a || b[i] == 0x0d { i += 1 }
+    }
+
+    static func value(_ b: [UInt8], _ i: inout Int, depth: Int) -> Value? {
+        skipSpace(b, &i)
+        guard i < b.count, depth < 32 else { return nil }
+        switch b[i] {
+        case 0x22:
+            guard let s = string(b, &i) else { return nil }
+            return .string(s)
+        case 0x7b:
+            i += 1
+            var pairs: [(String, Value)] = []
+            skipSpace(b, &i)
+            if i < b.count && b[i] == 0x7d { i += 1; return .object(pairs) }
+            while true {
+                skipSpace(b, &i)
+                guard i < b.count, b[i] == 0x22, let k = string(b, &i) else { return nil }
+                skipSpace(b, &i)
+                guard i < b.count, b[i] == 0x3a else { return nil }
+                i += 1
+                guard let v = value(b, &i, depth: depth + 1) else { return nil }
+                pairs.append((k, v))
+                skipSpace(b, &i)
+                guard i < b.count else { return nil }
+                if b[i] == 0x2c { i += 1; continue }
+                if b[i] == 0x7d { i += 1; return .object(pairs) }
+                return nil
+            }
+        case 0x5b:
+            i += 1
+            skipSpace(b, &i)
+            if i < b.count && b[i] == 0x5d { i += 1; return .other }
+            while true {
+                guard value(b, &i, depth: depth + 1) != nil else { return nil }
+                skipSpace(b, &i)
+                guard i < b.count else { return nil }
+                if b[i] == 0x2c { i += 1; continue }
+                if b[i] == 0x5d { i += 1; return .other }
+                return nil
+            }
+        default:
+            // true, false, null, numbers: skipped up to a delimiter.
+            let start = i
+            while i < b.count, b[i] != 0x2c, b[i] != 0x7d, b[i] != 0x5d, b[i] != 0x20, b[i] != 0x0a, b[i] != 0x0d, b[i] != 0x09 { i += 1 }
+            return i > start ? .other : nil
+        }
+    }
+
+    static func string(_ b: [UInt8], _ i: inout Int) -> String? {
+        guard i < b.count, b[i] == 0x22 else { return nil }
+        i += 1
+        var out: [UInt8] = []
+        while i < b.count {
+            let c = b[i]
+            if c == 0x22 { i += 1; return String(decoding: out, as: UTF8.self) }
+            if c == 0x5c {
+                guard i + 1 < b.count else { return nil }
+                let e = b[i + 1]
+                i += 2
+                switch e {
+                case 0x6e: out.append(0x0a)
+                case 0x74: out.append(0x09)
+                case 0x72: out.append(0x0d)
+                case 0x62: out.append(0x08)
+                case 0x66: out.append(0x0c)
+                case 0x75:
+                    guard i + 4 <= b.count else { return nil }
+                    var v: UInt32 = 0
+                    for k in 0..<4 {
+                        let h = b[i + k]
+                        let d: UInt32
+                        if h >= 0x30 && h <= 0x39 { d = UInt32(h - 0x30) }
+                        else if h >= 0x61 && h <= 0x66 { d = UInt32(h - 0x61 + 10) }
+                        else if h >= 0x41 && h <= 0x46 { d = UInt32(h - 0x41 + 10) }
+                        else { return nil }
+                        v = v * 16 + d
+                    }
+                    i += 4
+                    let scalar = Unicode.Scalar(v) ?? Unicode.Scalar(0xFFFD)!
+                    out.append(contentsOf: Array(String(Character(scalar)).utf8))
+                default: out.append(e)
+                }
+                continue
+            }
+            out.append(c)
+            i += 1
+        }
+        return nil
     }
 }
