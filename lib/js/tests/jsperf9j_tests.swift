@@ -1,0 +1,44 @@
+// Phase 9J performance work: regression tests for string ropes and the
+// property fast paths (each script also under gcEveryAllocation).
+
+let jsPerf9JCases: [(String, String)] = [
+    // Ropes: long left and right chains, read in different ways.
+    ("var s = ''; for (var i = 0; i < 100000; i++) s += 'x'; s.length + ':' + s.charCodeAt(99999) + ':' + s.indexOf('y')", "100000:120:-1"),
+    ("var s = ''; for (var i = 0; i < 50000; i++) s = String.fromCharCode(97 + i % 26) + s; s.slice(0, 3) + s.length", "baz50000"),
+    ("var a = 'a'.repeat(200), b = 'b'.repeat(200); var r = a + b; var t = r + r; t === a + b + a + b", "true"),
+    ("var w = '\\u00e9'.repeat(150) + '\\u4e2d'.repeat(150); var r = 'x'.repeat(300) + w; r.length + ':' + r.charCodeAt(299) + ':' + r.charCodeAt(599) + ':' + r.charCodeAt(400)", "600:120:20013:233"),
+    ("var r = 'k'.repeat(300) + 'z'; var o = {}; o[r] = 1; o['k'.repeat(300) + 'z'] + ':' + Object.keys(o)[0].length", "1:301"),
+    ("var s = ''; for (var i = 0; i < 1000; i++) s += 'ab,'; s.split(',').length + ':' + /(ab,){999}/.test(s) + ':' + s.replace(/ab/g, 'c').length", "1001:true:2000"),
+    ("var s = ''; for (var i = 0; i < 400; i++) s += i % 10; JSON.stringify(s).length + ':' + JSON.parse(JSON.stringify({s: s})).s.length", "402:400"),
+    ("var s = 'x'.repeat(300); var parts = []; for (var i = 0; i < 20; i++) { s += i; parts.push(s); } parts[5].length + ':' + parts[19].slice(-4) + ':' + (parts[0] < parts[1])", "306:1819:true"),
+    ("var s = 'y'.repeat(256); var t = s + ''; var u = '' + s; (t === s) + ':' + (u === s) + ':' + (s + s).length", "true:true:512"),
+    ("var r = 'q'.repeat(300) + 'w'.repeat(300); typeof r + ':' + (r == 'q'.repeat(300) + 'w'.repeat(300)) + ':' + r.toUpperCase().slice(298, 302)", "string:true:QQWW"),
+    // Property fast paths: accessors, prototypes, non-writable, length.
+    ("var p = {get g() { return 7 }}; var o = Object.create(p); o.a = 1; (o.g + o.a) + ':' + ('length' in [])", "8:true"),
+    ("var o = {}; Object.defineProperty(o, 'x', {value: 1, writable: false}); o.x = 2; o.x", "1"),
+    ("var o = {set x(v) { this.y = v * 2 }}; o.x = 4; o.y", "8"),
+    ("var a = [1, 2, 3]; var s = new String('abcd'); a.length + s.length + 'xyz'.length", "10"),
+    ("var o = {}; for (var i = 0; i < 40; i++) o['k' + i] = i; delete o.k3; var s = 0; for (var i = 0; i < 40; i++) s += o['k' + i] || 0; s + ':' + o.k39", "777:39"),
+]
+
+func jsPerf9JTests(_ t: Tests) {
+    t.section("9J ropes and fast paths")
+    let rt = JSRuntime()
+    for stress in [false, true] {
+        for (src, want) in jsPerf9JCases {
+            let realm = rt.makeRealm()
+            realm.heap.gcEveryAllocation = stress && !jsHas(src, "100000") && !jsHas(src, "50000")
+            t.equal(realm.evaluateToString(src), want, (stress ? "[gc] " : "") + src)
+        }
+    }
+    // A rope over the length limit is a RangeError, not a trap.
+    var lim = JSLimits()
+    lim.maxStringLength = 1000
+    let small = JSRuntime(limits: lim).makeRealm()
+    t.equal(small.evaluateToString("try { var s = 'x'.repeat(600); s + s } catch (e) { e.name }"), "RangeError", "rope over maxStringLength")
+    // Ropes kept only by other ropes survive a collection.
+    let realm = rt.makeRealm()
+    _ = realm.evaluateToString("var keep = []; for (var i = 0; i < 50; i++) { var s = 'r'.repeat(260) + i; keep.push(s + s); }")
+    realm.heap.collectGarbage()
+    t.equal(realm.evaluateToString("keep[49].length + ':' + keep[49].slice(260, 262) + ':' + keep[10].slice(-2)"), "524:49:10", "ropes survive GC")
+}

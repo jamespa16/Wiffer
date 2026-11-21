@@ -494,7 +494,7 @@ public final class JSHeap {
         let h = Int(v.handle)
         switch v.bits & JSValue.tagMask {
         case JSValue.tagString:
-            if h < strings.count { jsBitSet(&stringMarks, h) }
+            if h < strings.count && !jsBitTestAndSet(&stringMarks, h) && strings[h].ropeLeft != 0 { markRope(h) }
         case JSValue.tagObject:
             if h < objects.count && !jsBitTestAndSet(&objectMarks, h) { markStack.append(JSHandle(h)) }
         case JSValue.tagSymbol:
@@ -520,6 +520,18 @@ public final class JSHeap {
         case JSValue.tagSymbol: return h < symbols.count && jsBitTest(symbolMarks, h)
         case JSValue.tagBigInt: return h < bigints.count && jsBitTest(bigintMarks, h)
         default: return true
+        }
+    }
+
+    /// Marks a rope's leaves and inner ropes (iteratively).
+    func markRope(_ root: Int) {
+        var stack: [Int] = [root]
+        while let h = stack.popLast() {
+            for c in [Int(strings[h].ropeLeft), Int(strings[h].ropeRight)] {
+                if c > 0 && c < strings.count && !jsBitTestAndSet(&stringMarks, c) && strings[c].ropeLeft != 0 {
+                    stack.append(c)
+                }
+            }
         }
     }
 
@@ -605,7 +617,7 @@ public final class JSHeap {
         while i >= 1 {
             if jsBitTest(stringLive, i) {
                 if jsBitTest(stringMarks, i) {
-                    live += JSHeap.stringCellBytes + strings[i].count * (strings[i].isWide ? 2 : 1)
+                    live += JSHeap.stringCellBytes + (strings[i].ropeLeft != 0 ? 0 : strings[i].count * (strings[i].isWide ? 2 : 1))
                 } else {
                     if strings[i].isAtom { atomDied = true }
                     strings[i] = JSStringCell()
