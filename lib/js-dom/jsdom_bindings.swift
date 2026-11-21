@@ -148,6 +148,15 @@ final class JSDOMBindings {
     var pendingSlotChanges: [HTMLNode] = []
     var mutationNotifier: JSValue = .undefined
     var hookedDocuments: [(doc: HTMLNode, id: Int)] = []
+    /// Live NodeIterators (jsdom_traversal.swift).
+    var nodeIterators: [JSDOMNodeIterator] = []
+    /// Window named properties (jsdom_window.swift).
+    var namedIndex: [String: HTMLNode]? = nil
+    var namedIndexVersion = -1
+    /// Custom elements (jsdom_customelements.swift).
+    let ce = JSDOMCEState()
+    /// Constructable stylesheets (jsdom_stylesheets.swift).
+    let sheets = JSDOMSheetState()
 
     init(realm: JSRealm, document: HTMLNode, host: JSDOMHost) {
         self.realm = realm
@@ -209,6 +218,8 @@ final class JSDOMBindings {
         for r in idleCallbacks { h.markValue(r.fn) }
         for (_, s) in historyStates { h.markValue(s) }
         for o in observers { o.mark(h) }
+        ce.mark(h)
+        sheets.mark(h)
     }
 
     // MARK: Interfaces of nodes
@@ -226,6 +237,7 @@ final class JSDOMBindings {
             case .html:
                 let local = prefixedElements.isEmpty ? n.name : elementLocalName(n)
                 if let i = jsdomHTMLInterface(local) { return i }
+                if !ce.unknown.isEmpty && ce.unknown.contains(ObjectIdentifier(n)) { return .HTMLUnknownElement }
                 return jsdomIsPlainHTMLElementName(local) || htmlIsValidCustomElementName(local) ? .HTMLElement : .HTMLUnknownElement
             case .svg: return jsdomSVGInterface(n.name) ?? .SVGElement
             case .mathml: return .Element
@@ -263,6 +275,7 @@ final class JSDOMBindings {
 
     func nodeWrapperIsRoot(_ n: HTMLNode) -> Bool {
         if n.isConnected { return true }
+        if !ce.elements.isEmpty && ce.elements[ObjectIdentifier(n)] != nil { return true }
         if let l = nodeListeners[ObjectIdentifier(n)], !l.items.isEmpty { return true }
         if let w = nodeClass.existingWrapper(for: n), heap.jsdomHasOwnProperties(w) { return true }
         return false

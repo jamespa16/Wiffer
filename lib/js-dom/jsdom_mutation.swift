@@ -59,6 +59,8 @@ extension JSDOMBindings {
     /// The page's lib/html mutation observer (every document it watches).
     func domMutated(_ m: HTMLMutation) {
         mutationVersion &+= 1
+        if !ce.definitions.isEmpty { ceMutated(m) }
+        if !nodeIterators.isEmpty && m.kind == .childList { iteratorsNoteRemoval(m) }
         switch m.kind {
         case .attributes:
             let name = m.attributeName
@@ -164,10 +166,13 @@ extension JSDOMBindings {
     /// DOM "notify mutation observers".
     func notifyMutationObservers() throws(JSThrow) {
         pendingMutationDelivery = false
-        let list = observers
+        // Observers with records now (as engines do: one that gets its first
+        // record from another observer's callback is called in the next
+        // microtask, after this one's slotchange events).
+        let list = observers.filter { !$0.records.isEmpty }
         let slots = pendingSlotChanges
         pendingSlotChanges = []
-        for o in list { o.transient = [] }
+        for o in observers { o.transient = [] }
         for o in list {
             let recs = o.records
             o.records = []

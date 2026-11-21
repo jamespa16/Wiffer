@@ -5018,6 +5018,87 @@ wait for the JS bindings). Results:
   event layer, a document-level `adoptedStyleSheets` change restyles
   everything.
 
+**Status: JS half done on the host** (lib/js-dom; `./run.sh --hosttest
+js-dom`). The browser harness page with a pixel check
+(tests/web/js/lit.html) waits for 9H and moves to 9J. Results:
+- **Custom elements** (jsdom_customelements.swift, idl/CustomElements.txt):
+  `customElements.define/get/getName/whenDefined/upgrade` with the
+  spec's validity checks and Get order (prototype, the four callbacks,
+  observedAttributes, disabledFeatures, formAssociated and its callbacks),
+  the element definition is running flag, HTMLElement's
+  [HTMLConstructor] (definition by new.target, the construction stack and
+  the already-constructed marker, prototype from new.target), upgrades in
+  shadow-including tree order on define, `document.createElement(NS)`
+  constructing synchronously (failures reported, HTMLUnknownElement in the
+  failed state), clones and imports getting upgrade reactions, and the
+  reactions on the CE reaction stack / backup element queue (one
+  microtask). The generator now wraps every [CEReactions] member
+  (`b.ceReactions { ... }`: push, run, pop and invoke with the result
+  rooted; reactions also run when the member throws); DOMStringMap and the
+  style property setters are wrapped by hand. Reactions come from lib/html's
+  synchronous mutation records (insert: connected or try-to-upgrade;
+  removal from a connected parent: disconnected; attribute records:
+  attributeChangedCallback with namespace; a custom element seen in a new
+  document: adoptedCallback, also from adoptNode), so fragment parsing
+  upgrades on connection as the spec's inert-document parse does. Script-made
+  documents, cloned documents and template contents documents are hooked
+  too. `extends` throws NotSupportedError (no customized built-ins).
+  `attachShadow` honours disabledFeatures; `attachInternals` returns a small
+  ElementInternals (shadowRoot, a Set as `states`, form stubs).
+  `JSDOMPage.upgradeParsedElements()` (called by finishParsing) upgrades
+  elements a chunked parser inserted after their definition. Custom element
+  wrappers are GC roots for the page's lifetime (class fields live on them).
+- **Shadow DOM from script:** 9G already had attachShadow / ShadowRoot /
+  slots / composedPath with closed-tree hiding / retargeting; added
+  `slot.assign` type checks, :focus on a host whose shadow tree holds focus,
+  `:focus-within` through hosts and slots (lib/css `.focusWithin`,
+  `CSSElement.cssIsFocusWithin`, default = :focus), template
+  `shadowRootDelegatesFocus/Clonable/Serializable/SlotAssignment` and an
+  enumerated `shadowRootMode`, declarative `shadowrootslotassignment` in
+  lib/html (parse and serialize), `input.list`. Mutation observer delivery
+  now calls only observers that had records when the microtask started
+  (engines' behaviour; slotchange then fires between, as WPT expects).
+- **Constructable stylesheets** (jsdom_stylesheets.swift): `new
+  CSSStyleSheet({baseURL, media, disabled})`, replace (promise) /
+  replaceSync (no @import), insertRule / deleteRule / addRule / removeRule,
+  `cssRules` (CSSRuleList, one CSSRule interface with cssText, type,
+  selectorText, parentStyleSheet), `disabled`. Rules are kept as text and
+  parsed by lib/css on delivery. `adoptedStyleSheets` on Document and
+  ShadowRoot is a plain array re-read in a microtask after each read
+  (catches push/splice); changes go to `host.layout()?.setAdoptedStyleSheets`;
+  `JSDOMPage.syncAdoptedStyleSheets()` re-delivers for a new engine.
+- **Also:** TreeWalker and NodeIterator (jsdom_traversal.swift, Lit needs
+  the walker; iterators follow removals from the mutation records),
+  NodeFilter constants, and the window's named properties object
+  (`window.someId`, between Window.prototype and EventTarget.prototype,
+  writable, index rebuilt per mutation version).
+- **Lit:** a counter LitElement over lib/js's lit-core 3.2.1 (module
+  rewritten to a classic script in the test) renders its shadow tree with
+  one adopted sheet (computed button colour through the real LayoutEngine),
+  `:host` display applies, two clicks dispatched with `dispatchMouse` at the
+  shadow button re-render "Count: 2", and the shadow content is laid out.
+- **WPT** (`tools/vendor_wpt.py`, same pinned commit, plus html/resources):
+  91 custom-elements and 115 shadow-dom files vendored; the floor file is
+  now per group: **dom 8549** (was 8540: named properties, iterators),
+  **custom-elements 451/852**, **shadow-dom 8355/8511** (6908 of those are
+  declarative/gethtml.html). The whole WPT run takes 31 s on the host.
+- **Fuzz:** the DOM fuzz gained 8 statement kinds (define with callbacks
+  that mutate, custom element insertion and innerHTML, slot renames, slot
+  insertion, manual assign, adopted sheets on shadow roots and the
+  document, upgrade + slot attribute + removal inside shadow trees); seeds
+  1-30 (7-30 at 12 rounds) clean. GC stress over the new unit tests and the
+  custom-elements / slot / event WPT files.
+- **Gaps:** no iframes, so the many WPT tests built on `test_with_window`
+  time out; parser-synchronous construction (scripts run after parsing, so
+  parser-created elements upgrade instead: the parser/* tests that look
+  for constructor-time state fail); customized built-ins; Range (and its
+  CEReactions); ARIA reflection and ElementInternals ARIA / validity /
+  form association; CustomStateSet and `:state()`; connectedMoveCallback
+  (no moveBefore); `style.sheet`, `document.styleSheets` and
+  ShadowRoot.styleSheets; adoptedStyleSheets is not a true ObservableArray
+  (no TypeError on push of a non-sheet); attribute changes through
+  shorthand style setters.
+
 ## Phase 9J: tests, performance and target sites
 
 - **Harness pages** in `tests/web/js/`, served by tests/web_server.py:

@@ -27,6 +27,7 @@ extension JSDOMBindings {
     /// Documents made by script stay alive with the page (their nodes'
     /// parent pointers depend on the document).
     func keepDocument(_ d: HTMLNode) {
+        hookDocument(d)
         extraDocuments.append(d)
         if extraDocuments.count > 10_000 { extraDocuments.removeFirst() }
     }
@@ -59,14 +60,18 @@ extension JSDOMBindings {
         guard htmlIsValidElementName(name) else {
             throw throwDOM("InvalidCharacterError", "'" + name + "' is not a valid element name.")
         }
-        return d.makeElement(isHTMLDocument(d) ? htmlLowerASCII(name) : name, .html)
+        let local = isHTMLDocument(d) ? htmlLowerASCII(name) : name
+        if d === document, !ce.definitions.isEmpty, let def = ce.definitions[local] { return try ceCreateSync(def) }
+        return d.makeElement(local, .html)
     }
 
     func Document_createElementNS(_ d: HTMLNode, _ ns: String?, _ q: String, _ options: JSValue) throws(JSThrow) -> HTMLNode? {
         let qn = try validateAndExtract(ns, q, element: true)
         let e: HTMLNode
         switch qn.namespace {
-        case "http://www.w3.org/1999/xhtml": e = d.makeElement(q, .html)
+        case "http://www.w3.org/1999/xhtml":
+            if d === document, qn.prefix == nil, !ce.definitions.isEmpty, let def = ce.definitions[q] { return try ceCreateSync(def) }
+            e = d.makeElement(q, .html)
         case "http://www.w3.org/2000/svg": e = d.makeElement(q, .svg)
         case "http://www.w3.org/1998/Math/MathML": e = d.makeElement(q, .mathml)
         default:
@@ -93,6 +98,7 @@ extension JSDOMBindings {
             let c = try d.importNode(n, deep: deep)
             copyControlState(from: n, to: c, deep: deep)
             copyNodeFlags(from: n, to: c, deep: deep)
+            if d === document { ceCloned(c) }
             return c
         } catch { throw throwDOM(error) }
     }
@@ -100,7 +106,13 @@ extension JSDOMBindings {
     func Document_adoptNode(_ d: HTMLNode, _ n: HTMLNode) throws(JSThrow) -> HTMLNode? {
         if n.kind == .document { throw throwDOM("NotSupportedError", "Documents can not be adopted.") }
         if n.isShadowRoot { throw throwDOM("HierarchyRequestError", "Shadow roots can not be adopted.") }
-        do throws(HTMLDOMError) { return try d.adoptNode(n) } catch { throw throwDOM(error) }
+        let old = n.nodeDocument
+        do throws(HTMLDOMError) {
+            let r = try d.adoptNode(n)
+            if d !== document { hookDocument(d) }
+            ceAdoptedSubtree(n, from: old)
+            return r
+        } catch { throw throwDOM(error) }
     }
 
     func Document_createAttribute(_ d: HTMLNode, _ name: String) throws(JSThrow) -> JSValue {
@@ -138,12 +150,6 @@ extension JSDOMBindings {
 
     func Document_createRange(_ d: HTMLNode) throws(JSThrow) -> JSValue {
         throw throwDOM("NotSupportedError", "Range is not supported.")
-    }
-    func Document_createTreeWalker(_ d: HTMLNode, _ root: HTMLNode, _ what: Int, _ filter: JSValue) throws(JSThrow) -> JSValue {
-        throw throwDOM("NotSupportedError", "TreeWalker is not supported.")
-    }
-    func Document_createNodeIterator(_ d: HTMLNode, _ root: HTMLNode, _ what: Int, _ filter: JSValue) throws(JSThrow) -> JSValue {
-        throw throwDOM("NotSupportedError", "NodeIterator is not supported.")
     }
 
     // MARK: Resource metadata

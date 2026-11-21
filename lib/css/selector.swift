@@ -70,6 +70,9 @@ protocol CSSElement {
     var cssIsScope: Bool { get }
     /// `:focus`.
     var cssIsFocused: Bool { get }
+    /// `:focus-within`: this element or a flat-tree descendant (through
+    /// shadow hosts) is focused.
+    var cssIsFocusWithin: Bool { get }
 }
 
 extension CSSElement {
@@ -100,6 +103,7 @@ extension CSSElement {
     var cssIsDefined: Bool { true }
     var cssIsScope: Bool { cssIsRoot }
     var cssIsFocused: Bool { false }
+    var cssIsFocusWithin: Bool { cssIsFocused }
 }
 
 /// Parse an `exportparts` value: "a, b: c" -> [(a, a), (b, c)]. Invalid
@@ -146,8 +150,8 @@ enum CSSPseudoClass: UInt8 {
     case link, visited, hover, root, empty, checked, disabled, enabled
     case never, always, defined
     /// `:scope` (the root in style sheets; the context element for
-    /// querySelector & co.) and `:focus`.
-    case scope, focus
+    /// querySelector & co.), `:focus` and `:focus-within`.
+    case scope, focus, focusWithin
 }
 
 enum CSSNthKind: UInt8 { case child, lastChild, ofType, lastOfType }
@@ -461,7 +465,7 @@ func cssAddSpecificity(_ a: UInt32, _ b: UInt32) -> UInt32 {
 /// accepts them).
 func cssKnownNeverPseudoClass(_ n: String) -> Bool {
     switch n {
-    case "active", "visited", "target", "target-within", "focus-visible", "focus-within", "local-link",
+    case "active", "visited", "target", "target-within", "focus-visible", "local-link",
          "current", "past", "future", "playing", "paused", "fullscreen", "modal", "popover-open",
          "placeholder-shown", "autofill", "read-only", "read-write", "required", "optional", "valid",
          "invalid", "user-valid", "user-invalid", "in-range", "out-of-range", "indeterminate", "default",
@@ -494,6 +498,7 @@ private func cssSimplePseudoClass(_ n: String) -> CSSPseudoClass {
     case "root": return .root
     case "scope": return .scope
     case "focus": return .focus
+    case "focus-within": return .focusWithin
     case "empty": return .empty
     case "checked": return .checked
     case "disabled": return .disabled
@@ -732,6 +737,7 @@ func cssMatchCompound<E: CSSElement>(_ c: CSSCompound, _ el: E, _ budget: inout 
         case .defined: if !el.cssIsDefined { return false }
         case .scope: if !el.cssIsScope { return false }
         case .focus: if !el.cssIsFocused { return false }
+        case .focusWithin: if !el.cssIsFocusWithin { return false }
         case .visited, .never: return false
         }
     }

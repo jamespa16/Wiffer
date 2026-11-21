@@ -1,0 +1,28 @@
+// HTML: custom elements (jsdom_customelements.swift). Autonomous custom
+// elements only: customized built-ins (`extends`) throw NotSupportedError,
+// as in Safari.
+[Kind=object, Swift=JSDOMCERegistry]
+interface CustomElementRegistry {
+  [CEReactions, Throws] undefined define(DOMString name, any constructor, optional any options);
+  any get(DOMString name);
+  [Throws] DOMString? getName(any constructor);
+  any whenDefined(DOMString name);
+  [CEReactions] undefined upgrade(Node root);
+};
+
+// A subset: the shadow root, a custom state set, and form-association
+// stubs (setFormValue, validity) for libraries that probe for them.
+[Kind=object, Swift=JSDOMElementInternals]
+interface ElementInternals {
+  readonly attribute any shadowRoot;
+  [SameObject] readonly attribute any states;
+  readonly attribute any form;
+  undefined setFormValue(any value, optional any state);
+  undefined setValidity(optional any flags, optional any message, optional any anchor);
+  readonly attribute boolean willValidate;
+  readonly attribute any validity;
+  readonly attribute DOMString validationMessage;
+  boolean checkValidity();
+  boolean reportValidity();
+  readonly attribute any labels;
+};

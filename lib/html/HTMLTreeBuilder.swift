@@ -181,6 +181,7 @@ final class HTMLTreeBuilder {
     func templateStartTag(_ t: HTMLStartToken) {
         var modeAttr: HTMLShadowRootMode? = nil
         var clonable = false, serializable = false, delegates = false
+        var slotAssignment = HTMLSlotAssignmentMode.named
         for a in t.attrs {
             switch a.name {
             case "shadowrootmode":
@@ -189,6 +190,7 @@ final class HTMLTreeBuilder {
             case "shadowrootclonable": clonable = true
             case "shadowrootserializable": serializable = true
             case "shadowrootdelegatesfocus": delegates = true
+            case "shadowrootslotassignment": if htmlLowerASCII(a.value) == "manual" { slotAssignment = .manual }
             default: break
             }
         }
@@ -208,6 +210,7 @@ final class HTMLTreeBuilder {
         makeRoom()
         let template = newNode(.element, name: t.name, tag: t.tag, attrs: t.attrs)
         if !host.isShadowHost, let shadow = try? host.attachShadow(mode: mode, delegatesFocus: delegates,
+                                                                  slotAssignment: slotAssignment,
                                                                   clonable: clonable, serializable: serializable) {
             shadow.rare?.shadow?.declarative = true
             shadow.rare?.shadow?.availableToElementInternals = true
