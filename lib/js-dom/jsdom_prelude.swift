@@ -13,6 +13,8 @@
 //     delivered after observe() and when it changes on resize or scroll.
 //   * PerformanceObserver: accepted and never fires (no entry types).
 //   * HTMLDocument: an alias of Document.
+//   * navigator.serviceWorker: a container with no registrations whose
+//     register() rejects (sites call it unguarded).
 //
 // Nothing here can hang: work happens only in response to the page's own
 // calls and events, each check is linear in the observed targets.
@@ -163,6 +165,23 @@ let jsdomPreludeSource = """
   PerformanceObserver.prototype.disconnect = function () {};
   PerformanceObserver.prototype.takeRecords = function () { return []; };
   Object.defineProperty(PerformanceObserver, 'supportedEntryTypes', { value: Object.freeze([]), configurable: true });
+
+  // No service workers: a container whose register() rejects and which has
+  // no registrations (preactjs.com calls getRegistrations() unguarded).
+  if (g.navigator && !g.navigator.serviceWorker) {
+    var sw = {
+      controller: null,
+      ready: new Promise(function () {}),
+      register: function () { return Promise.reject(new DOMException('Service workers are not supported', 'NotSupportedError')); },
+      getRegistration: function () { return Promise.resolve(undefined); },
+      getRegistrations: function () { return Promise.resolve([]); },
+      startMessages: function () {},
+      addEventListener: function () {},
+      removeEventListener: function () {},
+      oncontrollerchange: null, onmessage: null, onmessageerror: null
+    };
+    Object.defineProperty(g.navigator, 'serviceWorker', { value: sw, configurable: true, enumerable: true });
+  }
 
   def('IntersectionObserver', IntersectionObserver);
   def('ResizeObserver', ResizeObserver);

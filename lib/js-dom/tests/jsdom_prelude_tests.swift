@@ -47,5 +47,9 @@ func jsdomPreludeTests(_ t: Tests) {
         try { IntersectionObserver(function () {}) } catch (e) { console.log(e.name) }
         try { new IntersectionObserver(function () {}, { threshold: 2 }) } catch (e) { console.log(e.name) }
         """), "true true function -1\nTypeError\nRangeError", "PerformanceObserver, HTMLDocument, errors")
+    t.equal(run("""
+        navigator.serviceWorker.getRegistrations().then(function (r) { console.log('sw ' + r.length + ' ' + ('serviceWorker' in navigator)); });
+        navigator.serviceWorker.register('/sw.js').catch(function (e) { console.log(e.name); });
+        """), "sw 0 true\nNotSupportedError", "navigator.serviceWorker: no registrations, register() rejects")
     p.page.tearDown()
 }
