@@ -61,4 +61,35 @@ func jsPerf9JTests(_ t: Tests) {
     _ = realm.evaluateToString("var keep = []; for (var i = 0; i < 50; i++) { var s = 'r'.repeat(260) + i; keep.push(s + s); }")
     realm.heap.collectGarbage()
     t.equal(realm.evaluateToString("keep[49].length + ':' + keep[49].slice(260, 262) + ':' + keep[10].slice(-2)"), "524:49:10", "ropes survive GC")
+    // A rope flattened past the heap cap terminates instead of allocating.
+    var capped = JSLimits()
+    capped.heapBytes = 8 << 20
+    let cr = JSRuntime(limits: capped).makeRealm()
+    t.equal(cr.evaluateToString("var s = 'x'.repeat(6 << 20); var t = s + s; var r = t.indexOf('y'); for (var i = 0; i < 1e6; i++) {} r"), "terminated: heap limit", "rope flatten over the heap cap")
+}
+
+/// Whole-engine fuzz under GC stress (9J): mutants of the VM case scripts
+/// and the rope/fast-path cases, run with a collection at every allocation
+/// and a tiny interrupt budget. The plain VM fuzz (jsvm_tests.swift) runs
+/// 20 000 mutants without GC stress; this sample finds missing roots.
+func jsFuzz9JTests(_ t: Tests) {
+    t.section("9J gc-stress fuzz")
+    var seeds: [[UInt8]] = []
+    for (src, _) in jsVMCases where !jsHas(src, "inf()") && !jsHas(src, "d(5000)") { seeds.append(Array(src.utf8)) }
+    for (src, _) in jsPerf9JCases where !jsHas(src, "100000") && !jsHas(src, "50000") { seeds.append(Array(src.utf8)) }
+    let rt = JSRuntime(limits: JSLimits.small)
+    var budget = 0
+    rt.interruptHandler = { _ in budget += 1; return budget > 2 }
+    let realm = rt.makeRealm()
+    realm.heap.gcEveryAllocation = true
+    let start = hostMillis()
+    var n = 0
+    t.fuzz("vm gc stress", seeds: seeds, iterations: 400) { m in
+        budget = 0
+        n += 1
+        _ = realm.evaluate(source: m, name: "fuzz.js")
+    }
+    realm.heap.gcEveryAllocation = false
+    t.equal(rt.makeRealm().evaluateToString("('a'.repeat(300) + 'b').length"), "301", "after gc-stress fuzz")
+    print("js 9j gc-stress fuzz: \(n) mutants, \(hostMillis() - start) ms")
 }

@@ -237,6 +237,16 @@ extension JSHeap {
     func flattenRope(_ i: Int) {
         let n = strings[i].ropeCount
         let wide = strings[i].isWide
+        // The units will exist twice (the leaves may still be live). Past
+        // the heap cap the heap terminates the script; the rope becomes the
+        // empty string while everything unwinds (nothing can observe it).
+        guard noteGrowth(n * (wide ? 2 : 1)) else {
+            strings[i].ropeLeft = 0
+            strings[i].ropeRight = 0
+            strings[i].ropeCount = 0
+            strings[i].isWide = false
+            return
+        }
         var lat: [UInt8] = []
         var u16: [UInt16] = []
         if wide { u16.reserveCapacity(n) } else { lat.reserveCapacity(n) }
@@ -260,8 +270,6 @@ extension JSHeap {
         strings[i].ropeRight = 0
         strings[i].ropeCount = 0
         if wide { strings[i].utf16 = u16 } else { strings[i].latin1 = lat }
-        // The units now exist twice (the leaves may still be live).
-        _ = noteGrowth(n * (wide ? 2 : 1))
     }
 
     /// Whether a string of this many units may be made.
