@@ -29,9 +29,11 @@ struct JSDOMFuzzGen {
               "'td:nth-child(2n+1)'", "'a[href]'", "'section ~ p'", "':scope > *'", "'::before'", "'div:has(p)'", "'@bad'"])
     }
     mutating func el() -> String { "E(" + int(100_000) + ")" }
+    /// An element (or the root) of a random open shadow tree.
+    mutating func sh() -> String { "S(" + int(100_000) + ")" }
 
     mutating func statement() -> String {
-        switch rng.below(32) {
+        switch rng.below(40) {
         case 0: return el() + ".appendChild(" + el() + ")"
         case 1: return el() + ".insertBefore(" + el() + ", " + el() + ".firstChild)"
         case 2: return el() + ".remove()"
@@ -63,6 +65,25 @@ struct JSDOMFuzzGen {
         case 28: return "var f = document.createDocumentFragment(); f.append(" + el() + ", " + el() + "); " + el() + ".prepend(f)"
         case 29: return "document.title = " + value()
         case 30: return el() + ".dataset.k = " + value()
+        // 9I: custom elements, slots, adopted stylesheets.
+        case 32:
+            return "customElements.define('x-f' + " + int(4) + ", class extends HTMLElement { constructor() { super(); "
+                + "if (" + int(2) + ") this.attachShadow({mode: 'open'}).innerHTML = '<slot name=s1></slot><slot></slot><b>c</b>' } "
+                + "connectedCallback() { " + el() + ".setAttribute('data-c', '1') } "
+                + "disconnectedCallback() { " + el() + ".append('d') } "
+                + "attributeChangedCallback() { this.toggleAttribute('data-q') } "
+                + "static get observedAttributes() { return ['title', 'class'] } })"
+        case 33: return el() + ".appendChild(document.createElement('x-f" + int(4) + "'))"
+        case 34: return el() + ".innerHTML = '<x-f0 title=a><span slot=s1>q</span></x-f0><x-f1 class=b></x-f1><x-f2></x-f2>'"
+        case 35: return sh() + ".setAttribute('name', " + pick(["'s1'", "''", "'s2'"]) + ")"
+        case 36: return sh() + ".appendChild(document.createElement('" + pick(["slot", "slot", "p", "x-f3"]) + "'))"
+        case 37: return el() + ".attachShadow({mode: 'open', slotAssignment: 'manual'}).innerHTML = '<slot></slot><slot name=s1></slot>'; "
+            + sh() + ".assign(" + el() + ", " + el() + ")"
+        case 38:
+            return "var sh = new CSSStyleSheet(); sh.replaceSync(" + pick(["'p { color: red } :host { display: block }'",
+                "'::slotted(*) { margin: 2px } b { float: left }'", "'* { display: contents }'", "''"]) + "); "
+                + pick(["S(" + int(100_000) + ").getRootNode()", "document"]) + ".adoptedStyleSheets = [sh]"
+        case 39: return "customElements.upgrade(" + el() + "); " + el() + ".slot = 's1'; " + sh() + ".remove()"
         default: return "sink += " + el() + ".closest(" + selector() + ") ? 1 : 0"
         }
     }
@@ -70,6 +91,8 @@ struct JSDOMFuzzGen {
     mutating func script(_ n: Int) -> String {
         var s = "var sink = 0; var all = function () { return document.querySelectorAll('*'); };\n"
         s += "function E(i) { var a = all(); if (a.length === 0) return document.body || document.documentElement; return a[i % a.length]; }\n"
+        s += "function S(i) { var a = all(), hs = []; for (var k = 0; k < a.length; k++) if (a[k].shadowRoot) hs.push(a[k].shadowRoot); "
+        s += "if (!hs.length) return E(i); var r = hs[i % hs.length], q = r.querySelectorAll('*'); return q.length ? q[i % q.length] : r; }\n"
         var k = 0
         while k < n {
             s += "try { " + statement() + " } catch (e) {}\n"

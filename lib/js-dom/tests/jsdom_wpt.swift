@@ -3,8 +3,9 @@
 // order (testharness.js and helpers from the fixtures, a testharnessreport
 // shim that reports through a native hook), then DOMContentLoaded and load
 // fire and the event loop runs on a virtual clock until the harness is
-// done. The total subtest pass count must stay at or above the floor in
-// lib/js-dom/tests/wpt-floor.txt.
+// done. Each group's subtest pass count must stay at or above its floor in
+// lib/js-dom/tests/wpt-floor.txt ("group count" lines; groups are
+// custom-elements, shadow-dom and dom for everything else).
 //
 //     WIFFER_WPT_VERBOSE=1     per-test counts and failing subtests
 //     WIFFER_WPT_ONLY=substr   run only matching tests
@@ -152,6 +153,7 @@ func jsdomWPTTests(_ t: Tests) {
     let only = jsdomEnv("WIFFER_WPT_ONLY")
     let verbose = jsdomEnv("WIFFER_WPT_VERBOSE") != nil
     var pass = 0, fail = 0, files = 0, clean = 0
+    var groups: [(name: String, pass: Int, total: Int)] = [("dom", 0, 0), ("custom-elements", 0, 0), ("shadow-dom", 0, 0)]
     let start = hostMillis()
     for line in String(decoding: list, as: UTF8.self).split(separator: "\n") {
         let path = String(line)
@@ -164,6 +166,9 @@ func jsdomWPTTests(_ t: Tests) {
         files += 1
         pass += r.pass
         fail += r.fail
+        let g = path.hasPrefix("custom-elements/") ? 1 : path.hasPrefix("shadow-dom/") ? 2 : 0
+        groups[g].pass += r.pass
+        groups[g].total += r.pass + r.fail
         if r.fail == 0 && r.harness == "OK" { clean += 1 }
         if verbose {
             var line = "wpt " + path + ": " + String(r.pass) + "/" + String(r.pass + r.fail)
@@ -176,14 +181,25 @@ func jsdomWPTTests(_ t: Tests) {
     var summary = "wpt: " + String(pass) + "/" + String(pass + fail)
     summary += " subtests pass, " + String(clean) + "/" + String(files)
     summary += " files clean (" + String(ms) + " ms)"
+    for g in groups { summary += "; " + g.name + " " + String(g.pass) + "/" + String(g.total) }
     print(summary)
     if only != nil { return }
     if jsdomEnv("WIFFER_WPT_REGEN") != nil {
-        _ = hostWriteFile("lib/js-dom/tests/wpt-floor.txt", Array((String(pass) + "\n").utf8))
+        var text = ""
+        for g in groups { text += g.name + " " + String(g.pass) + "\n" }
+        _ = hostWriteFile("lib/js-dom/tests/wpt-floor.txt", Array(text.utf8))
         return
     }
-    let floor = t.readFile("lib/js-dom/tests/wpt-floor.txt").flatMap { jsdomParseInteger(String(decoding: $0, as: UTF8.self)) } ?? 0
-    t.check(pass >= floor, "wpt pass count " + String(pass) + " >= floor " + String(floor))
+    let floorText = t.readFile("lib/js-dom/tests/wpt-floor.txt").map { String(decoding: $0, as: UTF8.self) } ?? ""
+    for g in groups {
+        var floor = 0
+        for line in floorText.split(separator: "\n") {
+            let parts = line.split(separator: " ")
+            if parts.count == 2 && String(parts[0]) == g.name { floor = jsdomParseInteger(String(parts[1])) ?? 0 }
+            if parts.count == 1 && g.name == "dom" { floor = jsdomParseInteger(String(parts[0])) ?? 0 }
+        }
+        t.check(g.pass >= floor, "wpt " + g.name + " pass count " + String(g.pass) + " >= floor " + String(floor))
+    }
 }
 
 func jsdomEnv(_ name: String) -> String? {

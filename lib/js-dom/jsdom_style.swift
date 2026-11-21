@@ -286,8 +286,10 @@ extension JSDOMBindings {
                 if n == "float" { continue }
                 realm.defineGetter(p, n, setter: { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
                     guard let s = b.classes.CSSStyleDeclaration.unwrap(args.this) else { throw b.illegal("CSSStyleDeclaration", n) }
-                    let v = args[0].isNull ? "" : try b.toStr(args[0])
-                    try b.CSSStyleDeclaration_setProperty(s, name, v, "")
+                    try b.ceRun { () throws(JSThrow) in
+                        let v = args[0].isNull ? "" : try b.toStr(args[0])
+                        try b.CSSStyleDeclaration_setProperty(s, name, v, "")
+                    }
                     return .undefined
                 }) { (realm: JSRealm, args: JSArgs) throws(JSThrow) -> JSValue in
                     guard let s = b.classes.CSSStyleDeclaration.unwrap(args.this) else { throw b.illegal("CSSStyleDeclaration", n) }

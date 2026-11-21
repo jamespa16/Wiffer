@@ -183,6 +183,10 @@ public final class JSDOMPage {
         bindings.controls = [:]
         bindings.attrCache = [:]
         bindings.extraDocuments = []
+        bindings.sheets.release()
+        bindings.nodeIterators = []
+        bindings.namedIndex = nil
+        bindings.ce.release()
         bindings.heap.removeRootProvider(bindings.rootProviderID)
     }
 
@@ -240,6 +244,7 @@ public final class JSDOMPage {
     /// After the parse and the deferred scripts: readyState "interactive",
     /// then DOMContentLoaded at the document (bubbling to the window).
     public func finishParsing() {
+        upgradeParsedElements()
         setReadyState("interactive")
         bindings.fire("DOMContentLoaded", at: .node(document), bubbles: true)
         loop.performMicrotaskCheckpoint()
@@ -446,6 +451,26 @@ public final class JSDOMPage {
 
     /// The document URL as scripts see it (location.href).
     public var url: String { bindings.url?.href ?? "about:blank" }
+
+    /// Custom elements the parser inserted after their definition (the
+    /// parser does not notify, and scripts run between parse chunks):
+    /// upgrade them in tree order, as connecting them would. finishParsing
+    /// calls this; a browser that parses in chunks may call it after each.
+    public func upgradeParsedElements() {
+        if bindings.ce.definitions.isEmpty { return }
+        _ = try? bindings.ceReactions { () throws(JSThrow) -> JSValue in
+            self.bindings.document.walkShadowIncluding { n in
+                if n.kind == .element { self.bindings.ceTryUpgrade(n) }
+                return true
+            }
+            return .undefined
+        }
+        loop.performMicrotaskCheckpoint()
+    }
+
+    /// Hand every adoptedStyleSheets list to host.layout() again (call
+    /// after making a new LayoutEngine for this document).
+    public func syncAdoptedStyleSheets() { bindings.syncAllAdopted() }
 
     /// Wrappers alive (diagnostics, tests).
     var wrapperCount: Int { bindings.nodeClass.liveCount }

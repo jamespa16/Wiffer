@@ -100,6 +100,8 @@ extension JSDOMBindings {
         let c = n.cloneNode(deep: deep)
         copyControlState(from: n, to: c, deep: deep)
         copyNodeFlags(from: n, to: c, deep: deep)
+        if c.nodeDocument === document { ceCloned(c) }
+        if c.kind == .document { hookDocument(c); keepDocument(c) }
         return c
     }
 

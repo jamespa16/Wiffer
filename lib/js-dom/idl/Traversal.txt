@@ -1,0 +1,29 @@
+// DOM Standard: Traversal (NodeIterator, TreeWalker; jsdom_traversal.swift).
+// The filter lives in a hidden wrapper slot. NodeFilter is a plain object
+// with the constants (jsdom_window.swift).
+[Kind=object, Swift=JSDOMNodeIterator]
+interface NodeIterator {
+  readonly attribute Node root;
+  readonly attribute Node referenceNode;
+  readonly attribute boolean pointerBeforeReferenceNode;
+  readonly attribute unsigned long whatToShow;
+  readonly attribute any filter;
+  [Throws] Node? nextNode();
+  [Throws] Node? previousNode();
+  undefined detach();
+};
+
+[Kind=object, Swift=JSDOMTreeWalker]
+interface TreeWalker {
+  readonly attribute Node root;
+  readonly attribute unsigned long whatToShow;
+  readonly attribute any filter;
+  attribute Node currentNode;
+  [Throws] Node? parentNode();
+  [Throws] Node? firstChild();
+  [Throws] Node? lastChild();
+  [Throws] Node? previousSibling();
+  [Throws] Node? nextSibling();
+  [Throws] Node? previousNode();
+  [Throws] Node? nextNode();
+};

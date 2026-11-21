@@ -59,7 +59,6 @@ extension JSDOMBindings {
     func Window_screen(_ w: JSDOMBindings) -> JSValue { screenObject() }
     func Window_performance(_ w: JSDOMBindings) -> JSValue { performanceObject() }
     func Window_event(_ w: JSDOMBindings) -> JSValue { currentEvent }
-    func Window_customElements(_ w: JSDOMBindings) -> JSValue { .undefined }
     func Window_isSecureContext(_ w: JSDOMBindings) -> Bool { url.map { $0.protocolString == "https:" || $0.hostname == "localhost" } ?? false }
     func Window_origin(_ w: JSDOMBindings) -> String { url?.origin ?? "null" }
     func Window_localStorage(_ w: JSDOMBindings) -> JSValue { singleton(classes.Storage, { JSDOMStorage(local: true) }, &localStorageSingleton) }
@@ -717,5 +716,67 @@ extension JSDOMBindings {
             realm.defineGlobal("CSS2Properties", ctors[JSDOMInterface.CSSStyleDeclaration.rawValue])
         }
         _ = g
+        installNamedPropertiesObject()
+        // NodeFilter's constants (TreeWalker / NodeIterator are not here).
+        let nf = newObject()
+        keep.append(nf)
+        let consts: [(String, Int)] = [("FILTER_ACCEPT", 1), ("FILTER_REJECT", 2), ("FILTER_SKIP", 3),
+            ("SHOW_ALL", 0xFFFF_FFFF), ("SHOW_ELEMENT", 0x1), ("SHOW_ATTRIBUTE", 0x2), ("SHOW_TEXT", 0x4),
+            ("SHOW_CDATA_SECTION", 0x8), ("SHOW_ENTITY_REFERENCE", 0x10), ("SHOW_ENTITY", 0x20),
+            ("SHOW_PROCESSING_INSTRUCTION", 0x40), ("SHOW_COMMENT", 0x80), ("SHOW_DOCUMENT", 0x100),
+            ("SHOW_DOCUMENT_TYPE", 0x200), ("SHOW_DOCUMENT_FRAGMENT", 0x400), ("SHOW_NOTATION", 0x800)]
+        for (k, v) in consts { realm.defineValue(nf, k, .number(Double(v)), [.enumerable]) }
+        realm.defineGlobal("NodeFilter", nf)
+    }
+
+    /// The window's named properties object (HTML "Named access on the
+    /// Window object"): between Window.prototype and EventTarget.prototype,
+    /// it exposes elements by id (and embed / form / img / object by name),
+    /// so `window.myId` and a bare `myId` work. The first element in tree
+    /// order wins (no HTMLCollection for duplicates). The name index is
+    /// rebuilt when the DOM changed.
+    func installNamedPropertiesObject() {
+        let et = protos[JSDOMInterface.EventTarget.rawValue]
+        let o = heap.newObject(proto: et)
+        if !o.isObject { return }
+        keep.append(o)
+        var h = JSExoticHandler()
+        h.getOwnProperty = { [unowned(unsafe) self] (realm: JSRealm, o: JSValue, k: JSPropertyKey) throws(JSThrow) -> JSProperty? in
+            guard k.isString else { return nil }
+            if realm.heap.getOwnProperty(o, k) != nil { return nil }
+            switch realm.heap.getProperty(realm.heap.getPrototypeOf(o), k) {
+            case .value(let v): if !v.isUndefined { return nil }
+            case .getter, .exotic: return nil
+            }
+            let name = realm.heap.swiftString(realm.heap.keyValue(k))
+            guard let el = self.windowNamedElement(name) else { return nil }
+            // Writable: `window.x = v` / `var`-less assignment shadow it.
+            return .data(self.wrapNode(el), [.writable, .configurable])
+        }
+        let id = realm.registerExoticHandler(h)
+        realm.makeExotic(o, handler: id)
+        _ = heap.setPrototypeOf(protos[JSDOMInterface.Window.rawValue], o)
+    }
+
+    func windowNamedElement(_ name: String) -> HTMLNode? {
+        if name.isEmpty { return nil }
+        if namedIndexVersion != mutationVersion || namedIndex == nil {
+            var idx: [String: HTMLNode] = [:]
+            var count = 0
+            document.walk { n in
+                if n.kind != .element { return true }
+                count += 1
+                if count > 1_000_000 { return false }
+                if let i = n.attribute("id"), !i.isEmpty, idx[i] == nil { idx[i] = n }
+                if n.namespace == .html, n.name == "embed" || n.name == "form" || n.name == "img" || n.name == "object",
+                   let nm = n.attribute("name"), !nm.isEmpty, idx[nm] == nil {
+                    idx[nm] = n
+                }
+                return true
+            }
+            namedIndex = idx
+            namedIndexVersion = mutationVersion
+        }
+        return namedIndex?[name]
     }
 }
