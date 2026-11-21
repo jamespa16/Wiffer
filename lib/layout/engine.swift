@@ -110,6 +110,9 @@ final class LayoutEngine {
     private(set) var viewportHeight: Double
     var needsStyle = true
     var needsLayout = true
+    /// Only a subtree splice may preserve geometry caches. External input
+    /// changes (images, viewport, fonts/style) still start a fresh generation.
+    var reuseLayoutCaches = false
 
     // Incremental updates (see incremental.swift).
     var pendingAttr: [HTMLNode] = []
@@ -369,6 +372,7 @@ final class LayoutEngine {
 
     /// Restyle and relayout as needed. Cheap when nothing changed.
     func update() {
+        reuseLayoutCaches = !needsLayout
         inUpdate = true
         defer { inUpdate = false }
         if hasPendingDOMChanges { processDOMChanges() }
@@ -386,6 +390,7 @@ final class LayoutEngine {
         }
         pendingHover = []
         if needsStyle {
+            reuseLayoutCaches = false
             let t0 = now()
             stats.fullRebuilds += 1
             let b = LayoutBuilder(resolver: resolver, state: state, limits: limits)
@@ -411,8 +416,9 @@ final class LayoutEngine {
     }
 
     private func relayout() {
-        ctx.gen += 1
+        if !reuseLayoutCaches { ctx.gen += 1 }
         ctx.steps = 0
+        ctx.layoutCacheHits = 0
         ctx.viewportW = viewportWidth
         ctx.viewportH = viewportHeight
         ctx.imageSize = imageSize

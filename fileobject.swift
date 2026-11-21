@@ -187,6 +187,11 @@ final class VFSFile: FileObject {
     /// The working copy of a file opened for writing.
     var copy: [UInt8] = []
     var dirty = false
+    /// A handle that only extends its original snapshot can commit the delta.
+    private var appendOnly = true
+    private var originalSize = 0
+    private var originalRevision: UInt64 = 0
+    private var appendDelta: [UInt8]?
     /// A directory's entries, taken at the first readdir.
     var entries: [FSNode]?
     var entryIndex = 0
@@ -201,11 +206,15 @@ final class VFSFile: FileObject {
         if write && !node.isDirectory {
             copy = truncate ? [] : node.contents
             dirty = truncate
+            appendOnly = !truncate
+            originalSize = copy.count
+            originalRevision = node.contentRevision
+            if append && !read && !truncate { appendDelta = [] }
         }
     }
 
     override var needsCPU0: Bool { true }
-    var size: Int { canWrite ? copy.count : node.size }
+    var size: Int { canWrite ? (appendDelta.map { originalSize + $0.count } ?? copy.count) : node.size }
 
     override func ready() -> Int16 { WaitEvent.readable | WaitEvent.writable }
 
@@ -221,7 +230,15 @@ final class VFSFile: FileObject {
 
     override func tryWrite(_ bytes: [UInt8]) -> IOResult {
         guard canWrite else { return .error(Errno.EBADF) }
+        if appendDelta != nil {
+            guard bytes.count <= (1 << 30) - size else { return .error(Errno.ENOSPC) }
+            appendDelta!.append(contentsOf: bytes)
+            position = size
+            dirty = true
+            return .count(bytes.count)
+        }
         if append { position = copy.count }
+        if position < copy.count { appendOnly = false }
         guard position <= 1 << 30, bytes.count <= 1 << 30 else { return .error(Errno.ENOSPC) }
         if position > copy.count { copy += [UInt8](repeating: 0, count: position - copy.count) }
         let end = position + bytes.count
@@ -275,11 +292,24 @@ final class VFSFile: FileObject {
     }
 
     override func lastClose() {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
         guard dirty else { return }
         dirty = false
         // Not if it was removed or replaced while open.
         guard let now = try? vfs.lookup(path), now === node else { return }
-        _ = try? vfs.write(path, copy)
+        // Concurrent modifications preserve the previous replacement semantics;
+        // the delta path applies only while the original snapshot is current.
+        if appendOnly && node.contentRevision == originalRevision {
+            let delta = appendDelta ?? Array(copy[originalSize...])
+            // Release the original snapshot before extending the VFS buffer,
+            // keeping its append amortized rather than triggering a full COW.
+            copy = []
+            _ = try? vfs.write(path, delta, append: true)
+        } else {
+            if let delta = appendDelta { copy += delta }
+            _ = try? vfs.write(path, copy)
+        }
     }
 }
 

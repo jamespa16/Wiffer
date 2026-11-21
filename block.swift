@@ -9,7 +9,43 @@
 // flush() makes it durable).
 //
 // Like the RAM fs, block devices are CPU-0-only (ROADMAP Part 4 affinity):
-// no locking.
+// serialized by diskOperationLock across operations that may sleep.
+
+/// CPU-0 cooperative, task-recursive mutex. The filesystem takes this for
+/// complete operations, not just individual transfers: a sleeping DMA request
+/// must not let another task enter partially updated FAT/VFS state.
+final class DiskOperationLock {
+    private var owner: Task? = nil
+    private var depth = 0
+    private var waiters: [Task] = []
+
+    func acquire() {
+        let me = scheduler.current
+        while depth != 0 && owner !== me {
+            if let me, !me.isMain {
+                if !waiters.contains(where: { $0 === me }) { waiters.append(me) }
+                park()
+            } else {
+                // Task 0 cannot park, but can run the task owning the mutex.
+                yield()
+            }
+        }
+        owner = me
+        depth += 1
+    }
+
+    func release() {
+        guard depth > 0, owner === scheduler.current else { taskPanic("disk mutex ownership") }
+        depth -= 1
+        if depth != 0 { return }
+        owner = nil
+        let waking = waiters
+        waiters = []
+        for task in waking { unpark(task) }
+    }
+}
+
+let diskOperationLock = DiskOperationLock()
 
 let sectorSize = 512
 

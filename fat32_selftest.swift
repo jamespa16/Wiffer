@@ -496,6 +496,47 @@ func fatTimestamps() -> Bool {
         && sub.data.le16(dot * 32 + 24) == date && fatDateTime(FATTimestamp()) == (date: 46 << 9 | 1 << 5 | 1, time: 0)
 }
 
+/// Small appends avoid prefix data writes; both partial-sector and whole-
+/// cluster extensions preserve old/new contents at every injected power cut.
+func fatAppendTailTests() -> Bool {
+    for aligned in [false, true] {
+        for crossing in [false, true] {
+            guard let (base, v) = fatFresh() else { return false }
+            let old = fatPattern(v.clusterSize * 64 + (aligned ? 0 : 1), 4)
+            let tail = fatPattern(crossing ? v.clusterSize * 2 : 7, 8)
+            guard (try? v.write(["log"], old)) != nil else { return false }
+            let probe = fatCopy(base)
+            guard let w = try? FATVolume.mount(probe) else { return false }
+            let before = probe.sectorsWritten
+            guard (try? w.append(["log"], tail)) != nil,
+                  (try? w.read(["log"])) == old + tail else { return false }
+            let writes = Int(probe.sectorsWritten - before)
+            guard writes < 25, fatClean(w, "tail append") else { return false }
+            for k in 0..<writes {
+                let d = fatCopy(base)
+                guard let volume = try? FATVolume.mount(d) else { return false }
+                d.failWritesAfter = k
+                let success = (try? volume.append(["log"], tail)) != nil
+                d.failWritesAfter = nil
+                let want = success ? old + tail : old
+                // Remount first so live-instance recovery cannot mask a
+                // missing boot-time repair, then verify live recovery too.
+                guard let remounted = try? FATVolume.mount(d),
+                      (try? remounted.read(["log"])) == want,
+                      (try? volume.read(["log"])) == want else {
+                    print("    append power cut: \(k)/\(writes), aligned=\(aligned), crossing=\(crossing)")
+                    return false
+                }
+                for problem in remounted.check() where !problem.hasPrefix("lost clusters") && !problem.hasPrefix("FSInfo free count") {
+                    print("    append recovery: \(problem)")
+                    return false
+                }
+            }
+        }
+    }
+    return true
+}
+
 func fatTests(_ t: inout SelfTest) {
     let base = HeapUsage()
     t.check("fat32: format 64 MiB, mount, geometry, free count, boot/FSInfo copies", fatFormatGeometry())
@@ -505,6 +546,7 @@ func fatTests(_ t: inout SelfTest) {
     t.check("fat32: scripted session matches a RAM fs model after remount", fatScriptMatchesModel())
     t.check("fat32: full disk gives .noSpace, nothing leaked", fatFullDisk())
     t.check("fat32: power cut during overwrite leaves old or new contents", fatSurvivesPowerCuts())
+    t.check("fat32: append tail writes and power-cut safety", fatAppendTailTests())
     t.check("fat32: long, mixed-case and 8.3 names round-trip", fatNamesRoundTrip())
     t.check("fat32: timestamps come from fatClock", fatTimestamps())
     t.check("fat32: volumes and disks freed (live blocks)", HeapUsage() == base)

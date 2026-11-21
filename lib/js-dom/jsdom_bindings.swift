@@ -106,6 +106,9 @@ final class JSDOMBindings {
     var focused: HTMLNode? = nil
     var controls: [ObjectIdentifier: JSDOMControlState] = [:]
     var mutationVersion = 0
+    // Collection membership does not depend on text or unrelated attributes.
+    var collectionTreeVersion = 0
+    var collectionClassVersion = 0
     var observers: [JSDOMMutationObserver] = []
     var pendingMutationDelivery = false
     var mutationObserverID = 0

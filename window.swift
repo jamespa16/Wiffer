@@ -138,7 +138,44 @@ class Window: Layer {
     var minContentWidth = 96
     var minContentHeight = 32
     /// Content-local area changed since the WM last looked (invalidate).
-    var pendingDamage = Rect.empty
+    private var damageRects = InlineArray<64, Rect>(repeating: .empty)
+    private(set) var pendingDamageCount = 0
+    /// Bounding box for inspection and full reset; rendering uses each rect.
+    var pendingDamage: Rect {
+        get {
+            var box = Rect.empty
+            for i in 0..<pendingDamageCount { box = box.union(damageRects[i]) }
+            return box
+        }
+        set {
+            pendingDamageCount = 0
+            if !newValue.isEmpty { appendDamage(newValue) }
+        }
+    }
+    func pendingDamageRect(_ i: Int) -> Rect { damageRects[i] }
+
+    private func appendDamage(_ rect: Rect) {
+        var r = rect
+        var i = 0
+        while i < pendingDamageCount {
+            let d = damageRects[i]
+            if d.contains(r) { return }
+            // Merge only when the bounding box adds no unchanged pixels.
+            let box = d.union(r)
+            if box.area <= d.area + r.area - d.intersection(r).area {
+                r = box
+                pendingDamageCount -= 1
+                damageRects[i] = damageRects[pendingDamageCount]
+                i = 0
+            } else { i += 1 }
+        }
+        if pendingDamageCount == 64 {
+            r = r.union(pendingDamage)
+            pendingDamageCount = 0
+        }
+        damageRects[pendingDamageCount] = r
+        pendingDamageCount += 1
+    }
     /// Title or focus changed: the WM repaints the decorations.
     var chromeDirty = false
     var theme: WindowTheme?
@@ -236,7 +273,8 @@ class Window: Layer {
 
     /// Mark a content-local rect (nil: all of it) for the screen.
     func invalidate(_ r: Rect? = nil) {
-        pendingDamage = pendingDamage.union((r ?? content.bounds).intersection(content.bounds))
+        let c = (r ?? content.bounds).intersection(content.bounds)
+        if !c.isEmpty { appendDamage(c) }
     }
 
     /// Mark the window for draw() before the next composite.

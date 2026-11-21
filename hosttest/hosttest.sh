@@ -27,6 +27,9 @@ case "$TRIPLE" in
   *) EMB="$RES/embedded/$TRIPLE" ;;
 esac
 HOST_LIBS=("$EMB/libswiftUnicodeDataTables.a" "$EMB/libswiftEmbeddedPlatformPOSIX.a")
+case "$TRIPLE" in
+  *linux*) HOST_LIBS+=(-lm) ;;
+esac
 
 SWIFT_FLAGS=(-enable-experimental-feature Embedded -wmo -parse-as-library -Osize
   -Xfrontend -disable-swift-specific-llvm-optzns)

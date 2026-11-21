@@ -22,7 +22,7 @@ func fsTreeLines(_ n: FSNode, _ path: String, _ out: inout [String]) {
             out.append(p + "/")
             fsTreeLines(c, p, &out)
         } else {
-            out.append(p + " \(c.size) \(fsSum(c.contents))")
+            out.append(p + " \(c.size) \(fsSum((try? c.readContents()) ?? []))")
         }
     }
 }
@@ -336,9 +336,27 @@ func mountHostFixture() -> Bool {
     return got == want && bigOK
 }
 
+/// Mount metadata and stat must not read file data. The first read loads
+/// exactly that file and subsequent reads use the cached snapshot.
+func mountLoadsContentsLazily() -> Bool {
+    guard let (d, v) = fatFresh() else { return false }
+    let payload = fatPattern(128 * 1024, 3)
+    guard (try? v.write(["large"], payload)) != nil else { return false }
+    let fs = FileSystem()
+    _ = try? fs.mkdir("/m")
+    let before = d.sectorsRead
+    guard (try? fs.mount(v, at: "/m")) != nil,
+          let node = try? fs.lookup("/m/large"), node.size == payload.count,
+          node.contents.isEmpty, d.sectorsRead - before < UInt64(payload.count / sectorSize) else { return false }
+    guard (try? fs.read("/m/large")) == payload else { return false }
+    let loaded = d.sectorsRead
+    return (try? fs.read("/m/large")) == payload && d.sectorsRead == loaded
+}
+
 func fsMountTests(_ t: inout SelfTest) {
     blockDevices.reserveCapacity(blockDevices.count + 1) // mountCommandsWork adds one
     let base = HeapUsage()
+    t.check("mount: contents load only on first read", mountLoadsContentsLazily())
     t.check("mount: loads the volume; every change reaches it (remount matches)", mountMirrors())
     t.check("mount: disk errors leave RAM and disk unchanged; power-cut sweep", mountErrorsChangeNothing())
     t.check("mount: case-folded names; collisions give .exists", mountCaseRule())

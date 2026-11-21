@@ -221,6 +221,7 @@ final class LayoutBox {
     var intrinsicGen = -1
     var minContent = 0.0, maxContent = 0.0
     var layoutGen = -1
+    var layoutLocalX = 0.0
     var layoutKeyW = -1.0, layoutKeyH = -2.0, layoutKeyAvail = -2.0, layoutKeyForce = -2.0
     var layoutKeyShrink = false
 

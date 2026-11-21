@@ -256,7 +256,20 @@ extension JSDOMBindings {
 
     func NonElementParentNode_getElementById(_ n: HTMLNode, _ id: String) -> HTMLNode? {
         if id.isEmpty { return nil }
-        return descendantsMatching(n) { $0.attribute("id") == id }.first
+        // Walk siblings lazily: even a wide parent's later children need not
+        // be visited or copied when an early descendant matches.
+        var stack: [(node: HTMLNode, nextChild: Int)] = [(n, 0)]
+        while let entry = stack.last {
+            if entry.nextChild >= entry.node.children.count {
+                stack.removeLast()
+                continue
+            }
+            let child = entry.node.children[entry.nextChild]
+            stack[stack.count - 1].nextChild += 1
+            if child.kind == .element && child.attribute("id") == id { return child }
+            if !child.children.isEmpty { stack.append((child, 0)) }
+        }
+        return nil
     }
 
     func DocumentOrShadowRoot_activeElement(_ n: HTMLNode) -> HTMLNode? {

@@ -13,9 +13,9 @@
 // leaves the tree (remove, or FileSystem's deinit): detach() clears every
 // parent link in the subtree, so it frees as soon as nothing else holds it.
 //
-// Phase Y: mounts. `mount(volume, at:)` loads a whole FAT32 volume into
+// Phase Y: mounts. `mount(volume, at:)` loads FAT32 directory metadata into
 // FSNodes under an empty directory (the mount point, which holds the
-// FATVolume). Reads never touch the disk. Every change below a mount point
+// FATVolume). File contents are loaded on the first read. Every change below a mount point
 // goes to the volume first, and the RAM tree changes only if that succeeded
 // (a FATVolume call that throws leaves the disk as it was), so the two stay
 // the same. Rules under a mount:
@@ -25,7 +25,7 @@
 //   target) a name that matches a different existing entry gives .exists;
 //   renaming an entry to another case of its own name is allowed.
 // - touch on an existing file changes only the RAM tick (no disk write).
-// - append is a whole-file rewrite (FAT has no partial write).
+// - append writes only new bytes on volumes with append recovery enabled.
 // - `rm -r` removes bottom-up, one FAT call per entry; an error stops it
 //   with what was removed so far gone from both sides.
 // - rename only within one mount (else .crossDevice, as is RAM <-> mount);
@@ -101,7 +101,24 @@ final class FSNode {
     private(set) var name: String
     let kind: FSKind
     /// File bytes (always empty for a directory).
-    var contents: [UInt8] = []
+    var contents: [UInt8] = [] {
+        didSet { pendingContents = nil; contentRevision &+= 1 }
+    }
+    private(set) var contentRevision: UInt64 = 0
+    /// Mounted files keep only metadata until first opened/read. Open files
+    /// materialize their snapshot before any rename/remove can free clusters.
+    fileprivate var pendingContents: (volume: FATVolume, entry: FATDirEntry)?
+
+    func readContents() throws(FSError) -> [UInt8] {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
+        if let pending = pendingContents {
+            do throws(FATError) {
+                contents = try pending.volume.contents(of: pending.entry)
+            } catch { throw FSError(error) }
+        }
+        return contents
+    }
     /// Directory entries by name (always empty for a file).
     var children: [String: FSNode] = [:]
     /// nil for the root and for nodes no longer in a tree.
@@ -119,7 +136,7 @@ final class FSNode {
 
     var isDirectory: Bool { kind == .directory }
     /// Bytes in a file; 0 for a directory.
-    var size: Int { contents.count }
+    var size: Int { pendingContents?.entry.size ?? contents.count }
 
     /// Children sorted by name.
     var sortedChildren: [FSNode] {
@@ -197,7 +214,7 @@ final class FileSystem {
 
     /// The canonical absolute form of `path`: "/", or "/a/b".
     static func normalize(_ path: String, cwd: String = "/") -> String {
-        join(components(path, cwd: cwd))
+        return join(components(path, cwd: cwd))
     }
 
     static func join(_ parts: [String]) -> String {
@@ -209,6 +226,8 @@ final class FileSystem {
 
     /// Absolute path of a node in this tree.
     func path(of node: FSNode) -> String {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
         var parts: [String] = []
         var n = node
         while let p = n.parent {
@@ -221,11 +240,15 @@ final class FileSystem {
     // MARK: Lookup
 
     func lookup(_ path: String, cwd: String = "/") throws(FSError) -> FSNode {
-        try node(FileSystem.components(path, cwd: cwd)[...])
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
+        return try node(FileSystem.components(path, cwd: cwd)[...])
     }
 
     func exists(_ path: String, cwd: String = "/") -> Bool {
-        (try? lookup(path, cwd: cwd)) != nil
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
+        return (try? lookup(path, cwd: cwd)) != nil
     }
 
     private func node(_ parts: ArraySlice<String>) throws(FSError) -> FSNode {
@@ -254,13 +277,17 @@ final class FileSystem {
     /// A new empty file. Throws `.exists` if anything is already there.
     @discardableResult
     func create(_ path: String, cwd: String = "/") throws(FSError) -> FSNode {
-        try make(path, cwd: cwd, kind: .file)
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
+        return try make(path, cwd: cwd, kind: .file)
     }
 
     /// A new directory. With `parents`, missing directories on the way are
     /// made too, and an existing directory at `path` is not an error.
     @discardableResult
     func mkdir(_ path: String, cwd: String = "/", parents: Bool = false) throws(FSError) -> FSNode {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
         guard parents else { return try make(path, cwd: cwd, kind: .directory) }
         var n = root
         var mount: FSNode? = nil
@@ -301,6 +328,8 @@ final class FileSystem {
     /// modified now.
     @discardableResult
     func touch(_ path: String, cwd: String = "/") throws(FSError) -> FSNode {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
         if let n = try? lookup(path, cwd: cwd) {
             n.modified = ticks
             return n
@@ -311,23 +340,31 @@ final class FileSystem {
     // MARK: Contents
 
     func read(_ path: String, cwd: String = "/") throws(FSError) -> [UInt8] {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
         let n = try lookup(path, cwd: cwd)
         guard !n.isDirectory else { throw .isADirectory }
-        return n.contents
+        return try n.readContents()
     }
 
     /// Replace (or with `append`, extend) a file's bytes, creating it if
     /// it doesn't exist.
     @discardableResult
     func write(_ path: String, _ bytes: [UInt8], cwd: String = "/", append: Bool = false) throws(FSError) -> FSNode {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
         let (dir, name) = try parentAndName(path, cwd: cwd)
         let mount = mountPoint(of: dir)
         let found = dir.child(name, folded: mount != nil)
         if let found, found.isDirectory { throw .isADirectory }
         if let mount { // the whole file, under the existing spelling
             let at = volumePath(dir, mount) + [found?.name ?? name]
-            let whole = append ? (found?.contents ?? []) + bytes : bytes
-            try onDisk(mount) { (v: FATVolume) throws(FATError) in try v.write(at, whole) }
+            // Materialize the old snapshot before any on-disk replacement can
+            // free its chain; only the new tail is passed to FAT's append path.
+            if append { _ = try found?.readContents() }
+            try onDisk(mount) { (v: FATVolume) throws(FATError) in
+                if append { try v.append(at, bytes) } else { try v.write(at, bytes) }
+            }
         }
         let n: FSNode
         if let existing = found {
@@ -345,6 +382,8 @@ final class FileSystem {
 
     /// Remove a file or an empty directory (any directory if `recursive`).
     func remove(_ path: String, cwd: String = "/", recursive: Bool = false) throws(FSError) {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
         let n = try lookup(path, cwd: cwd)
         guard n.parent != nil else { throw .invalidPath } // the root
         if !mounts.isEmpty {
@@ -368,6 +407,8 @@ final class FileSystem {
     /// Move `from` to exactly `to` (whose parent directory must exist).
     /// Throws `.exists` if `to` is taken; renaming a path to itself is a no-op.
     func rename(_ from: String, to: String, cwd: String = "/") throws(FSError) {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
         let src = FileSystem.components(from, cwd: cwd)
         let dst = FileSystem.components(to, cwd: cwd)
         let n = try node(src[...])
@@ -399,6 +440,8 @@ final class FileSystem {
 
     /// A directory's entries sorted by name, or a file by itself.
     func list(_ path: String, cwd: String = "/") throws(FSError) -> [FSNode] {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
         let n = try lookup(path, cwd: cwd)
         return n.isDirectory ? n.sortedChildren : [n]
     }
@@ -413,6 +456,8 @@ final class FileSystem {
 
     /// Totals over the whole tree (the root counts as a directory).
     var usage: Usage {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
         var u = Usage()
         func walk(_ n: FSNode) {
             if n.volume != nil { return } // a mount: df shows each volume
@@ -430,10 +475,12 @@ final class FileSystem {
 
     // MARK: Mounts (Phase Y)
 
-    /// Load `volume` into FSNodes under the empty directory `path` and send
+    /// Load `volume` directory metadata into FSNodes under the empty directory `path` and send
     /// every later change below it to the volume. Not on "/", not on or
     /// below another mount, and one mount per volume (.busy).
     func mount(_ volume: FATVolume, at path: String, cwd: String = "/") throws(FSError) {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
         let n = try lookup(path, cwd: cwd)
         guard n.isDirectory else { throw .notADirectory }
         guard n.parent != nil else { throw .invalidPath }
@@ -454,6 +501,8 @@ final class FileSystem {
     /// empty directory. Every change was already flushed (write-through),
     /// so a failing sync (FSInfo, flush) is ignored: nothing is lost.
     func unmount(at path: String, cwd: String = "/") throws(FSError) {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
         let n = try lookup(path, cwd: cwd)
         guard let v = n.volume else { throw .notMounted }
         _ = try? v.sync()
@@ -465,11 +514,15 @@ final class FileSystem {
 
     /// The mount point holding `volume`, if it's mounted here.
     func mountPoint(for volume: FATVolume) -> FSNode? {
-        mounts.first(where: { $0.volume === volume })
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
+        return mounts.first(where: { $0.volume === volume })
     }
 
     /// The mount point at or above `n` (nil: plain RAM).
     func mountPoint(of n: FSNode) -> FSNode? {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
         if mounts.isEmpty { return nil }
         var up: FSNode? = n
         while let a = up {
@@ -520,7 +573,7 @@ final class FileSystem {
             if e.isDirectory {
                 try load(volume, e.cluster, into: c, depth: depth + 1)
             } else {
-                c.contents = try volume.contents(of: e)
+                c.pendingContents = (volume, e)
             }
         }
     }

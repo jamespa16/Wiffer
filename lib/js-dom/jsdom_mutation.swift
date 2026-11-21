@@ -59,6 +59,12 @@ extension JSDOMBindings {
     /// The page's lib/html mutation observer (every document it watches).
     func domMutated(_ m: HTMLMutation) {
         mutationVersion &+= 1
+        if m.kind == .childList {
+            collectionTreeVersion &+= 1
+            collectionClassVersion &+= 1
+        } else if m.kind == .attributes && m.attributeName == "class" {
+            collectionClassVersion &+= 1
+        }
         if !ce.definitions.isEmpty { ceMutated(m) }
         if !nodeIterators.isEmpty && m.kind == .childList { iteratorsNoteRemoval(m) }
         switch m.kind {

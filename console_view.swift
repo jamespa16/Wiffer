@@ -26,17 +26,18 @@ final class ConsoleView {
     func render(_ c: Console, into s: Surface, at origin: Point, damaged: (Rect) -> Void) {
         let cr = min(c.row, c.rows - 1), cc = min(c.col, c.cols - 1)
         if cr != cursorRow || cc != cursorCol {
-            if cursorRow >= 0 && cursorRow < c.rows { c.dirty[cursorRow] = true }
-            c.dirty[cr] = true
+            if cursorRow >= 0 && cursorRow < c.rows { c.dirty.mark(cursorRow, from: cursorCol, to: cursorCol + 1) }
+            c.dirty.mark(cr, from: cc, to: cc + 1)
         }
         let fw = font.width, fh = font.height
         for r in 0..<c.rows where c.dirty[r] {
+            let start = c.dirty.starts[r], end = c.dirty.ends[r]
             c.dirty[r] = false
             let y = origin.y + r * fh
-            let rowRect = Rect(origin.x, y, c.cols * fw, fh).intersection(s.clip)
+            let rowRect = Rect(origin.x + start * fw, y, (end - start) * fw, fh).intersection(s.clip)
             if rowRect.isEmpty { continue }
             let base = r * c.cols
-            for col in 0..<c.cols {
+            for col in start..<end {
                 let x = origin.x + col * fw
                 if x + fw <= rowRect.x || x >= rowRect.maxX { continue }
                 let cell = c.cells[base + col]

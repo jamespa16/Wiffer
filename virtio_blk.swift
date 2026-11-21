@@ -1,15 +1,15 @@
 // Part 5 (Phase V2): virtio-blk over the legacy (virtio 0.9.5) PCI transport.
 //
 // Everything goes through the I/O-port BAR 0 (no MMIO). One virtqueue,
-// polled: each request is a descriptor chain (header, data, status byte),
+// each request is a descriptor chain (header, data, status byte),
 // published in the avail ring, kicked through the notify register; the
-// driver then spins until the used ring's index moves, or about 2 s pass.
+// driver parks the task until completion, with a timed fallback for lost IRQs.
 // The ring, the request header/status and a bounce buffer are contiguous
 // frame runs from pmm, allocated once at probe time. Physical memory is
 // identity-mapped at PML4[0] (pmm.swift), so their pointers are also their
 // device (DMA) addresses. Swift arrays are never handed to the device.
 //
-// CPU 0 only (ROADMAP Part 4 affinity), one request in flight: no locks.
+// CPU 0 only, one request in flight, behind diskOperationLock.
 
 enum VirtioReg {
     // Legacy header, offsets into BAR 0 (no MSI-X, so device config at 0x14).
@@ -77,6 +77,17 @@ final class VirtioBlock: BlockDevice {
     /// so every later request fails with .io.
     var broken = false
     var requests: UInt64 = 0
+    /// Only CPU 0 and its IRQ handler touch this. Kept alive until submit
+    /// returns; the interrupt handler never removes or allocates a waiter.
+    var completionWaiter: Task? = nil
+    var parkedRequests: UInt64 = 0
+    /// Permanent IRQ registry; unlike blockDevices, tests never resize it.
+    var nextInterruptDevice: VirtioBlock? = nil
+
+    func interrupt() {
+        guard inb(io + VirtioReg.isr) & 1 != 0 else { return }
+        if dma_load16(used + 2) != usedIdx, let waiter = completionWaiter { unpark(waiter) }
+    }
 
     private init(name: String, pci: PCIDevice, io: UInt16, sectors: UInt64, readOnly: Bool, canFlush: Bool,
                  queueSize: Int, queuePhys: UInt, queueFrames: Int, usedOffset: Int,
@@ -150,8 +161,19 @@ final class VirtioBlock: BlockDevice {
                               canFlush: accepted & VirtioBlkFeature.flush != 0,
                               queueSize: n, queuePhys: queuePhys, queueFrames: layout.frames,
                               usedOffset: layout.usedOffset, requestPhys: requestPhys, bouncePhys: bouncePhys)
-        // Polled: ask the device not to interrupt (it's only a hint).
-        dma_store16(blk.avail, 1)
+        let irq = dev.interruptLine
+        let interruptible = dev.interruptPin != 0 && irq > 0 && irq < 16 && irq != 2
+        dma_store16(blk.avail, interruptible ? 0 : 1)
+        if interruptible {
+            let flags = irq_save()
+            blk.nextInterruptDevice = diskInterruptHead
+            diskInterruptHead = blk
+            irq_restore(flags)
+            let command = pciRead32(dev.bus, dev.device, dev.function, 4)
+            pciWrite32(dev.bus, dev.device, dev.function, 4, (command & 0xFFFF) & ~(1 << 10))
+            picUnmask(irq)
+            if irq >= 8 { picUnmask(2) }
+        }
         status(VirtioStatus.acknowledge | VirtioStatus.driver | VirtioStatus.driverOK)
         return blk
     }
@@ -189,6 +211,12 @@ final class VirtioBlock: BlockDevice {
         outw(io + VirtioReg.queueNotify, 0)
 
         let deadline = ticks + 2 * timerHz
+        let canSleep = read_rflags() & (1 << 9) != 0
+        if canSleep, let me = scheduler.current, !me.isMain {
+            completionWaiter = me
+            parkedRequests &+= 1
+        }
+        defer { completionWaiter = nil }
         var spins = 0
         while dma_load16(used + 2) == usedIdx {
             spins += 1
@@ -198,7 +226,18 @@ final class VirtioBlock: BlockDevice {
                 print("\(name): request timed out (type \(type), sector \(lba))")
                 throw .io
             }
-            cpu_pause()
+            if completionWaiter != nil {
+                // The IRQ may already have arrived before waiter publication;
+                // recheck after publishing, and bound the wait even on lost IRQs.
+                let flags = irq_save()
+                let pending = dma_load16(used + 2) == usedIdx
+                irq_restore(flags)
+                if pending { parkUntil(min(deadline, ticks + 1)) }
+            } else if canSleep {
+                let flags = irq_save()
+                if dma_load16(used + 2) == usedIdx { sti_hlt() }
+                irq_restore(flags)
+            } else { cpu_pause() }
         }
         usedIdx &+= 1
         _ = inb(io + VirtioReg.isr) // reading ISR status acknowledges any interrupt
@@ -207,6 +246,8 @@ final class VirtioBlock: BlockDevice {
     }
 
     override func readSectors(_ lba: UInt64, count: Int, into buf: UnsafeMutableRawBufferPointer) throws(BlockError) {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
         let bounce = pmm.identity(bouncePhys)
         var done = 0
         while done < count {
@@ -218,6 +259,8 @@ final class VirtioBlock: BlockDevice {
     }
 
     override func writeSectors(_ lba: UInt64, count: Int, from buf: UnsafeRawBufferPointer) throws(BlockError) {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
         let bounce = pmm.identity(bouncePhys)
         var done = 0
         while done < count {
@@ -229,6 +272,8 @@ final class VirtioBlock: BlockDevice {
     }
 
     override func flush() throws(BlockError) {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
         guard canFlush else { return } // no FLUSH feature: the device has no write cache
         try submit(VirtioBlkRequest.flush, 0, count: 0)
     }
@@ -242,7 +287,9 @@ func diskInit() {
     for dev in pciFind(vendor: virtioVendor, device: virtioBlkLegacyID) {
         let name = "vd" + String(decoding: [letter], as: UTF8.self)
         guard let blk = VirtioBlock.probe(dev, name: name) else { continue }
+        let flags = irq_save()
         blockDevices.append(blk)
+        irq_restore(flags)
         print("\(name): virtio-blk at \(dev.location), \(blk.sectorCount) sectors (\(blk.byteCount >> 20) MiB)\(blk.readOnly ? ", read-only" : "")\(blk.canFlush ? "" : ", no flush")")
         letter += 1
     }
@@ -257,6 +304,17 @@ func diskInit() {
     if let vda = blockDevice(named: "vda") {
         _ = try? vfs.mkdir("/disk")
         print(mountLine(vda, at: "/disk", in: vfs))
+    }
+}
+
+/// Legacy PCI interrupt lines may be shared with other devices.
+var diskInterruptHead: VirtioBlock? = nil
+
+func diskIRQ(_ irq: UInt8) {
+    var device = diskInterruptHead
+    while let blk = device {
+        if blk.pci.interruptLine == irq { blk.interrupt() }
+        device = blk.nextInterruptDevice
     }
 }
 
@@ -361,6 +419,7 @@ func virtioTests(_ t: inout SelfTest) {
         t.check("virtio: multi-chunk read", false)
     }
     t.check("virtio: out of range rejected", (try? vda.read(vda.sectorCount, count: 1)) == nil)
+    if let blk { diskParkingTests(&t, blk) }
 }
 
 extension Shell {

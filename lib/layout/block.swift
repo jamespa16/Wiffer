@@ -95,6 +95,7 @@ final class LayoutContext {
     private var chains: [String: FontChain] = [:]
     private var metricsCache: [String: LayoutFontMetrics] = [:]
     var steps = 0
+    var layoutCacheHits = 0
 
     init(text: TextEngine, limits: LayoutLimits) {
         self.text = text
@@ -256,10 +257,19 @@ final class LayoutContext {
         steps += 1
         let cbW = layoutPos(cbW0)
         let bfcRoot = establishesBFC(b)
-        if bfcRoot && b.layoutGen == gen && b.layoutKeyW == cbW && b.layoutKeyH == (cbH ?? -1)
+        // Flex/table/inline parents can overwrite their atomic children's
+        // measured sizes after this call. Reuse only ordinary block BFCs,
+        // whose parents change their position but preserve local geometry.
+        let reusable = bfcRoot && b.kind == .block && !b.inlineLevel && b.parent?.kind != .flex
+        if reusable && b.layoutGen == gen && b.layoutKeyW == cbW && b.layoutKeyH == (cbH ?? -1)
             && b.layoutKeyAvail == (availIn ?? -1) && b.layoutKeyForce == (forceW ?? -1) && b.layoutKeyShrink == shrink {
+            // The parent adds its content offset after every call. Return
+            // the local origin, rather than accumulating that offset.
+            b.x = b.layoutLocalX
+            layoutCacheHits += 1
             return
         }
+        defer { b.layoutLocalX = b.x }
         b.layoutGen = gen
         b.layoutKeyW = cbW; b.layoutKeyH = cbH ?? -1; b.layoutKeyAvail = availIn ?? -1
         b.layoutKeyForce = forceW ?? -1; b.layoutKeyShrink = shrink

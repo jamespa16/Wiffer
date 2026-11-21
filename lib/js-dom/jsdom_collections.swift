@@ -2,7 +2,7 @@
 // NamedNodeMap + Attr, DOMStringMap (dataset), DOMRectList. Indexed and
 // named properties go through each class's JSHostExotic. Live collections
 // recompute on access and cache their result until the page document
-// changes (mutationVersion, bumped by the page's lib/html observer).
+// changes in a way that can affect membership.
 
 enum JSDOMCollectionKind {
     case childElements
@@ -92,9 +92,21 @@ extension JSDOMBindings {
 
     func collectionItems(_ c: JSDOMHTMLCollection) -> [HTMLNode] {
         let cacheable = c.root.nodeDocument === document
-        if cacheable && c.cacheVersion == mutationVersion { return c.cache }
+        let version: Int
+        switch c.kind {
+        case .childElements, .tagName, .tagNameNS, .forms, .images, .embeds,
+             .scripts, .tableRows, .tBodies, .rowCells, .selectOptions:
+            version = collectionTreeVersion
+        case .className:
+            version = collectionClassVersion
+        default:
+            // Form ownership, selection and named membership have additional
+            // attribute/state dependencies; keep their conservative invalidation.
+            version = mutationVersion
+        }
+        if cacheable && c.cacheVersion == version { return c.cache }
         let r = computeCollection(c)
-        if cacheable { c.cache = r; c.cacheVersion = mutationVersion }
+        if cacheable { c.cache = r; c.cacheVersion = version }
         return r
     }
 

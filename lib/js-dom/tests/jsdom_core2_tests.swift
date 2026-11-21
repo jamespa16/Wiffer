@@ -3,6 +3,39 @@
 // Swift-side entry points the browser uses.
 
 func jsdomCore2Tests(_ t: Tests) {
+    t.section("lookup and collection invalidation")
+    let lookup = JSDOMTestPage("<body><div id=first class=x><span id=nested></span></div><p id=first></p></body>")
+    t.equal(lookup.run("""
+    var first = document.getElementById('first');
+    console.log(first.tagName, document.getElementById('nested').tagName, document.getElementById('missing'));
+    first.remove(); console.log(document.getElementById('first').tagName);
+    var frag = document.createDocumentFragment();
+    var a = document.createElement('i'); a.id = 'a'; frag.appendChild(a);
+    console.log(frag.getElementById('a') === a, document.getElementById('a'));
+    a.id = 'b'; console.log(frag.getElementById('a'), frag.getElementById('b') === a);
+    """), "DIV SPAN null\nP\ntrue null\nnull true", "ID lookup preserves tree order, removal and detached fragment updates")
+    let cb = lookup.page.bindings
+    let tags = JSDOMHTMLCollection(cb.document, .tagName("p"))
+    let classes = JSDOMHTMLCollection(cb.document, .className(["x"]))
+    t.equal(cb.collectionItems(tags).count, 1, "tag collection initial membership")
+    t.equal(cb.collectionItems(classes).count, 0, "class collection initial membership")
+    let tagVersion = tags.cacheVersion, classVersion = classes.cacheVersion
+    _ = lookup.run("document.body.firstChild.setAttribute('style', 'color:red'); document.body.firstChild.appendChild(document.createTextNode('a')); ")
+    // Adding text is still structural; changing existing text must not be.
+    _ = cb.collectionItems(tags); _ = cb.collectionItems(classes)
+    let afterTextInsert = tags.cacheVersion, classAfterTextInsert = classes.cacheVersion
+    _ = lookup.run("document.body.firstChild.firstChild.data = 'b'; document.body.firstChild.id = 'changed';")
+    _ = cb.collectionItems(tags); _ = cb.collectionItems(classes)
+    t.equal(tags.cacheVersion, afterTextInsert, "text and ID changes preserve tag cache")
+    t.equal(classes.cacheVersion, classAfterTextInsert, "text and ID changes preserve class cache")
+    _ = lookup.run("document.body.firstChild.className = 'x';")
+    t.equal(cb.collectionItems(classes).count, 1, "class changes refresh class membership")
+    _ = cb.collectionItems(tags)
+    t.equal(tags.cacheVersion, afterTextInsert, "class changes preserve tag cache")
+    _ = lookup.run("document.body.appendChild(document.createElement('p'));")
+    t.equal(cb.collectionItems(tags).count, 2, "structural changes refresh tag membership")
+    t.check(tags.cacheVersion != tagVersion && classes.cacheVersion != classVersion, "relevant mutations advance cache versions")
+
     t.section("events")
     let p = JSDOMTestPage("""
     <!DOCTYPE html><body><div id=outer><p id=inner><b id=leaf>x</b></p></div>

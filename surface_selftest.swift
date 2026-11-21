@@ -210,9 +210,19 @@ func surfaceTests(_ t: inout SelfTest) {
         c.write("\u{1B}[1;4Hz")
         let damage = view.render(c, into: cs, at: at)
         t.check("consoleview: only changed and cursor rows",
-                damage == Rect(3, 2, 32, 32) && surfaceIs(cs) { consolePixel($0, $1, cursor: (0, 3)) })
+                damage == Rect(19, 2, 16, 32) && surfaceIs(cs) { consolePixel($0, $1, cursor: (0, 3)) })
         c.write("\u{1B}[1;1H")
         t.check("consoleview: cursor move repaints its row", view.render(c, into: cs, at: at) == Rect(3, 2, 32, 16))
+        // A single write plus its new cursor touches only two cells.
+        c.write("x")
+        t.check("consoleview: single character damages two cells",
+                view.render(c, into: cs, at: at) == Rect(3, 2, 16, 16))
+        c.write("\u{1B}[1;1H")
+        view.render(c, into: cs, at: at)
+        // Explicit dirty assignment still invalidates a complete row.
+        c.dirty[0] = true
+        t.check("consoleview: explicit full row invalidation",
+                view.render(c, into: cs, at: at) == Rect(3, 2, 32, 16))
         for r in 0..<c.rows { c.dirty[r] = true }
         cs.fill(bg)
         var clipped = Rect.empty

@@ -265,6 +265,29 @@ private func incFuzzPage(_ t: Tests, _ name: String, _ html: [UInt8], _ sheet: C
 func layoutIncrementalTests(_ t: Tests) {
     t.section("incremental")
 
+    // A text edit in one formatting context must not lay out its unchanged
+    // siblings again, nor accumulate their parent's content-left offset.
+    do {
+        let e = layoutPage(t, """
+        <style>body{padding:7px}section{overflow:hidden;margin:3px auto;width:200px}</style>
+        <div id=edit>old</div><section id=stable><p>unchanged words</p></section>
+        """)
+        let edit = e.document.getElementById("edit")!
+        let stable = e.document.getElementById("stable")!
+        let original = e.rect(of: stable)!
+        for text in ["new", "newer", "newest"] {
+            edit.children[0].setData(text)
+            e.updateIfNeeded()
+            let fresh = layoutPage(t, """
+            <style>body{padding:7px}section{overflow:hidden;margin:3px auto;width:200px}</style>
+            <div id=edit>\(text)</div><section id=stable><p>unchanged words</p></section>
+            """)
+            t.equal(e.dump(), fresh.dump(), "cached sibling geometry equals full layout")
+            t.equal(e.rect(of: stable)!.x, original.x, "cached origin does not drift")
+            t.check(e.ctx.layoutCacheHits > 0, "unchanged sibling formatting context reused")
+        }
+    }
+
     // API behavior on a small page.
     do {
         let e = layoutPage(t, """

@@ -267,6 +267,12 @@ func wmScenario(_ t: inout SelfTest, _ font: PSFFont) {
     let drew = a.draws
     wm.render()
     t.check("wm: render and composite don't allocate", HeapUsage() == beforeRender && a.draws == drew)
+    a.invalidate(Rect(0, 0, 2, 2))
+    a.invalidate(Rect(0, a.content.height - 2, 2, 2))
+    t.check("wm: preserves disjoint window invalidations", a.pendingDamageCount == 2)
+    wm.render()
+    comp.composite()
+    t.check("wm: copies only disjoint damaged pixels", comp.stats.pixels == 8 && a.pendingDamageCount == 0)
     func px(_ p: Point) -> UInt32 { front.pixel(p.x, p.y) ?? 0 }
     let at = a.titleRect, bt = b2.titleRect
     t.check("wm: content composited", px(centre(a.contentRect)) == 0xA0 && px(centre(b2.contentRect)) == 0xB2)

@@ -57,6 +57,27 @@ func ansiColor(_ index: Int) -> UInt32 {
 
 // MARK: Console model
 
+/// Row dirtiness with a bounded column span. Bool subscripting keeps full-row
+/// invalidation explicit for resize, palette changes and callers editing cells.
+struct ConsoleDirtyRows {
+    let cols: Int
+    var starts: [Int]
+    var ends: [Int]
+    init(cols: Int, rows: Int) {
+        self.cols = cols
+        starts = Array(repeating: 0, count: rows)
+        ends = Array(repeating: cols, count: rows)
+    }
+    subscript(row: Int) -> Bool {
+        get { starts[row] < ends[row] }
+        set { starts[row] = newValue ? 0 : cols; ends[row] = newValue ? cols : 0 }
+    }
+    mutating func mark(_ row: Int, from: Int, to: Int) {
+        starts[row] = min(starts[row], from)
+        ends[row] = max(ends[row], to)
+    }
+}
+
 final class Console {
     enum EscapeState { case ground, escape, csi }
 
@@ -65,7 +86,7 @@ final class Console {
     /// Row-major grid, cols * rows.
     var cells: [Cell]
     /// Rows changed since the last flush.
-    var dirty: [Bool]
+    var dirty: ConsoleDirtyRows
     /// Cursor. `col == cols` means a wrap is pending: the next printable
     /// character goes to the start of the next line (VT100 deferred wrap), so
     /// a line of exactly `cols` characters followed by CR LF has no blank line.
@@ -97,7 +118,7 @@ final class Console {
         self.rows = max(rows, 1)
         cells = Array(repeating: Cell(ch: 0x20, fg: consoleDefaultFG, bg: consoleDefaultBG),
                       count: self.cols * self.rows)
-        dirty = Array(repeating: true, count: self.rows)
+        dirty = ConsoleDirtyRows(cols: self.cols, rows: self.rows)
     }
 
     var blank: Cell { Cell(ch: 0x20, fg: effectiveFG, bg: bg) }
@@ -274,14 +295,16 @@ final class Console {
         guard from < to else { return }
         let b = blank
         for i in from..<to { cells[i] = b }
-        for r in (from / cols)...((to - 1) / cols) { dirty[r] = true }
+        for r in (from / cols)...((to - 1) / cols) {
+            dirty.mark(r, from: max(from - r * cols, 0), to: min(to - r * cols, cols))
+        }
     }
 
     /// Store a printable codepoint at the cursor and advance.
     func put(_ cp: UInt32) {
         if col >= cols { newLine() }
         cells[row * cols + col] = Cell(ch: cp, fg: effectiveFG, bg: bg)
-        dirty[row] = true
+        dirty.mark(row, from: col, to: col + 1)
         col += 1
     }
 

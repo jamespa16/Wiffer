@@ -539,6 +539,10 @@ final class FATVolume {
     let activeFAT: Int
     let mirrorFATs: Bool
 
+    /// Only volumes explicitly formatted with this extension may repair an
+    /// uncommitted appended suffix using the directory size as commit record.
+    private var appendRecoveryEnabled = false
+    private var appendRecoveryNeeded = false
     private var nextFree: UInt32 = 2
     private var fatCache: [Int: FATSector] = [:]
     private var fsInfoDirty = false
@@ -569,6 +573,8 @@ final class FATVolume {
     /// MB, 4 KiB to 8 GB, ...); a device too small for 65,525 clusters gives
     /// .noSpace, a bad label .invalidName.
     static func format(_ dev: BlockDevice, label: String) throws(FATError) {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
         guard let labelBytes = fatLabelBytes(label) else { throw .invalidName }
         let total = Int(min(dev.sectorCount, 0xFFFF_FFFF))
         let spc: Int
@@ -630,6 +636,7 @@ final class FATVolume {
         b.put32(44, 2) // root cluster
         b.put16(48, 1) // FSInfo
         b.put16(50, 6) // backup boot sector
+        b.put(52, Array("WIFAP001".utf8)) // reserved BPB bytes: append recovery
         b[64] = 0x80
         b[66] = 0x29
         b.put32(67, UInt32(now.date) << 16 | UInt32(now.time)) // volume serial
@@ -648,6 +655,8 @@ final class FATVolume {
     /// (FAT32 is told by its cluster count, not the type string): otherwise
     /// .notFAT32. The free count is counted from the FAT.
     static func mount(_ dev: BlockDevice) throws(FATError) -> FATVolume {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
         guard dev.sectorCount > 0 else { throw .notFAT32 }
         let b = try fatRead(dev, 0, 1)
         guard b[510] == 0x55, b[511] == 0xAA, b.le16(11) == sectorSize else { throw .notFAT32 }
@@ -671,6 +680,9 @@ final class FATVolume {
                           fsInfoSector: info >= 1 && info < reserved ? info : 0,
                           backupBootSector: backup >= 1 && backup < reserved ? backup : 0,
                           activeFAT: active, mirrorFATs: mirror)
+        v.appendRecoveryEnabled = Array(b[52..<60]) == Array("WIFAP001".utf8)
+        v.appendRecoveryNeeded = v.appendRecoveryEnabled
+        try v.recoverAppends()
         try v.recount()
         let rootDir = try v.loadDir(root)
         if let s = rootDir.labelSlot { v.label = fatLabelString(rootDir.data, s * fatSlotSize) }
@@ -681,6 +693,9 @@ final class FATVolume {
 
     /// The entries of the directory at `path` ([] = the root), in disk order.
     func list(_ path: [String]) throws(FATError) -> [FATEntry] {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
+        try recoverAppends()
         let dir = try directory(path[...])
         var out: [FATEntry] = []
         for e in dir.entries { out.append(FATEntry(name: e.name, isDirectory: e.isDirectory, size: e.isDirectory ? 0 : e.size)) }
@@ -689,6 +704,9 @@ final class FATVolume {
     }
 
     func read(_ path: [String]) throws(FATError) -> [UInt8] {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
+        try recoverAppends()
         guard !path.isEmpty else { throw .isADirectory }
         let (dir, name) = try parent(of: path)
         guard let i = dir.find(name) else { throw .notFound }
@@ -700,6 +718,9 @@ final class FATVolume {
     /// A file entry's bytes (for read, and for the VFS loading a whole
     /// volume at mount without re-walking each file's path from the root).
     func contents(of e: FATDirEntry) throws(FATError) -> [UInt8] {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
+        try recoverAppends()
         defer { trimCache() }
         guard e.size > 0 else { return [] }
         let need = (e.size + clusterSize - 1) / clusterSize
@@ -717,12 +738,125 @@ final class FATVolume {
     /// there (crash safety), so it can fail with .noSpace even if the new
     /// contents would fit in the old clusters.
     func write(_ path: [String], _ bytes: [UInt8]) throws(FATError) {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
+        try recoverAppends()
         try store(path, size: bytes.count, data: bytes)
+    }
+
+    /// Directory size is the commit record. Newly linked suffix clusters are
+    /// durable before its size grows; recovery trims a suffix left by a failed
+    /// append. Foreign volumes retain the original replacement algorithm.
+    func append(_ path: [String], _ bytes: [UInt8]) throws(FATError) {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
+        try recoverAppends()
+        var (dir, name) = try parent(of: path)
+        guard let i = dir.find(name) else { return try write(path, bytes) }
+        let e = dir.entries[i]
+        guard !e.isDirectory else { throw .isADirectory }
+        guard !bytes.isEmpty else { return }
+        guard e.size > 0, appendRecoveryEnabled else {
+            return try write(path, contents(of: e) + bytes)
+        }
+        guard bytes.count <= 0xFFFF_FFFF - e.size else { throw .noSpace }
+        try update { () throws(FATError) in
+            let old = try chain(e.cluster)
+            let need = (e.size + clusterSize - 1) / clusterSize
+            guard old.count == need, let last = old.last else { throw .corrupt }
+            let used = e.size % clusterSize
+            let slack = used == 0 ? 0 : clusterSize - used
+            let inLast = min(slack, bytes.count)
+            let added = (bytes.count - inLast + clusterSize - 1) / clusterSize
+            let suffix = try allocateChain(added)
+            appendRecoveryNeeded = true
+            // Partial writes affect only bytes beyond the committed file size.
+            if inLast > 0 {
+                let firstSector = used / sectorSize, offset = used % sectorSize
+                let sectors = (offset + inLast + sectorSize - 1) / sectorSize
+                let lba = clusterLBA(last) + firstSector
+                var tail = [UInt8](repeating: 0, count: sectors * sectorSize)
+                if offset > 0 {
+                    let original = try fatRead(device, lba, 1)
+                    for j in 0..<offset { tail[j] = original[j] }
+                }
+                for j in 0..<inLast { tail[offset + j] = bytes[j] }
+                try fatWrite(device, lba, tail)
+            }
+            if !suffix.isEmpty {
+                try writeClusters(suffix, Array(bytes[inLast...]))
+                // Allocate the suffix durably before publishing its link.
+                try flushFAT()
+                try flushDevice()
+                try setFATEntry(last, suffix[0])
+                try flushFAT()
+            }
+            try flushDevice()
+            let o = e.slot * fatSlotSize
+            let now = fatDateTime(fatClock())
+            dir.data[o + 11] |= fatAttrArchive
+            dir.data.put16(o + 18, now.date)
+            dir.data.put16(o + 22, now.time)
+            dir.data.put16(o + 24, now.date)
+            dir.data.put32(o + 28, UInt32(e.size + bytes.count))
+            try writeDirSector(dir, o / sectorSize)
+            appendRecoveryNeeded = false
+        }
+    }
+
+    /// Repair only files on volumes that opted into this extension. A suffix
+    /// beyond the committed size is first unlinked durably, then freed. A cut
+    /// during cleanup can leak clusters, as with replacement cleanup, but
+    /// cannot expose uncommitted bytes or damage the original prefix.
+    private func recoverAppends() throws(FATError) {
+        guard appendRecoveryEnabled, appendRecoveryNeeded else { return }
+        appendRecoveryNeeded = false
+        do throws(FATError) {
+            try recoverAppends(in: rootCluster, depth: 0)
+        } catch {
+            appendRecoveryNeeded = true
+            throw error
+        }
+    }
+
+    private func recoverAppends(in cluster: UInt32, depth: Int) throws(FATError) {
+        guard depth < 64 else { throw .corrupt }
+        let dir = try loadDir(cluster)
+        for e in dir.entries {
+            if e.isDirectory {
+                do throws(FATError) { try recoverAppends(in: e.cluster, depth: depth + 1) }
+                catch {
+                    // Recovery must not hide unrelated files on a damaged
+                    // volume. Normal read and fsck retain corruption reporting.
+                    if error != .corrupt { throw error }
+                }
+            } else if e.size > 0 {
+                let clusters: [UInt32]
+                do throws(FATError) { clusters = try chain(e.cluster) }
+                catch {
+                    if error == .corrupt { continue }
+                    throw error
+                }
+                let need = (e.size + clusterSize - 1) / clusterSize
+                if clusters.count > need {
+                    let tail = clusters[need]
+                    try setFATEntry(clusters[need - 1], fatEndOfChain)
+                    try flushFAT()
+                    try flushDevice()
+                    try freeChain(tail)
+                    try flushFAT()
+                    try flushDevice()
+                }
+            }
+        }
     }
 
     /// Selftest helper: like write, but the clusters are only allocated, not
     /// written (the file holds whatever was on disk). Fills a volume cheaply.
     func reserve(_ path: [String], size: Int) throws(FATError) {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
+        try recoverAppends()
         try store(path, size: size, data: nil)
     }
 
@@ -779,6 +913,9 @@ final class FATVolume {
 
     /// A new empty directory, with "." and ".." (0 for the root's children).
     func mkdir(_ path: [String]) throws(FATError) {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
+        try recoverAppends()
         try update { () throws(FATError) in
             var (dir, name) = try parent(of: path)
             guard dir.find(name) == nil else { throw .exists }
@@ -808,6 +945,9 @@ final class FATVolume {
 
     /// Remove a file or an empty directory.
     func remove(_ path: [String]) throws(FATError) {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
+        try recoverAppends()
         try update { () throws(FATError) in
             var (dir, name) = try parent(of: path)
             guard let i = dir.find(name) else { throw .notFound }
@@ -827,6 +967,9 @@ final class FATVolume {
     /// A moved directory gets its ".." updated. Moving a directory into
     /// itself gives .invalidName.
     func rename(_ from: [String], to: [String]) throws(FATError) {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
+        try recoverAppends()
         guard let oldName = from.last, let newName = to.last else { throw .invalidName }
         try update { () throws(FATError) in
             var src = try directory(from.dropLast())
@@ -875,6 +1018,9 @@ final class FATVolume {
 
     /// Write FSInfo, then flush the device.
     func sync() throws(FATError) {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
+        try recoverAppends()
         try flushFAT()
         try writeFSInfo()
         try flushDevice()
@@ -889,6 +1035,10 @@ final class FATVolume {
     /// unreferenced), FSInfo's free count against the real one, and the
     /// backup boot sector. [] when clean.
     func check() -> [String] {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
+        do throws(FATError) { try recoverAppends() }
+        catch { return ["append recovery: \(error.message)"] }
         var problems: [String] = []
         func note(_ s: String) { if problems.count < 64 { problems.append(s) } }
         let entries = totalClusters + 2
@@ -918,6 +1068,8 @@ final class FATVolume {
         var owned = [Bool](repeating: false, count: entries)
         /// Follow and claim a chain: nil (noted) if it's broken or crosses another.
         func claim(_ start: UInt32, _ what: String) -> [UInt32]? {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
             var out: [UInt32] = []
             var c = start
             while true {
@@ -1019,6 +1171,8 @@ final class FATVolume {
     }
 
     func fatEntry(_ c: UInt32) throws(FATError) -> UInt32 {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
         guard validCluster(c) else { throw .corrupt }
         return try fatSector(Int(c) / 128).bytes.le32(Int(c) % 128 * 4) & fatEntryMask
     }
@@ -1088,6 +1242,8 @@ final class FATVolume {
     /// The chain from `start`: .corrupt if it leaves the volume, runs into a
     /// free or bad cluster, or is longer than `limit` (or the volume: a loop).
     func chain(_ start: UInt32, limit: Int? = nil) throws(FATError) -> [UInt32] {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
         let most = min(limit ?? totalClusters, totalClusters)
         var out: [UInt32] = []
         var c = start
@@ -1103,6 +1259,8 @@ final class FATVolume {
     /// `n` free clusters linked into a chain ending in end-of-chain (in the
     /// cache: the caller flushes).
     func allocateChain(_ n: Int) throws(FATError) -> [UInt32] {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
         guard n > 0 else { return [] }
         guard n <= freeClusters else { throw .noSpace }
         var out: [UInt32] = []
@@ -1174,12 +1332,16 @@ final class FATVolume {
     // MARK: Directories
 
     func loadDir(_ cluster: UInt32) throws(FATError) -> FATDir {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
         let clusters = try chain(cluster, limit: fatMaxDirSlots * fatSlotSize / clusterSize)
         return FATDir(cluster: cluster, chain: clusters, data: try readClusters(clusters[...]))
     }
 
     /// The directory at `path` ([] = the root).
     func directory(_ path: ArraySlice<String>) throws(FATError) -> FATDir {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
         var dir = try loadDir(rootCluster)
         for name in path {
             guard let i = dir.find(name) else { throw .notFound }

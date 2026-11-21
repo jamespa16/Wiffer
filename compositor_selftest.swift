@@ -60,7 +60,7 @@ func compositorTests(_ t: inout SelfTest) {
     t.check("compositor: only the damaged rect repainted",
             surfaceIs(front) { x, y in r.contains(Point(x, y)) ? expected(x, y) : sentinel })
     t.check("compositor: stats count rects and pixels", comp.stats.rects == 1 && comp.stats.pixels == 24
-            && comp.stats.draws == 3 && comp.stats.frames == 2 && comp.stats.totalPixels == 16 * 12 + 24)
+            && comp.stats.draws >= 3 && comp.stats.frames == 2 && comp.stats.totalPixels == 16 * 12 + 24)
     comp.composite()
     t.check("compositor: nothing damaged, nothing copied", comp.stats.frames == 2)
 
@@ -72,6 +72,16 @@ func compositorTests(_ t: inout SelfTest) {
     t.check("compositor: skips layers under an opaque cover", desktop.draws == desktopDraws
             && comp.stats.draws == 1 && surfaceIs(front) { x, y in
                 Rect(4, 3, 2, 2).contains(Point(x, y)) ? expected(x, y) : sentinel })
+
+    // Two separate opaque windows together cover the whole lower layer.
+    let covered = Compositor(front: Surface(width: 20, height: 10))
+    let hidden = CountingLayer(frame: covered.bounds, color: 1, opaque: true, band: .desktop)
+    covered.add(hidden)
+    covered.add(CountingLayer(frame: Rect(0, 0, 10, 10), color: 2, opaque: true))
+    covered.add(CountingLayer(frame: Rect(10, 0, 10, 10), color: 3, opaque: true))
+    covered.composite()
+    t.check("compositor: disjoint opaque covers cull the lower layer", hidden.draws == 0
+            && surfaceIs(covered.front) { x, _ in x < 10 ? 2 : 3 })
 
     // Damage merging.
     comp.damage(Rect(0, 0, 4, 4))

@@ -58,6 +58,8 @@ func sysOpen(_ p: Process, _ pathPtr: UInt64, _ pathLen: UInt64, _ flagBits: UIn
     var file: VFSFile?
     var errno = 0
     onCPU0 {
+        diskOperationLock.acquire()
+        defer { diskOperationLock.release() }
         var node: FSNode? = try? vfs.lookup(path)
         if node == nil {
             guard flagBits & OpenFlags.create != 0 else { errno = Errno.ENOENT; return }
@@ -73,6 +75,12 @@ func sysOpen(_ p: Process, _ pathPtr: UInt64, _ pathLen: UInt64, _ flagBits: UIn
         }
         guard let n = node else { errno = Errno.ENOENT; return }
         if n.isDirectory && wantsWrite { errno = Errno.EISDIR; return }
+        // Readable handles and writable snapshots must retain their bytes even
+        // if the file is later unlinked. Truncation does not need old contents.
+        if !n.isDirectory && !(wantsWrite && flagBits & OpenFlags.truncate != 0) {
+            do throws(FSError) { _ = try n.readContents() }
+            catch { errno = errnoFor(error); return }
+        }
         file = VFSFile(node: n, path: path, read: flagBits & OpenFlags.read != 0, write: wantsWrite,
                        append: flagBits & OpenFlags.append != 0, truncate: flagBits & OpenFlags.truncate != 0)
     }

@@ -230,6 +230,7 @@ final class Compositor {
     /// starting at the topmost visible opaque layer that covers all of `r`.
     /// Returns the number of draw calls.
     private func paint(_ r: Rect) -> Int {
+        var draws = 0
         var start = 0
         var i = layers.count - 1
         while i > 0 {
@@ -237,14 +238,75 @@ final class Compositor {
             if l.visible && l.opaque && l.frame.contains(r) { start = i; break }
             i -= 1
         }
-        var draws = 0
+        // Most frames are a small update inside the top window plus the
+        // transparent cursor. Keep that path free of fragment-buffer work.
+        var partialCover = false
+        if start + 1 < layers.count {
+            for j in (start + 1)..<layers.count {
+                let l = layers[j]
+                if l.visible && l.opaque && l.frame.intersects(r) { partialCover = true; break }
+            }
+        }
+        if !partialCover {
+            for j in start..<layers.count {
+                let l = layers[j]
+                if !l.visible { continue }
+                let c = l.frame.intersection(r)
+                if c.isEmpty { continue }
+                back.withClip(c) { l.draw(into: back, clip: c) }
+                draws += 1
+            }
+            return draws
+        }
+        // Bound fragmentation and stack use. On overflow, repaint the original
+        // clip for this layer; overdraw is safe and preserves exact pixels.
+        var pieces = InlineArray<64, Rect>(repeating: .empty)
+        var next = InlineArray<64, Rect>(repeating: .empty)
         for j in start..<layers.count {
             let l = layers[j]
             guard l.visible else { continue }
-            let c = l.frame.intersection(r)
-            if c.isEmpty { continue }
-            back.withClip(c) { l.draw(into: back, clip: c) }
-            draws += 1
+            let original = l.frame.intersection(r)
+            if original.isEmpty { continue }
+            pieces[0] = original
+            var count = 1
+            var overflow = false
+            if j + 1 < layers.count {
+                for k in stride(from: layers.count - 1, through: j + 1, by: -1) {
+                    let above = layers[k]
+                    if !above.visible || !above.opaque { continue }
+                    var n = 0
+                    for p in 0..<count {
+                        let rect = pieces[p]
+                        let cut = rect.intersection(above.frame)
+                        if cut.isEmpty {
+                            if n == 64 { overflow = true; break }
+                            next[n] = rect; n += 1
+                        } else {
+                            let fragments: InlineArray<4, Rect> = [
+                                Rect(rect.x, rect.y, rect.w, cut.y - rect.y),
+                                Rect(rect.x, cut.maxY, rect.w, rect.maxY - cut.maxY),
+                                Rect(rect.x, cut.y, cut.x - rect.x, cut.h),
+                                Rect(cut.maxX, cut.y, rect.maxX - cut.maxX, cut.h)
+                            ]
+                            for q in 0..<4 where !fragments[q].isEmpty {
+                                if n == 64 { overflow = true; break }
+                                next[n] = fragments[q]; n += 1
+                            }
+                            if overflow { break }
+                        }
+                    }
+                    if overflow { break }
+                    for p in 0..<n { pieces[p] = next[p] }
+                    count = n
+                    if count == 0 { break }
+                }
+            }
+            if overflow { pieces[0] = original; count = 1 }
+            for p in 0..<count {
+                let c = pieces[p]
+                back.withClip(c) { l.draw(into: back, clip: c) }
+                draws += 1
+            }
         }
         return draws
     }

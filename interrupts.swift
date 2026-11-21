@@ -148,6 +148,7 @@ func handleIRQ(_ irq: UInt8) {
     case 12: mouseIRQ(); entropyAddInterrupt(12)
     default: break
     }
+    diskIRQ(irq)
     picEOI(irq) // IRQ8-15: slave, then master
 }
 

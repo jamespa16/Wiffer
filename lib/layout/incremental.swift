@@ -21,8 +21,8 @@
 //   * <style>/<link> changes rescan the style sources (fetched <link> sheets
 //     are kept) and restyle everything.
 //
-// Layout itself is still whole-document (the layout caches are keyed by a
-// per-layout generation, so BFC roots are not reused across updates).
+// Subtree splices invalidate ancestor caches. Unaffected formatting contexts
+// can reuse geometry when their containing dimensions are unchanged.
 //
 // Forced layout: rect(of:), computedStyle(of:) and metrics(of:) flush any
 // pending style and layout first and are counted in `stats`.
@@ -382,6 +382,15 @@ extension LayoutEngine {
             controlBoxes = out
         }
         p.items = nil
+        // Intrinsic widths and table columns depend on descendants; geometry
+        // of each ancestor must also be recomputed. Sibling BFCs remain valid.
+        var ancestor: LayoutBox? = p
+        while let a = ancestor {
+            a.intrinsicGen = -1
+            a.layoutGen = -1
+            a.table?.colGen = -1
+            ancestor = a.parent
+        }
         return true
     }
 }

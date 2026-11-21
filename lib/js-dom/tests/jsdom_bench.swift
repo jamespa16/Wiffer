@@ -45,6 +45,35 @@ func jsdomBenchTests(_ t: Tests) {
     t.equal(p.box.lines.last ?? "", "7500 5000 10002", "dom bench: 10 000 nodes built and queried")
     if jsdomEnv("WIFFER_JS_BENCH") != nil {
         print("js-dom bench: build 10 000 nodes (5000 by createElement, 5000 by innerHTML) + query \(script) ms; update + paint \(layout) ms")
+        let bindings = p.page.bindings
+        let target = bindings.document.body!.children[0]
+        try? target.setAttribute("id", "early-bench-target")
+        let lookupStart = hostMillis()
+        var lookupHits = 0
+        for _ in 0..<1000 {
+            if bindings.NonElementParentNode_getElementById(bindings.document, "early-bench-target") === target { lookupHits += 1 }
+        }
+        let earlyTime = hostMillis() - lookupStart
+        let scanStart = hostMillis()
+        for _ in 0..<1000 {
+            if bindings.descendantsMatching(bindings.document, { $0.attribute("id") == "early-bench-target" }).first === target { lookupHits += 1 }
+        }
+        print("js-dom ID lookup: 1000 early hits in 10 000 nodes: lazy \(earlyTime) ms; previous full scan \(hostMillis() - scanStart) ms")
+        t.equal(lookupHits, 2000, "ID lookup benchmark results")
+        let collection = JSDOMHTMLCollection(bindings.document, .tagName("li"))
+        let collectionStart = hostMillis()
+        for i in 0..<1000 {
+            try? target.setAttribute("data-bench", String(i))
+            _ = bindings.collectionItems(collection).count
+        }
+        let cachedTime = hostMillis() - collectionStart
+        let invalidatedStart = hostMillis()
+        for i in 0..<1000 {
+            try? target.setAttribute("data-bench", String(i))
+            collection.cacheVersion = -1 // previous all-mutation invalidation
+            _ = bindings.collectionItems(collection).count
+        }
+        print("js-dom live tag collection: 1000 unrelated attribute writes + length reads: selective \(cachedTime) ms; previous full invalidation \(hostMillis() - invalidatedStart) ms")
     }
     p.page.tearDown()
 

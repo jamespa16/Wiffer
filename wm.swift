@@ -458,7 +458,9 @@ final class WindowManager {
                 w.draw()
             }
             if !w.pendingDamage.isEmpty {
-                compositor.damage(w.pendingDamage.offsetBy(w.contentRect.origin).intersection(w.contentRect))
+                for i in 0..<w.pendingDamageCount {
+                    compositor.damage(w.pendingDamageRect(i).offsetBy(w.contentRect.origin).intersection(w.contentRect))
+                }
                 w.pendingDamage = .empty
             }
             if w.chromeDirty { damageChrome(w) }

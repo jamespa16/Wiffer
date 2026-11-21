@@ -41,7 +41,16 @@ func runSelfTests() -> Never {
     t.check("IRQ gates present", (idt[47 * 2] >> 47) & 1 == 1 && (idt[48 * 2] >> 47) & 1 == 1)
 
     // Phase B: PIC, timer, idle.
-    t.check("PIC unmasks IRQ0/1/2/12 only", inb(PIC.masterData) == 0xF8 && inb(PIC.slaveData) == 0xEF)
+    var masterMask: UInt8 = 0xF8, slaveMask: UInt8 = 0xEF
+    var interruptDisk = diskInterruptHead
+    while let disk = interruptDisk {
+        let irq = disk.pci.interruptLine
+        if irq < 8 { masterMask &= ~(UInt8(1) << irq) }
+        else { slaveMask &= ~(UInt8(1) << (irq & 7)) }
+        interruptDisk = disk.nextInterruptDevice
+    }
+    t.check("PIC unmasks platform and registered disk IRQs only",
+            inb(PIC.masterData) == masterMask && inb(PIC.slaveData) == slaveMask)
     t.check("interrupts enabled", interruptsEnabled)
     let start = ticks
     for _ in 0..<5 { hlt() }
@@ -92,6 +101,7 @@ func runSelfTests() -> Never {
 
     // Phase U: block devices.
     blockTests(&t)
+    diskLockTests(&t)
 
     // Phase V: PCI, CMOS RTC, virtio-blk (round trip only if vda exists).
     pciTests(&t)
