@@ -318,19 +318,24 @@ extension JSRealm {
             for _ in 0..<mapped { ms.append(.int32(-1)) }
             heap.setSlots(a, ms)
         }
-        for (i, v) in vals.enumerated() { _ = heap.createDataProperty(a, .index(UInt32(i)), v) }
-        _ = heap.defineOwnProperty(a, heap.names.length, .data(.number(argc), [.writable, .configurable]))
+        // Filled in place (9J: four defineOwnProperty calls per arguments
+        // object were most of a call's cost): dense elements, then length,
+        // @@iterator and callee, which are fresh keys on a fresh object.
+        var props: [JSPropertySlot] = [
+            JSPropertySlot(key: heap.names.length, value: .number(argc), setter: .undefined, attributes: [.writable, .configurable])]
         let it = intrinsic(.arrayValues)
         if it.isObject {
-            _ = heap.defineOwnProperty(a, .symbol(heap.symbolsWellKnown.iterator.handle), .data(it, [.writable, .configurable]))
+            props.append(JSPropertySlot(key: .symbol(heap.symbolsWellKnown.iterator.handle), value: it, setter: .undefined,
+                                        attributes: [.writable, .configurable]))
         }
         if !strict {
-            _ = heap.defineOwnProperty(a, heap.names.callee, .data(callee, [.writable, .configurable]))
+            props.append(JSPropertySlot(key: heap.names.callee, value: callee, setter: .undefined, attributes: [.writable, .configurable]))
         } else {
             // Strict arguments: callee is a %ThrowTypeError% accessor, not configurable.
             let tte = intrinsic(.throwTypeError)
-            _ = heap.defineOwnProperty(a, heap.names.callee, .accessor(get: tte, set: tte, []))
+            props.append(JSPropertySlot(key: heap.names.callee, value: tte, setter: tte, attributes: [.accessor]))
         }
+        heap.fillFreshObject(a, elements: vals, props: props)
         heap.popRoots(to: r.slot)
         return a
     }

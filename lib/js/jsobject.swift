@@ -425,6 +425,18 @@ extension JSHeap {
     /// Slot j of cell i (both in range), read in place.
     @inline(__always) func propSlot(_ i: Int, _ j: Int) -> JSPropertySlot { objects[i].props[j] }
 
+    /// Fills a just-made object (no properties yet) with dense elements
+    /// and distinct new property slots, without the defineOwnProperty
+    /// checks (arguments objects, 9J). No allocation, so no GC.
+    func fillFreshObject(_ o: JSValue, elements: [JSValue], props: [JSPropertySlot]) {
+        guard let i = objectIndex(o), objects[i].props.isEmpty, objects[i].elements.isEmpty else { return }
+        guard noteGrowth(elements.count * 8 + props.count * 32) else { return }
+        objects[i].elements = elements
+        if objects[i].kind == .array { objects[i].arrayLength = UInt32(elements.count) }
+        for p in props { objects[i].props.append(p) }
+        if objects[i].props.count > JSHeap.propertyHashThreshold { rebuildIndex(i) }
+    }
+
     func rebuildIndex(_ i: Int) {
         let n = objects[i].props.count
         var size = 16
