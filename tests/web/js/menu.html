@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html><head><meta charset=utf-8><title>JS menu</title>
+<style>
+body { margin: 0 }
+#btn { position: absolute; left: 0; top: 0; width: 100px; height: 30px; background: #404040 }
+#menu { position: absolute; left: 0; top: 30px; width: 150px; background: #E0A000; display: none }
+#menu.open { display: block }
+#menu a { display: block; height: 30px; color: #000000 }
+</style>
+</head><body>
+<div id=btn></div>
+<div id=menu><a href="#one" id=one>One</a><a href="#two" id=two>Two</a></div>
+<script>
+// A dropdown: the button toggles it, a click elsewhere closes it, an item
+// is handled by script (the link's default action is prevented).
+var menu = document.getElementById('menu');
+document.getElementById('btn').addEventListener('click', function (e) {
+  e.stopPropagation();
+  menu.classList.toggle('open');
+  document.title = 'JS menu ' + (menu.classList.contains('open') ? 'open' : 'closed');
+});
+menu.addEventListener('click', function (e) {
+  var a = e.target.closest('a');
+  if (!a) return;
+  e.preventDefault();
+  e.stopPropagation();
+  menu.classList.remove('open');
+  document.title = 'JS menu picked ' + a.textContent;
+});
+document.addEventListener('click', function () {
+  if (menu.classList.contains('open')) {
+    menu.classList.remove('open');
+    document.title = 'JS menu dismissed';
+  }
+});
+</script>
+</body></html>

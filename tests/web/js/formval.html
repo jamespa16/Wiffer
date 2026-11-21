@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html><head><meta charset=utf-8><title>JS form start</title>
+<style>body { margin: 0; font-family: sans-serif } #err { position: absolute; left: 20px; top: 60px; width: 200px; height: 30px }</style>
+</head><body>
+<form id=f action=/echo method=get style='position:absolute;left:20px;top:20px;margin:0'><input type=text name=code id=code value='' style='width:150px;height:20px'> <input type=submit value=Send></form>
+<div id=err></div>
+<script>
+// Validation in the submit event: a code needs a '-' and at least 4
+// characters; otherwise the submission is cancelled and an error shown.
+var submits = 0;
+document.getElementById('f').addEventListener('submit', function (e) {
+  submits++;
+  var v = document.getElementById('code').value;
+  var err = document.getElementById('err');
+  if (v.length < 4 || v.indexOf('-') < 0) {
+    e.preventDefault();
+    err.style.background = '#E02020';
+    err.textContent = 'needs a dash';
+    document.title = 'JS form invalid ' + submits + ' ' + v;
+  } else {
+    err.style.background = '';
+    document.title = 'JS form valid ' + v;
+  }
+});
+</script>
+</body></html>

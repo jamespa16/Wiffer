@@ -14,6 +14,7 @@ dynamic endpoints, over plain HTTP or HTTPS (the test PKI in tests/certs):
   /json                 Phase 9H: the request as JSON (method, query, body, origin,
                         cookie); ?cors=1 allows cross-origin reads (and preflights)
   /js/jquery.js         lib/js's jQuery 3.7.1 fixture (tests/web/js/jquery.html)
+  /js/lit-core.js       lib/js's lit-core 3.2.1 ES module fixture (tests/web/js/lit.html)
   /hostile/stall-headers, stall-body, truncated, reset, garbage, hugeheaders,
   /hostile/endless, bomb, pngdims (+ lying.png)
 
@@ -33,6 +34,7 @@ TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css", ".png": "image
          ".gif": "image/gif", ".svg": "image/svg+xml", ".txt": "text/plain", ".der": "application/x-x509-ca-cert",
          ".js": "text/javascript", ".mjs": "text/javascript", ".json": "application/json"}
 JQUERY = os.path.join(ROOT, "lib", "js", "fixtures", "corpus", "jquery-3.7.1.js")
+LITCORE = os.path.join(ROOT, "lib", "js", "fixtures", "corpus", "lit-core-3.2.1.min.module.js")
 
 def html(title, body=""):
     return f"<!DOCTYPE html><html><head><meta charset=utf-8><title>{title}</title></head><body>{body}</body></html>".encode()
@@ -180,8 +182,8 @@ class WebServer:
                 body = json.dumps({"method": method, "query": q, "body": req["body"].decode("latin-1"),
                                    "origin": req["headers"].get("origin", ""), "cookie": req["headers"].get("cookie", "")}).encode()
                 self.send(c, 200, [("Content-Type", "application/json"), *cors], body)
-        elif path == "/js/jquery.js":
-            with open(JQUERY, "rb") as f:
+        elif path in ("/js/jquery.js", "/js/lit-core.js"):
+            with open(JQUERY if path == "/js/jquery.js" else LITCORE, "rb") as f:
                 self.send(c, 200, [("Content-Type", "text/javascript")], f.read())
         elif path == "/redir/ok":
             self.page(c, html("Redirect target", "<p>arrived"))

@@ -38,8 +38,16 @@ struct JSStringCell {
     var isWide = false
     var isAtom = false
     var hash: UInt32 = 0            // 0: not computed yet
+    /// Rope (9J): a concatenation not yet copied out. ropeLeft != 0 means
+    /// the content is strings[ropeLeft] + strings[ropeRight] (ropeCount
+    /// units; isWide if either side is wide) and latin1/utf16 are empty.
+    /// `stringCell` flattens a rope in place before anyone reads units, so
+    /// only the heap's length, concat and GC code ever see one.
+    var ropeLeft: JSHandle = 0
+    var ropeRight: JSHandle = 0
+    var ropeCount = 0
 
-    var count: Int { isWide ? utf16.count : latin1.count }
+    var count: Int { ropeLeft != 0 ? ropeCount : (isWide ? utf16.count : latin1.count) }
     @inline(__always) func unit(_ i: Int) -> UInt16 { isWide ? utf16[i] : UInt16(latin1[i]) }
 }
 
@@ -205,9 +213,63 @@ public struct JSWellKnownSymbols {
 extension JSHeap {
     static let stringCellBytes = 48
 
+    /// The cell of string v, flattened (ropes are copied out first, so the
+    /// caller may read latin1/utf16 directly).
     @inline(__always) func stringCell(_ v: JSValue) -> Int? {
         let i = Int(v.handle)
+        guard v.isString && i < strings.count else { return nil }
+        if strings[i].ropeLeft != 0 { flattenRope(i) }
+        return i
+    }
+
+    /// The cell of string v, possibly a rope (only count/isWide are valid).
+    @inline(__always) func rawStringCell(_ v: JSValue) -> Int? {
+        let i = Int(v.handle)
         return v.isString && i < strings.count ? i : nil
+    }
+
+    /// Concatenations at least this long become ropes.
+    static let ropeMinLength = 256
+
+    /// Copies rope i's leaves out in order (an explicit stack: a 100 000-deep
+    /// left or right chain costs no Swift stack) and makes it flat. Inner
+    /// ropes stay ropes; no allocation happens on the JS heap, so no GC.
+    func flattenRope(_ i: Int) {
+        let n = strings[i].ropeCount
+        let wide = strings[i].isWide
+        // The units will exist twice (the leaves may still be live). Past
+        // the heap cap the heap terminates the script; the rope becomes the
+        // empty string while everything unwinds (nothing can observe it).
+        guard noteGrowth(n * (wide ? 2 : 1)) else {
+            strings[i].ropeLeft = 0
+            strings[i].ropeRight = 0
+            strings[i].ropeCount = 0
+            strings[i].isWide = false
+            return
+        }
+        var lat: [UInt8] = []
+        var u16: [UInt16] = []
+        if wide { u16.reserveCapacity(n) } else { lat.reserveCapacity(n) }
+        var stack: [JSHandle] = [strings[i].ropeRight, strings[i].ropeLeft]
+        while let h = stack.popLast() {
+            let j = Int(h)
+            guard j > 0 && j < strings.count else { continue }
+            if strings[j].ropeLeft != 0 {
+                stack.append(strings[j].ropeRight)
+                stack.append(strings[j].ropeLeft)
+                continue
+            }
+            if wide {
+                if strings[j].isWide { u16.append(contentsOf: strings[j].utf16) }
+                else { for b in strings[j].latin1 { u16.append(UInt16(b)) } }
+            } else {
+                lat.append(contentsOf: strings[j].latin1)
+            }
+        }
+        strings[i].ropeLeft = 0
+        strings[i].ropeRight = 0
+        strings[i].ropeCount = 0
+        if wide { strings[i].utf16 = u16 } else { strings[i].latin1 = lat }
     }
 
     /// Whether a string of this many units may be made.
@@ -261,12 +323,12 @@ extension JSHeap {
     }
 
     public func stringLength(_ v: JSValue) -> Int {
-        guard let i = stringCell(v) else { return 0 }
+        guard let i = rawStringCell(v) else { return 0 }
         return strings[i].count
     }
 
     public func isLatin1(_ v: JSValue) -> Bool {
-        guard let i = stringCell(v) else { return true }
+        guard let i = rawStringCell(v) else { return true }
         return !strings[i].isWide
     }
 
@@ -303,11 +365,23 @@ extension JSHeap {
 
     /// a + b, or nil when the result would exceed limits.maxStringLength.
     public func concat(_ a: JSValue, _ b: JSValue) -> JSValue? {
-        guard let ia = stringCell(a), let ib = stringCell(b) else { return nil }
+        guard let ia = rawStringCell(a), let ib = rawStringCell(b) else { return nil }
         let na = strings[ia].count, nb = strings[ib].count
         if na == 0 { return b }
         if nb == 0 { return a }
         guard canMakeString(length: na + nb) else { return nil }
+        if na + nb >= JSHeap.ropeMinLength {
+            // A rope: O(1) now, copied once when someone reads the units
+            // (`s += x` in a loop was quadratic).
+            guard beforeAllocation(JSHeap.stringCellBytes, a, b) else { return .string(0) }
+            var r = JSStringCell()
+            r.ropeLeft = JSHandle(ia)
+            r.ropeRight = JSHandle(ib)
+            r.ropeCount = na + nb
+            r.isWide = strings[ia].isWide || strings[ib].isWide
+            return .string(allocStringSlot(r))
+        }
+        // Short: both sides are flat (a rope is never this short).
         var c = JSStringCell()
         if strings[ia].isWide || strings[ib].isWide {
             c.isWide = true

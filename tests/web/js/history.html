@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html><head><meta charset=utf-8><title>JS history start</title>
+<style>body { margin: 0 } #box { width: 200px; height: 80px; background: #808080 } #box.odd { background: #A02080 } #box.even { background: #2080A0 }</style>
+</head><body>
+<div id=box></div>
+<script>
+// A single-page router: a click pushes a history entry, Alt-Left (popstate)
+// renders the earlier state without reloading the page.
+var box = document.getElementById('box'), n = 0;
+function render(k, how) {
+  box.className = k === 0 ? '' : (k % 2 ? 'odd' : 'even');
+  document.title = 'JS history ' + how + ' ' + k + ' ' + (location.search || '-');
+}
+box.addEventListener('click', function () {
+  n++;
+  history.pushState({ n: n }, '', '?page=' + n);
+  render(n, 'push');
+});
+window.addEventListener('popstate', function (e) {
+  n = e.state ? e.state.n : 0;
+  render(n, 'pop');
+});
+</script>
+</body></html>

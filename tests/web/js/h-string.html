@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html><head><meta charset=utf-8><title>JS hostile string</title>
+<style>body { margin: 0 } #box { width: 200px; height: 80px; background: #6040A0 }</style>
+</head><body>
+<div id=box></div>
+<script>
+// A 100 MB string, then concatenations past the length limit, then a flatten of a 200 MB rope.
+var s = 'x'.repeat(100 * 1024 * 1024);
+console.log('string length ' + s.length);
+try { var t = s; for (var i = 0; i < 8; i++) t = t + t; console.log('length ' + t.length); } catch (e) { console.log('caught ' + e.name); }
+console.log('index ' + (s + s).indexOf('y'));
+</script>
+<script>document.title = 'JS hostile string survived'; console.log('next script ran');</script>
+</body></html>

@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html><head><meta charset=utf-8><title>JS hostile nodes</title>
+<style>body { margin: 0 } #box { width: 200px; height: 80px; background: #6040A0 }</style>
+</head><body>
+<div id=box></div>
+<script>
+// A script that adds a million elements to the document.
+var b = document.body;
+for (var i = 0; i < 1000000; i++) b.appendChild(document.createElement('div')).textContent = i;
+console.log('nodes added ' + document.getElementsByTagName('div').length);
+</script>
+<script>document.title = 'JS hostile nodes survived'; console.log('next script ran');</script>
+</body></html>

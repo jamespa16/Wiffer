@@ -1,0 +1,24 @@
+/* TodoMVC look (after the todomvc-app-css layout), for Wiffer's version. */
+body { margin: 0; padding: 0; background: #f5f5f5; font-family: sans-serif; color: #111; }
+.todoapp { background: #fff; margin: 60px auto 40px; position: relative; width: 550px; border: 1px solid #e0e0e0; }
+.todoapp h1 { position: absolute; top: -56px; width: 100%; margin: 0; font-size: 48px; text-align: center; color: #b83f45; font-weight: normal; }
+.new-todo { display: block; width: 520px; padding: 14px 15px; font-size: 20px; border: none; border-bottom: 1px solid #e6e6e6; }
+.main { position: relative; border-top: 1px solid #e6e6e6; }
+.toggle-all { position: absolute; left: 10px; top: -36px; }
+.toggle-all + label { display: none; }
+.todo-list { margin: 0; padding: 0; list-style: none; }
+.todo-list li { position: relative; font-size: 20px; border-bottom: 1px solid #ededed; }
+.todo-list li .toggle { position: absolute; left: 12px; top: 18px; }
+.todo-list li label { display: block; padding: 15px 15px 15px 50px; line-height: 1.2; }
+.todo-list li.completed label { color: #949494; text-decoration: line-through; }
+.todo-list li .destroy { position: absolute; right: 10px; top: 12px; width: 30px; height: 30px; background: #f0d0d0; border: none; }
+.todo-list li.editing .view { display: none; }
+.todo-list li .edit { display: block; width: 480px; margin-left: 43px; padding: 12px 16px; font-size: 20px; }
+.footer { padding: 10px 15px; height: 20px; text-align: center; border-top: 1px solid #e6e6e6; font-size: 14px; color: #555; }
+.todo-count { float: left; text-align: left; }
+.filters { margin: 0; padding: 0; list-style: none; position: absolute; right: 0; left: 0; }
+.filters li { display: inline; }
+.filters li a { color: inherit; margin: 3px; padding: 3px 7px; text-decoration: none; border: 1px solid transparent; }
+.filters li a.selected { border-color: #ce4646; }
+.clear-completed { float: right; position: relative; background: none; border: none; color: #555; font-size: 14px; }
+.info { margin: 65px auto 0; color: #4d4d4d; font-size: 11px; text-align: center; }

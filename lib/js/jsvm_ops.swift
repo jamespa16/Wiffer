@@ -535,6 +535,58 @@ extension JSRealm {
 
     // MARK: Globals
 
+    // Inline caches (9J): a global read or write remembers where it found
+    // the binding (code.globalCache, per key) and next time only checks that
+    // the slot still holds that key. Property slots never move except when
+    // a delete compacts them (the key check then fails), and a new global
+    // `let` bumps globalLexCount, which invalidates object-property entries.
+
+    @inline(__always) func cachedGlobalSlot(_ code: JSCode, _ ki: Int, forWrite: Bool) -> (obj: Int, slot: Int)? {
+        let e = code.globalCache[ki]
+        if e == UInt64.max { return nil }
+        let j = Int(UInt32(truncatingIfNeeded: e))
+        let k = code.keyPtr[ki]
+        let isLex = e >> 63 != 0
+        let target = isLex ? globalLex : global
+        guard let gi = heap.objectIndex(target) else { return nil }
+        if !isLex && (Int((e >> 32) & 0x7FFF_FFFF) != globalLexCount & 0x7FFF_FFFF || heap.objects[gi].flags.contains(.exotic)) {
+            return nil
+        }
+        guard j < heap.objects[gi].props.count else { return nil }
+        let p = heap.objects[gi].props[j]
+        guard p.key == k, !p.attributes.contains(.accessor), !p.value.isHole else { return nil }
+        if forWrite && !p.attributes.contains(.writable) { return nil }
+        return (gi, j)
+    }
+
+    @inline(__always) func cachedGlobal(_ code: JSCode, _ ki: Int) -> JSValue? {
+        guard let (gi, j) = cachedGlobalSlot(code, ki, forWrite: false) else { return nil }
+        return heap.objects[gi].props[j].value
+    }
+
+    @inline(__always) func cachedPutGlobal(_ code: JSCode, _ ki: Int, _ v: JSValue) -> Bool {
+        guard let (gi, j) = cachedGlobalSlot(code, ki, forWrite: true) else { return false }
+        heap.objects[gi].props[j].value = v
+        return true
+    }
+
+    /// After a slow-path access: remember where key ki lives, if it is a
+    /// plain data binding.
+    func fillGlobalCache(_ code: JSCode, _ ki: Int) {
+        let k = code.keyPtr[ki]
+        if globalLexCount > 0, let li = heap.objectIndex(globalLex) {
+            let j = heap.findSlot(li, k)
+            if j >= 0 {
+                code.globalCache[ki] = (1 << 63) | UInt64(UInt32(j))
+                return
+            }
+        }
+        guard let gi = heap.objectIndex(global), !heap.objects[gi].flags.contains(.exotic) else { return }
+        let j = heap.findSlot(gi, k)
+        guard j >= 0, !heap.objects[gi].props[j].attributes.contains(.accessor) else { return }
+        code.globalCache[ki] = (UInt64(globalLexCount & 0x7FFF_FFFF) << 32) | UInt64(UInt32(j))
+    }
+
     func getGlobal(_ k: JSPropertyKey, orUndefined: Bool) throws(JSThrow) -> JSValue {
         if globalLexCount > 0, let p = heap.getOwnProperty(globalLex, k) {
             if p.value.isHole { throw tdz(k) }

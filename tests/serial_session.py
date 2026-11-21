@@ -2603,6 +2603,9 @@ def web_checks_run(s, timeout, check, find, browsers, kill_all, srv, tsrv, base,
 
     # The test CA, with /bin/fetch, as in browse_checks.
     s.command(f"fetch -o /ca.der {base}/testca.der", 30.0)
+    if os.environ.get("WIFFER_WEB_JS_ONLY"):  # development: only the scripted pages
+        web_js_checks(s, timeout, check, find, browsers, kill_all, launch, load, pixel_in_page, origin, read_title, srv, base)
+        return 0
 
     # ---- Layout fixtures: each loads cleanly (title, no error, every
     # subresource); a few have pixels at known places.
@@ -2879,6 +2882,10 @@ def web_js_checks(s, timeout, check, find, browsers, kill_all, launch, load, pix
         m = re.search(pat, text)
         return int(m.group(1)) if m else None
 
+    if os.environ.get("WIFFER_WEB_JS_ONLY") == "9j":  # development: only Phase 9J's pages
+        web_js9j_checks(s, timeout, check, find, browsers, kill_all, launch, load, pixel_in_page, origin, read_title, srv, base)
+        return
+
     # A script sets the title and a style; <noscript> is not rendered.
     got, found = load(f"{base}/js/title.html")
     if found and "title 'JS title ok'" not in got:
@@ -2988,6 +2995,268 @@ def web_js_checks(s, timeout, check, find, browsers, kill_all, launch, load, pix
     ms = line_ms(got, r"browse: script \S+/js/jquery.js (\d+) ms")
     print(f"harness: jQuery 3.7.1 script time (TCG): {ms} ms")
     kill_all()
+    web_js9j_checks(s, timeout, check, find, browsers, kill_all, launch, load, pixel_in_page, origin, read_title, srv, base)
+
+
+def url_keys(text: str):
+    """`sendkey` names for a URL typed into the address bar."""
+    names = {":": "shift-semicolon", ".": "dot", "/": "slash", "-": "minus", "?": "shift-slash", "=": "equal", "_": "shift-minus"}
+    return [names.get(c, c) for c in text]
+
+
+def web_js9j_checks(s, timeout, check, find, browsers, kill_all, launch, load, pixel_in_page, origin, read_title, srv, base):
+    """Phase 9J: more tests/web/js/ pages (a menu, a cookie banner, form
+    validation, pushState and Alt-Left, innerHTML scripts, a Lit component,
+    declarative shadow DOM with custom elements) and hostile scripts (a heap
+    bomb, deep recursion, a catastrophic regex, a 100 MB string, a million
+    nodes). After each hostile page the browser must still be running and
+    must load a fresh page typed into its address bar."""
+    # Shell commands (warp, windows, ps) read the serial port up to their
+    # prompt, so a "browse: title" line can arrive inside one of them: titles
+    # are looked for in the whole session log since the last action.
+    mark = [len(s.log)]
+
+    def act():
+        mark[0] = len(s.log)
+
+    def title_seen(t, wait=30):
+        needle = f"browse: title '{t}'".encode()
+        deadline = time.time() + wait
+        while needle not in s.log[mark[0]:] and time.time() < deadline:
+            s.read_until(needle, min(2.0, max(0.1, deadline - time.time())))
+        return needle in s.log[mark[0]:], s.log[mark[0]:].decode(errors="replace")
+
+    def keys(k):
+        act()
+        s.sendkeys(k)
+
+    def go(url, flags=""):
+        act()
+        launch(url, flags)
+
+    def click_page(title, x, y):
+        o = origin(title)
+        if o is None:
+            return False
+        act()
+        s.click(o[0] + x, o[1] + y)
+        s.warp(4, 4)  # the pointer sprite would cover the pixels
+        return True
+
+    # A dropdown menu: opened by a click, an item handled by script (the
+    # link is not followed), dismissed by a click elsewhere.
+    act()
+    got, found = load(f"{base}/js/menu.html")
+    check(found, "js/menu.html loads", got[-300:])
+    time.sleep(0.8)
+    px = pixel_in_page("JS menu", 50, 45, "FFFFFF")
+    check(px == b"\xff\xff\xff", "js/menu.html: the menu starts closed", px.hex() if px else "no window")
+    click_page("JS menu", 50, 15)
+    ok, got = title_seen("JS menu open")
+    px = pixel_in_page("JS menu open", 120, 45, "E0A000")
+    check(ok and px == bytes.fromhex("E0A000"), "js/menu.html: a click opens the menu (painted)", (px.hex() if px else "no window") + got[-200:])
+    click_page("JS menu open", 30, 45)
+    ok, got = title_seen("JS menu picked One")
+    check(ok and "fragment #one" not in got and "navigate" not in got, "js/menu.html: an item click is handled, the link not followed", got[-300:])
+    px = pixel_in_page("JS menu picked One", 120, 45, "FFFFFF")
+    check(px == b"\xff\xff\xff", "js/menu.html: the menu closes after the pick", px.hex() if px else "no window")
+    click_page("JS menu picked One", 50, 15)
+    title_seen("JS menu open")
+    click_page("JS menu open", 300, 200)
+    ok, got = title_seen("JS menu dismissed")
+    check(ok, "js/menu.html: a click elsewhere dismisses the menu", got[-200:])
+    kill_all()
+
+    # A cookie consent banner: Accept sets document.cookie, removes the
+    # banner, the server sees the cookie, and the next page has no banner.
+    act()
+    got, found = load(f"{base}/js/cookie.html")
+    if found and "title 'JS cookie banner shown'" not in got:
+        got += title_seen("JS cookie banner shown", 10)[1]
+    check("title 'JS cookie banner shown'" in got, "js/cookie.html: the banner is shown", got[-300:])
+    time.sleep(0.8)
+    px = pixel_in_page("JS cookie banner shown", 100, 130, "203080")
+    check(px == bytes.fromhex("203080"), "js/cookie.html: the banner is painted", px.hex() if px else "no window")
+    click_page("JS cookie banner shown", 330, 130)
+    ok, got = title_seen("JS cookie accepted consent=yes")
+    check(ok, "js/cookie.html: Accept sets the cookie; the next fetch sends it", got[-300:])
+    req = srv.last("/json?after=consent")
+    check(req is not None and "consent=yes" in req["headers"].get("cookie", ""), "js/cookie.html: the server saw Cookie: consent=yes",
+          str(req and req["headers"]))
+    ok, got = title_seen("JS cookie no banner (consent=yes)")
+    check(ok, "js/cookie.html: after a navigation the banner stays away", got[-300:])
+    time.sleep(0.8)
+    px = pixel_in_page("JS cookie no banner (consent=yes)", 100, 130, "FFFFFF")
+    check(px == b"\xff\xff\xff", "js/cookie.html: no banner painted", px.hex() if px else "no window")
+    kill_all()
+
+    # Form validation in the submit event: cancelled while invalid, then sent.
+    act()
+    got, found = load(f"{base}/js/formval.html")
+    check(found, "js/formval.html loads", got[-300:])
+    time.sleep(0.8)
+    before = srv.count("/echo?code=")
+    if click_page("JS form start", 40, 30):
+        time.sleep(0.3)
+        keys(["a", "b", "ret"])
+        ok, got = title_seen("JS form invalid 1 ab")
+        time.sleep(0.5)
+        check(ok and srv.count("/echo?code=") == before and "submit GET" not in got,
+              "js/formval.html: an invalid value: preventDefault, nothing submitted", got[-300:])
+        px = pixel_in_page("JS form invalid 1 ab", 60, 75, "E02020")
+        check(px == bytes.fromhex("E02020"), "js/formval.html: the error is painted", px.hex() if px else "no window")
+        keys(["minus", "c", "d", "ret"])
+        got = s.read_until(b"browse: title 'Echo GET", 60).decode(errors="replace") + s.read_until(b"\n", 5).decode(errors="replace")
+        check("title 'JS form valid ab-cd'" in got and "code=ab-cd" in got, "js/formval.html: a valid value is submitted", got[-300:])
+        req = srv.last("/echo?code=")
+        check(req is not None and req["path"] == "/echo?code=ab-cd", "js/formval.html: the query the server saw", str(req and req["path"]))
+    kill_all()
+
+    # history.pushState, then Alt-Left: popstate, no reload.
+    act()
+    got, found = load(f"{base}/js/history.html")
+    check(found, "js/history.html loads", got[-300:])
+    time.sleep(0.8)
+    click_page("JS history start", 100, 40)
+    title_seen("JS history push 1 ?page=1")
+    click_page("JS history push 1 ?page=1", 100, 40)
+    ok, got = title_seen("JS history push 2 ?page=2")
+    check(ok, "js/history.html: two clicks push two entries", got[-300:])
+    px = pixel_in_page("JS history push 2 ?page=2", 100, 40, "2080A0")
+    check(px == bytes.fromhex("2080A0"), "js/history.html: state 2 is painted", px.hex() if px else "no window")
+    keys(["alt-left"])
+    ok, got = title_seen("JS history pop 1 ?page=1")
+    check(ok and f"browse: popstate {base}/js/history.html?page=1" in got, "js/history.html: Alt-Left fires popstate with state 1", got[-300:])
+    px = pixel_in_page("JS history pop 1 ?page=1", 100, 40, "A02080")
+    check(px == bytes.fromhex("A02080"), "js/history.html: state 1 is painted", px.hex() if px else "no window")
+    keys(["alt-left"])
+    ok, got = title_seen("JS history pop 0 -")
+    check(ok and srv.count("/js/history.html?page") == 0, "js/history.html: back to the first entry, the page never reloaded", got[-300:])
+    keys(["alt-right"])
+    ok, got = title_seen("JS history pop 1 ?page=1")
+    check(ok, "js/history.html: Alt-Right goes forward again", got[-300:])
+    kill_all()
+
+    # innerHTML / insertAdjacentHTML scripts never run; createElement ones do.
+    go(f"{base}/js/inner.html")
+    ok, got = title_seen("JS inner notrun created inserted 2", 60)
+    check(ok and "JS inner BAD" not in got, "js/inner.html: innerHTML scripts do not run, a created script does", got[-300:])
+    time.sleep(0.5)
+    px = pixel_in_page("JS inner notrun created inserted 2", 100, 20, "40A040")
+    check(px == bytes.fromhex("40A040"), "js/inner.html: the inserted markup is painted", px.hex() if px else "no window")
+    kill_all()
+
+    # A Lit component (lit-core 3.2.1 as an ES module): renders its shadow
+    # tree with adopted styles and re-renders on a click.
+    go(f"{base}/js/lit.html")
+    ok, got = title_seen("JS lit 0 Count: 0", 120)
+    check(ok and "js error" not in got, "js/lit.html: the LitElement renders", got[-400:])
+    ms = re.search(r"browse: script \S+/js/lit.html\S* (\d+) ms", got)
+    print(f"harness: Lit page module script time (TCG): {ms.group(1) if ms else None} ms")
+    time.sleep(0.8)
+    px = pixel_in_page("JS lit 0 Count: 0", 100, 40, "2080C0")
+    check(px == bytes.fromhex("2080C0"), "js/lit.html: the shadow tree is painted with its adopted style", px.hex() if px else "no window")
+    click_page("JS lit 0 Count: 0", 100, 40)
+    ok, got = title_seen("JS lit 1 Count: 1")
+    check(ok, "js/lit.html: a click re-renders the component", got[-300:])
+    px = pixel_in_page("JS lit 1 Count: 1", 100, 40, "C08020")
+    check(px == bytes.fromhex("C08020"), "js/lit.html: the re-render is painted", px.hex() if px else "no window")
+    kill_all()
+
+    # Declarative shadow DOM plus custom elements; and the same page with
+    # scripts off still renders the server-rendered card.
+    go(f"{base}/js/ce.html")
+    ok, got = title_seen("JS ce dsd true 1 true", 60)
+    check(ok, "js/ce.html: the element upgrades over its declarative shadow root", got[-300:])
+    time.sleep(0.8)
+    px = pixel_in_page("JS ce dsd true 1 true", 100, 30, "30A050")
+    check(px == bytes.fromhex("30A050"), "js/ce.html: :host([ready]) restyles the shadow tree", px.hex() if px else "no window")
+    px = pixel_in_page("JS ce dsd true 1 true", 60, 80, "C03060")
+    check(px == bytes.fromhex("C03060"), "js/ce.html: the script-built shadow tree is painted", px.hex() if px else "no window")
+    kill_all()
+    act()
+    got, found = load(f"{base}/js/ce.html", "--nojs")
+    time.sleep(0.8)
+    px = pixel_in_page("JS ce start", 100, 30, "3060C0")
+    check(found and px == bytes.fromhex("3060C0"), "js/ce.html --nojs: the declarative shadow tree renders", px.hex() if px else "no window")
+    px = pixel_in_page("JS ce start", 60, 80, "FFFFFF")
+    check(px == b"\xff\xff\xff", "js/ce.html --nojs: the undefined element stays hidden", px.hex() if px else "no window")
+    kill_all()
+
+    # TodoMVC (tests/web/todomvc, vanilla JS): add two items with Enter (the
+    # field keeps the focus), complete one, filter by URL hash.
+    act()
+    got, found = load(f"{base}/todomvc/index.html")
+    if found and "title 'TodoMVC 0 0 all'" not in got:
+        got += title_seen("TodoMVC 0 0 all", 10)[1]
+    check("title 'TodoMVC 0 0 all'" in got, "todomvc: the app starts empty", got[-300:])
+    time.sleep(0.8)
+    if click_page("TodoMVC 0 0 all", 406, 99):
+        time.sleep(0.3)
+        keys(["m", "i", "l", "k", "ret"])
+        title_seen("TodoMVC 1 1 all")
+        keys(["e", "g", "g", "s", "ret"])
+        ok, got = title_seen("TodoMVC 2 2 all")
+        check(ok, "todomvc: two items added with Enter", got[-300:])
+        time.sleep(0.8)
+        click_page("TodoMVC 2 2 all", 238, 164)
+        ok, got = title_seen("TodoMVC 2 1 all")
+        check(ok, "todomvc: an item completed by its checkbox", got[-300:])
+    kill_all()
+
+    # Hostile scripts. Each must cost the page at most its script, never
+    # the browser: the next script still runs (where the engine can go on),
+    # the page is painted, and the browser loads a page typed into its
+    # address bar afterwards.
+    def hostile_js(name, want, t=240.0):
+        url = f"{base}/js/h-{name}.html"
+        t0 = time.time()
+        launch(url)
+        pat = re.compile((f"browse: done {url}").encode())
+        got = b""
+        stopped = False
+        deadline = time.time() + t
+        while time.time() < deadline and not pat.search(got):
+            got += s.read_until(b"\n", 5)
+            if not stopped and b"script not responding" in got:
+                stopped = True
+                time.sleep(0.3)
+                s.sendkeys(["esc"])
+        if pat.search(got):
+            got += s.read_until(b"\n", 5)
+        text = got.decode(errors="replace")
+        secs = time.time() - t0
+        print(f"harness: hostile {name}: {secs:.1f} s" + (" (stopped from the hang bar)" if stopped else ""))
+        check(bool(pat.search(got)), f"hostile js {name}: the page finishes loading", text[-400:])
+        for w in want:
+            check(re.search(w, text) is not None, f"hostile js {name}: {w}", text[-400:])
+        n = len(browsers())
+        check(n == 1, f"hostile js {name}: the browser is still running", f"{n} browsers")
+        title = f"JS hostile {name} survived" if f"title 'JS hostile {name} survived'" in text else f"JS hostile {name}"
+        time.sleep(0.8)
+        px = pixel_in_page(title, 100, 40, "6040A0", t=20.0)
+        check(px == bytes.fromhex("6040A0"), f"hostile js {name}: the page is painted", px.hex() if px else "no window")
+        # A fresh navigation in the same browser.
+        s.sendkeys(["ctrl-l"])
+        time.sleep(0.3)
+        s.sendkeys(url_keys(f"{base}/js/toggle.html") + ["ret"])
+        more = s.read_until(f"browse: done {base}/js/toggle.html".encode(), 120).decode(errors="replace")
+        time.sleep(0.8)
+        px = pixel_in_page("JS toggle", 100, 40, "2040C0", t=20.0)
+        check(f"browse: done {base}/js/toggle.html" in more and px == bytes.fromhex("2040C0"),
+              f"hostile js {name}: the browser then loads and paints a new page", (px.hex() if px else "no window") + more[-300:])
+        kill_all()
+        return text
+
+    # (Under TCG the heap cap or the 5 s budget may come first: both cost the page only.)
+    hostile_js("bomb", [r"js error \S+: out of memory \(heap limit\)|browse: script stopped"])
+    hostile_js("recurse", [r"console log caught RangeError", r"js error \S+: RangeError", r"console log next script ran"])
+    hostile_js("regex", [r"console log regex start", r"js error \S+: terminated \(regular expression step limit\)", r"console log next script ran"])
+    hostile_js("string", [r"console log string length 104857600", r"console log caught RangeError", r"console log next script ran"])
+    hostile_js("nodes", [r"js error \S+: terminated \(more than \d+ document nodes\)|browse: script stopped"])
+    m = re.search(r"(\d+) used \((\d+) MiB\)", s.command("mem", timeout))
+    if m:
+        print(f"harness: memory in use after the hostile scripts: {m.group(2)} MiB")
 
 
 def wait_exit(s: Session, timeout: float):

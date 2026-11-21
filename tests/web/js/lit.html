@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html><head><meta charset=utf-8><title>JS lit start</title>
+<style>body { margin: 0 } x-toggle:not(:defined) { display: none }</style>
+</head><body>
+<x-toggle id=t></x-toggle>
+<p>after the component</p>
+<script type=module>
+// A LitElement (lit-core 3.2.1, BSD-3-Clause, served from lib/js/fixtures)
+// whose shadow tree is styled by adoptedStyleSheets and re-renders on click.
+import { LitElement, html, css } from '/js/lit-core.js';
+
+class XToggle extends LitElement {
+  static properties = { count: { type: Number } };
+  static styles = css`
+    :host { display: block }
+    .b { width: 200px; height: 80px; background: #2080C0 }
+    .b.on { background: #C08020 }
+    p { margin: 0 }`;
+  constructor() { super(); this.count = 0; }
+  render() {
+    return html`<div class="b ${this.count % 2 ? 'on' : ''}" @click=${() => { this.count++; }}></div><p>Count: ${this.count}</p>`;
+  }
+  updated() { document.title = 'JS lit ' + this.count + ' ' + this.shadowRoot.querySelector('p').textContent; }
+}
+customElements.define('x-toggle', XToggle);
+</script>
+</body></html>

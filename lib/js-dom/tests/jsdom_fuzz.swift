@@ -1,6 +1,6 @@
 // DOM fuzz (ROADMAP 9G/9J): random scripts drawn from a grammar of DOM
-// calls run against fixture pages with a layout engine, then forced layout
-// and a full update. A trap, a hang or an engine invariant failure is the
+// calls run against fixture pages with a layout engine, then forced layout,
+// a full update and paint. A trap, a hang or an engine invariant failure is the
 // failure mode; script exceptions are expected and ignored.
 //
 //     WIFFER_JSDOM_FUZZ_SEED=n     first seed (default 1)
@@ -108,6 +108,7 @@ func jsdomFuzzTests(_ t: Tests) {
     let seed = Int(jsdomEnv("WIFFER_JSDOM_FUZZ_SEED") ?? "") ?? 1
     let rounds = Int(jsdomEnv("WIFFER_JSDOM_FUZZ_ROUNDS") ?? "") ?? 6
     var scripts = 0
+    var px = [UInt32](repeating: 0, count: 400 * 300)
     let start = hostMillis()
     for (pi, name) in pages.enumerated() {
         guard let html = t.readFile("lib/layout/fixtures/" + name + ".html") else { continue }
@@ -125,6 +126,12 @@ func jsdomFuzzTests(_ t: Tests) {
                 return true
             }
             p.engine.update()
+            // And paint (9J: the fuzz covers layout and paint), scrolled
+            // to the top and part way down.
+            px.withUnsafeMutableBufferPointer { b in
+                p.engine.paint(into: b.baseAddress!, stride: 400, width: 400, height: 300, scrollX: 0, scrollY: 0)
+                p.engine.paint(into: b.baseAddress!, stride: 400, width: 400, height: 300, scrollX: 0, scrollY: Double(r * 40))
+            }
             scripts += 1
             r += 1
         }

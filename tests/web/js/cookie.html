@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html><head><meta charset=utf-8><title>JS cookie start</title>
+<style>
+body { margin: 0 }
+#banner { position: absolute; left: 0; top: 100px; width: 400px; height: 60px; background: #203080; display: none }
+#accept { position: absolute; left: 300px; top: 15px; width: 80px; height: 30px; background: #40C040 }
+</style>
+</head><body>
+<p>Page content.</p>
+<div id=banner>We use cookies. <div id=accept>Accept</div></div>
+<script>
+// A cookie consent banner: shown until the consent cookie is set; Accept
+// sets it through document.cookie, removes the banner, and the server sees
+// the cookie on the next request.
+var banner = document.getElementById('banner');
+if (/(^|; )consent=yes/.test(document.cookie)) {
+  banner.remove();
+  document.title = 'JS cookie no banner (' + document.cookie + ')';
+} else {
+  banner.style.display = 'block';
+  document.title = 'JS cookie banner shown';
+  document.getElementById('accept').addEventListener('click', function () {
+    document.cookie = 'consent=yes; path=/; max-age=3600';
+    banner.remove();
+    fetch('/json?after=consent').then(function (r) { return r.json(); }).then(function (j) {
+      document.title = 'JS cookie accepted ' + j.cookie;
+      setTimeout(function () { location.href = '/js/cookie.html?again'; }, 300);
+    });
+  });
+}
+</script>
+</body></html>

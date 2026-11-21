@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html><head><meta charset=utf-8><title>JS hostile recurse</title>
+<style>body { margin: 0 } #box { width: 200px; height: 80px; background: #6040A0 }</style>
+</head><body>
+<div id=box></div>
+<script>
+// Deep recursion: caught (RangeError), then uncaught.
+function f(n) { return f(n + 1) + 1; }
+try { f(0); } catch (e) { console.log('caught ' + e.name); }
+function g() { g(); }
+g();
+</script>
+<script>document.title = 'JS hostile recurse survived'; console.log('next script ran');</script>
+</body></html>

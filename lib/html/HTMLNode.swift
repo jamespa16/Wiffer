@@ -169,6 +169,11 @@ public final class HTMLNode {
         return n
     }
 
+    /// Documents only (0 otherwise): how many nodes were ever put in the
+    /// arena (O(1); an upper bound of arenaNodeCount). Embedders use it to
+    /// cap script-built documents (9J).
+    public var arenaSlotCount: Int { docState?.arena.count ?? 0 }
+
     /// Put a freshly created node in this document's arena.
     func registerNode(_ n: HTMLNode) {
         guard let st = docState else { return }
