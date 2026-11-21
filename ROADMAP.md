@@ -18,10 +18,11 @@
   HTML, CSS, fonts, layout, images, the browser app, tests and target sites).
   8J (SVG) is planned, added afterwards; it can run beside Part 9.
   See the end of this document.
-- **Part 9: JavaScript.** Planned (9A–9J): a pure-Swift ECMAScript engine
-  in lib/js (parser, bytecode VM, GC, built-ins, test262), DOM bindings,
-  scripts in the browser, custom elements and Shadow DOM. See the end
-  of this document.
+- **Part 9: JavaScript.** Done (9A–9J): a pure-Swift ECMAScript engine
+  in lib/js (parser, bytecode VM with ropes and global inline caches, GC,
+  built-ins, test262), DOM bindings, scripts in the browser, custom
+  elements and Shadow DOM, harness pages, hostile scripts, benchmarks and
+  target sites. See the end of this document.
 
 Goal: boot into a desktop with overlapping, draggable windows. Each shell
 runs in its own terminal window, and a text editor can open, edit and save
@@ -5192,7 +5193,7 @@ js-dom`). The browser harness page with a pixel check
   (no TypeError on push of a non-sheet); attribute changes through
   shorthand style setters.
 
-## Phase 9J: tests, performance and target sites
+## Phase 9J: tests, performance and target sites (done)
 
 - **Harness pages** in `tests/web/js/`, served by tests/web_server.py:
   `document.title` set by a script (the simplest possible check), a
@@ -5229,6 +5230,143 @@ js-dom`). The browser harness page with a pixel check
 test262 and WPT floors hold in `--hosttest`, no hostile script can hang
 or crash the browser, and the non-stretch target sites work at least as
 well with JavaScript on as with it off.
+
+**Done** (tests/web/js/, tests/web/todomvc/, `web_js9j_checks` in
+tests/serial_session.py, lib/js/fixtures/bench/, jsbench/jsperf9j tests, the
+engine and browser fixes below). Results:
+
+- **Harness pages** (`web_js9j_checks`, in the web session after 9H's
+  `web_js_checks`; `WIFFER_WEB_JS_ONLY=1` runs only the scripted pages,
+  `=9j` only these; 70 checks, about 6 minutes under TCG, most of it the
+  hostile pages): a dropdown menu (click opens, an item is handled with
+  `preventDefault` and the link is not followed, a click elsewhere closes;
+  pixels), a cookie banner (shown, Accept sets `document.cookie`, the
+  server sees `Cookie: consent=yes` on the next fetch, the next page has no
+  banner), form validation in `submit` (an invalid value is cancelled and
+  nothing reaches the server, the error is painted, then a valid value is
+  submitted), `history.pushState` twice then Alt-Left/Alt-Left/Alt-Right
+  (popstate with the right state, painted, no reload), `innerHTML` and
+  `insertAdjacentHTML` scripts that must not run beside a created one that
+  does, **a Lit component** (lit-core 3.2.1 served by web_server.py as
+  `/js/lit-core.js`, imported by a module script: shadow tree painted with
+  its adopted stylesheet, a click re-renders it), **declarative shadow DOM
+  plus custom elements** (the element upgrades over its server-rendered
+  root and restyles it through `:host([ready])`, a second element builds
+  its shadow tree in script; with `--nojs` the declarative card still
+  renders and `:not(:defined)` hides the other), TodoMVC (two items added
+  with Enter, one completed). **Hostile scripts** (tests/web/js/h-*.html),
+  each followed by: the browser still runs (`ps`), the page is painted,
+  and a URL typed into the same browser's address bar loads and paints:
+  a heap bomb (the 5 s budget or the 128 MiB heap cap, whichever comes
+  first under TCG: 6.6 s), deep recursion (caught RangeError, then an
+  uncaught one; the next script runs; 1.1 s), `(a+)+$` (terminated at the
+  regex step limit, logged as such, the next script runs; 2.3 s), a 100 MB
+  string (made; doubling past the length limit is a caught RangeError;
+  flattening a 200 MB rope hits the heap cap; 20 s), a million nodes
+  (terminated at 100 000 document nodes, 149 s: building and then laying
+  out the capped tree under TCG).
+- **Fuzzing** (`--hosttest`). Already there and checked: parser on mutated
+  test262 samples and corpus slices (30 000), VM (20 000) and VM2 / modules
+  (10 000 + 3 000), Proxy-heavy (15 000), regex patterns (40 000), JSON
+  (6 000, parse then stringify), Date parsing, the DOM fuzz (32 + 8
+  statement kinds on 10 layout fixtures, forced layout, update). Added: a
+  **whole-engine fuzz under GC stress** (mutants of the VM and 9J cases with
+  `gcEveryAllocation` and a 2-check interrupt budget, about 680 runs in
+  0.5 s), and **the DOM fuzz now paints** (two scroll positions after every
+  script). No traps, no runaways.
+- **Benchmarks.** lib/js/fixtures/bench/: richards and deltablue (written
+  for Wiffer from the published algorithms, checked against node: 2322/928
+  queue/hold counts, chain and projection tests), a JSON round trip, a
+  regex-heavy script and string building; `./run.sh --hosttest js` runs
+  them once as checks, `WIFFER_JS_BENCH=1 ./run.sh --hosttest js` times
+  them (best of 3; `WIFFER_JS_BENCH=name,...` or a path picks some), and
+  they are in the image as /js/bench/*.js (`js --budget 600000
+  /js/bench/richards.js`). The DOM build of 10 000 nodes is
+  `WIFFER_JS_BENCH=1 WIFFER_JSDOM_ONLY=bench ./run.sh --hosttest js-dom`
+  (and tests/web/js/dombench.html). Host is Apple silicon, `-Osize`; TCG is
+  QEMU on the same machine, loaded by sibling builds:
+
+  | Benchmark | Host before | Host after | TCG after |
+  | --- | ---: | ---: | ---: |
+  | richards x20 | 718 ms | 240 ms | 3.6 s |
+  | deltablue x20 | 1312 ms | 469 ms | 9.3 s |
+  | JSON round trip x20 (500 records) | 172 ms | 121 ms | 2.7 s |
+  | regex script x10 | 170 ms | 132 ms | 2.5 s |
+  | strings (100k `+=`, 20k-item HTML, 300k global loop) | 4018 ms | 58 ms | 2.0 s |
+  | 100k `s += 'x'` | 1507 ms | 11 ms | |
+  | 20k `html += '<li>...'` | 1864 ms | 13 ms | |
+  | global variable loop, 300k | 267 ms | 32 ms | |
+  | property get/set loop on locals, 1M | 195 ms | 91 ms | |
+  | 200k calls reading `arguments` | 168 ms | 114 ms | |
+  | DOM: 10 000 nodes built + queried | | 31 ms | |
+  | DOM: then restyle, layout, paint | | 67 ms | |
+
+  What the numbers said, and what was done: (1) a profile of richards had
+  half the time in `swift_retain`/`release`, from reading
+  `objects[i].props[j]` (a Swift array in a struct in an array, with ARC
+  optimizations off): object cells and property slots are now
+  manually managed, addressor-based buffers (`JSCellStore`,
+  `JSPropStore` in jsheap.swift), and `getProperty`/`setProperty` read
+  string-keyed slots in place; (2) **string ropes**: a concatenation of 256
+  or more units is a rope cell, flattened in place (iteratively) the first
+  time its units are read; length and further concatenation never flatten;
+  the GC marks rope children; a flatten past the heap cap terminates; (3)
+  **inline caches for globals**: each code object caches, per key, the
+  slot of a global (object property or global `let`/`const`), checked by
+  the key in that slot; a new global `let` invalidates object-property
+  entries; (4) `arguments` objects are filled in place instead of through
+  four `defineOwnProperty` calls. Shapes (hidden classes) and per-site
+  caches for ordinary property reads were not done: with the cells fixed,
+  `findSlot` (a linear scan up to 8 properties) is about 8 % of richards,
+  less than the interpreter loop itself.
+- **Floors held:** test262 full run 38 711 passed (unchanged; the floor
+  file is untouched), the `--hosttest` sample and its GC-stress rerun, WPT
+  dom 8549, custom-elements 451, shadow-dom 8355, html5lib 1703.
+- **Target sites** (the guest's SLIRP network reaches the internet, as in
+  8I; 2026-11-21; times are QEMU TCG on a loaded host; screendumps judged
+  by eye; "same" means the JS-off rendering of 8I with the JS-only parts
+  working on top):
+
+  | Site | JS off | JS on | Notes |
+  | --- | --- | --- | --- |
+  | news.ycombinator.com | 1.1 s, readable | 1.5 s, same | item page: `[–]` collapses a thread to `[3 more]` and expands it again (`javascript:void(0)` links run the click handlers); vote arrows (SVG) drawn |
+  | en.wikipedia.org (Web_browser) | 5.3 s (8I) | 39–55 s | ResourceLoader starts and loads ~8 module bundles (jQuery, Vector, VisualEditor init, MultimediaViewer...) with no errors once IntersectionObserver, PerformanceObserver and HTMLDocument existed; navboxes are collapsed with working `[show]`/`[hide]`; clicking an image opens MultimediaViewer. **Search suggestions do not appear**: the Codex typeahead loads, but every restyle after a module adds CSS costs 5–15 s under TCG (2 000–4 000 nodes against Wikipedia's 228 KB of CSS), so the budget bar comes up and the dropdown never paints within the test. Icons (SVG and mask-image) drawn: 8J's open item is verified here, on HN and on GitHub |
+  | lobste.rs | 3.0 s | 2.8 s | relative times ("19 hours ago") filled in by script; the `<details>` "caches" menus showed their contents with JS on and off: fixed in the UA sheet |
+  | www.gov.uk (cookie consent) | not checked | 2.7 s | "Cookies on GOV.UK" banner shown; Reject sets the cookie and shows the confirmation, "Hide cookie message" removes it; the JS header "Menu" opens the services panel |
+  | jquery.com (jQuery-era) | not checked | 1.8 s | jQuery 4.1 and the site script run without errors |
+  | TodoMVC (tests/web/todomvc, vanilla JS, written for Wiffer) | a script-only app: nothing works | 0.35 s, works | add (Enter), complete, filters by hash, counter, localStorage; found two browser bugs (below); a harness check |
+  | github.com/octocat/Hello-World (stretch) | usable (8I) | usable, 24–34 s | was 5 "Failed to resolve module specifier \"react\"" errors: **import maps** added; GitHub's React chunks now load; one remaining error was `navigator.clipboard` (stubbed afterwards); file-list skeletons stay (React data fetches) |
+  | preactjs.com (stretch, Preact) | readable (prerendered) | 5.9 s, no errors | hydration threw on `navigator.serviceWorker.getRegistrations()`: stubbed; the "About" dropdown did not open |
+
+- **Bugs found and fixed** (each with a host or harness regression test):
+  browse ran out of memory and died (invalid opcode in `swift_allocObject`)
+  laying out a script-built tree: layout boxes cost about 3 KB each with
+  their computed style, so the box cap went from 400 000 to 60 000 and
+  scripts are stopped past 100 000 document nodes
+  (`HTMLNode.arenaSlotCount`, checked at the interrupt); after a cancelled
+  implicit submission (validation in `submit`) the field lost the focus;
+  Enter in a field outside a form lost the focus (TodoMVC); an emptied
+  field drew blank instead of its placeholder; a closed `<details>`
+  showed its contents; no import maps; missing IntersectionObserver,
+  ResizeObserver, PerformanceObserver, HTMLDocument,
+  `navigator.serviceWorker`, `navigator.clipboard` (jsdom_prelude.swift, a
+  small JS prelude per page); a regex step-limit termination was logged as
+  a bare "terminated".
+- **Done-when:** `./run.sh --test` and `./run.sh --test --uefi` both exit 0
+  with 579 PASS and no FAIL (510 after 9H; each run about 15 minutes on a
+  loaded host, the web session the longest); `./run.sh --hosttest` is all ok
+  (js 4267 checks, js-dom 91, browser 120); `./run.sh --test262` passes
+  38 711 (floor held); no hostile page hung or killed the browser; every
+  non-stretch target site works at least as well with JavaScript on as
+  off, except Wikipedia's search suggestions (restyle speed, above).
+- **Known gaps:** restyle cost dominates scripted heavy pages (Wikipedia
+  search suggestions, see above); shapes and property inline caches were
+  not needed by the numbers yet; the browser JS heap cap (128 MiB) and the
+  5 s budget race under TCG, so the heap bomb is stopped by whichever comes
+  first; the million-node page takes about 2.5 minutes of harness time;
+  IntersectionObserver is a JS approximation (no root-margin percentages,
+  checks on scroll/resize/observe only); GitHub's lazily fetched React
+  content and the Preact site's menu were not investigated further.
 
 ## Open questions and build notes
 
