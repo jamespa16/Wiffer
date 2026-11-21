@@ -13,6 +13,7 @@ func libTests(_ t: Tests) {
     run("ce", jsdomLitTests)
     run("jquery", jsdomJQueryTests)
     run("fuzz", jsdomFuzzTests)
+    run("bench", jsdomBenchTests)
     run("wpt", jsdomWPTTests)
 }
 
