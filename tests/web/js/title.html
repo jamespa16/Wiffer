@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html><head><meta charset=utf-8><title>JS title start</title>
+<style>body { margin: 0 } #box { width: 200px; height: 80px; background: #808080 }</style>
+<script src="title.js"></script>
+</head><body>
+<div id=box></div>
+<noscript><div style="width: 200px; height: 80px; background: #FF0000">scripts are off</div></noscript>
+<script>
+document.getElementById('box').style.background = '#30A060';
+console.log('inline script ran, readyState ' + document.readyState);
+</script>
+</body></html>

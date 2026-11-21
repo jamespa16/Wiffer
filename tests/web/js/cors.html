@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html><head><meta charset=utf-8><title>JS cors start</title></head><body>
+<p>Cross-origin requests: the browser is started with -r o.t:10.0.2.2, so
+http://o.t:PORT/ is the same server under another origin.</p>
+<script>
+var other = 'http://o.t:' + location.port;
+var blocked = fetch(other + '/json?x=1').then(function () { return 'leaked'; }, function (e) { return 'blocked-' + e.name; });
+var allowed = fetch(other + '/json?x=2&cors=1').then(function (r) { return r.json(); })
+  .then(function (j) { return 'allowed-' + j.query.x; }, function (e) { return 'failed-' + e.name; });
+var xhr = new Promise(function (resolve) {
+  var x = new XMLHttpRequest();
+  x.open('GET', other + '/json?x=3');
+  x.onload = function () { resolve('xhr-leaked'); };
+  x.onerror = function () { resolve('xhr-error'); };
+  x.send();
+});
+Promise.all([blocked, allowed, xhr]).then(function (r) { document.title = 'JS cors ' + r.join(' '); });
+</script>
+</body></html>

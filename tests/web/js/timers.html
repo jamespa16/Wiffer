@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html><head><meta charset=utf-8><title>Timer page</title></head><body>
+<script>
+var order = [];
+function done() { document.title = 'JS timers ' + order.join(','); console.log('order ' + order.join(',')); }
+setTimeout(function () { order.push('t50'); done(); }, 50);
+setTimeout(function () { order.push('t0'); Promise.resolve().then(function () { order.push('m2'); }); }, 0);
+setTimeout(function () { order.push('t10'); }, 10);
+Promise.resolve().then(function () { order.push('m1'); });
+queueMicrotask(function () { order.push('q1'); });
+requestAnimationFrame(function () { order.push('raf'); });
+order.push('sync');
+</script>
+</body></html>
