@@ -516,9 +516,13 @@ pageField.onSubmit = { _ in
     guard let form = browserFormOwner(n) else { return }
     if let s = sp {
         // Implicit submission: click the default button, else submit.
+        let queued = deferred.count
         if let btn = browserDefaultButton(form), !browserIsDisabled(btn) { s.dispatchMouse("click", at: btn) }
         else { s.bindings.submitForm(form, submitter: nil) }
         afterScriptInput()
+        // A submit handler that cancelled (validation) queued no submission
+        // or navigation: the field keeps the focus, as in other browsers.
+        if deferred.count == queued && editing == nil && n.isConnected && (s.focusedNode === n || s.focusedNode == nil) { beginEditing(n) }
         return
     }
     submit(form, submitter: browserDefaultButton(form))

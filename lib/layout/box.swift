@@ -80,7 +80,8 @@ struct LayoutLimits {
     var maxDepth = 200
     /// About 3 KB each with its computed style: 400 000 boxes (the old
     /// cap) exhausted a 1 GiB Wiffer machine (9J's million-node script).
-    var maxBoxes = 120_000
+    /// Wikipedia's Solar System article is about 14 000 elements.
+    var maxBoxes = 60_000
     var maxTableColumns = 1000
     var maxTableRows = 20_000
     var maxFloatsPerContext = 1000

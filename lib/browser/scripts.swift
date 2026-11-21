@@ -187,7 +187,7 @@ final class BrowserScripts {
     /// script-made nodes, each with a JS wrapper and later layout boxes,
     /// would exhaust a 1 GiB machine long before the JS heap cap). Past it
     /// the running script is terminated and scripts are stopped for the page.
-    var maxDocumentNodes = 150_000
+    var maxDocumentNodes = 100_000
     /// ms since navigation start, for the event lines.
     let started: Int
 
