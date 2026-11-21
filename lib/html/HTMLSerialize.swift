@@ -92,6 +92,7 @@ func htmlSerializeInto(_ out: inout [UInt8], _ node: HTMLNode, includeSelf: Bool
             if n.shadowRootMode == .closed { put("closed") } else { put("open") }
             put("\"")
             if n.delegatesFocus { put(" shadowrootdelegatesfocus=\"\"") }
+            if n.slotAssignment == .manual { put(" shadowrootslotassignment=\"manual\"") }
             if n.serializable { put(" shadowrootserializable=\"\"") }
             if n.clonable { put(" shadowrootclonable=\"\"") }
             put(">")
