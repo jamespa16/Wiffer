@@ -536,10 +536,14 @@ extension LayoutEngine {
                 if checked { layoutDisc(sub, stride, sw, sh, cx, cy, rad - 3, 0xff00_5fcc) }
             }
         case .textInput, .password, .textarea:
-            var s = controlValues[id] ?? b.label
+            // An empty value shows the placeholder (a script clearing a field
+            // sets the value to "", 9J's TodoMVC).
+            let cv = controlValues[id]
+            let usesLabel = cv == nil || (b.labelIsPlaceholder && cv?.isEmpty == true)
+            var s = usesLabel ? b.label : (cv ?? b.label)
             var col = color
-            if controlValues[id] == nil && b.labelIsPlaceholder { col = (color & 0xff00_0000) | 0x75_7575 }
-            if b.replaced == .password && !(controlValues[id] == nil && b.labelIsPlaceholder) {
+            if usesLabel && b.labelIsPlaceholder { col = (color & 0xff00_0000) | 0x75_7575 }
+            if b.replaced == .password && !(usesLabel && b.labelIsPlaceholder) {
                 var p = ""
                 for _ in s.unicodeScalars.prefix(1000) { p += "\u{2022}" }
                 s = p
@@ -563,8 +567,8 @@ extension LayoutEngine {
                 }
                 return
             }
-            let run = (controlValues[id] == nil && b.replaced != .password) ? (b.labelRun ?? ctx.shape(textScalars(s), b)) : ctx.shape(textScalars(s), b)
-            if b.labelRun == nil && controlValues[id] == nil && b.replaced != .password { b.labelRun = run }
+            let run = (usesLabel && b.replaced != .password) ? (b.labelRun ?? ctx.shape(textScalars(s), b)) : ctx.shape(textScalars(s), b)
+            if b.labelRun == nil && usesLabel && b.replaced != .password { b.labelRun = run }
             drawLabel(run, r.x, r, b, sub, stride, sw, sh, cx0, cy0, col)
         case .button:
             if b.labelRun == nil { b.labelRun = ctx.shape(textScalars(b.label), b) }

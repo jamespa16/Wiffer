@@ -513,7 +513,12 @@ pageField.onSubmit = { _ in
     let isTextarea = n.name == "textarea"
     commitPageField()
     if isTextarea { return }
-    guard let form = browserFormOwner(n) else { return }
+    guard let form = browserFormOwner(n) else {
+        // Enter in a field outside a form: the page's keydown handlers ran
+        // already (TodoMVC adds an item); the field keeps the focus.
+        if sp != nil && n.isConnected { beginEditing(n) }
+        return
+    }
     if let s = sp {
         // Implicit submission: click the default button, else submit.
         let queued = deferred.count
