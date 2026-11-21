@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html><head><meta charset=utf-8><title>JS ce start</title>
+<style>body { margin: 0 } x-badge:not(:defined) { display: none } p { margin: 0 }</style>
+</head><body>
+<x-card id=card><template shadowrootmode=open><style>
+  :host { display: block }
+  .box { width: 200px; height: 60px; background: #3060C0 }
+  :host([ready]) .box { background: #30A050 }
+</style><div class=box><slot></slot></div></template><span>light child</span></x-card>
+<x-badge id=badge></x-badge>
+<p>after</p>
+<script>
+// A server-rendered (declarative shadow DOM) card: it renders without
+// script; the custom element upgrades it, reuses the declarative root and
+// marks it ready. A second element builds its shadow tree in script and is
+// hidden by :not(:defined) until defined.
+var seen = '';
+customElements.define('x-card', class extends HTMLElement {
+  constructor() {
+    super();
+    seen = this.shadowRoot ? 'dsd' : 'none';
+  }
+  connectedCallback() { this.setAttribute('ready', ''); }
+});
+customElements.define('x-badge', class extends HTMLElement {
+  connectedCallback() {
+    var r = this.attachShadow({ mode: 'open' });
+    r.innerHTML = '<style>:host { display: block } div { width: 120px; height: 40px; background: #C03060 }</style><div></div>';
+  }
+});
+customElements.whenDefined('x-badge').then(function () {
+  var card = document.getElementById('card');
+  document.title = 'JS ce ' + seen + ' ' + card.hasAttribute('ready') + ' ' +
+    card.shadowRoot.querySelector('slot').assignedNodes().length + ' ' + !!document.getElementById('badge').shadowRoot;
+});
+</script>
+</body></html>

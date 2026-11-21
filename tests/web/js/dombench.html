@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html><head><meta charset=utf-8><title>JS dombench start</title>
+<style>body { margin: 0 } li.odd { color: red } .p1 { margin: 2px }</style>
+</head><body>
+<script>
+// Phase 9J DOM benchmark (the same code as lib/js-dom/tests/jsdom_bench.swift):
+// 10 000 nodes, 5000 by createElement and 5000 by one innerHTML. The title
+// shows the script's own times; the browser's "script" and "restyle" serial
+// lines give the rest.
+var t0 = Date.now();
+var ul = document.createElement('ul');
+for (var i = 0; i < 5000; i++) {
+  var li = document.createElement('li');
+  li.setAttribute('class', i % 2 ? 'odd' : 'even');
+  li.textContent = 'item ' + i;
+  ul.appendChild(li);
+}
+document.body.appendChild(ul);
+var t1 = Date.now();
+var n = document.querySelectorAll('li.odd').length + document.getElementsByTagName('li').length;
+var html = '';
+for (var j = 0; j < 5000; j++) html += '<p class="p' + (j % 3) + '">para ' + j + '</p>';
+var div = document.createElement('div');
+div.innerHTML = html;
+document.body.appendChild(div);
+var t2 = Date.now();
+document.title = 'JS dombench ' + n + ' ' + div.childNodes.length + ' create ' + (t1 - t0) + ' ms innerHTML ' + (t2 - t1) + ' ms';
+</script>
+</body></html>

@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html><head><meta charset=utf-8><title>JS hostile regex</title>
+<style>body { margin: 0 } #box { width: 200px; height: 80px; background: #6040A0 }</style>
+</head><body>
+<div id=box></div>
+<script>
+// A catastrophic regular expression: (a+)+$ backtracks until the step limit terminates the script.
+console.log('regex start');
+/(a+)+$/.test('a'.repeat(32) + 'b');
+console.log('regex returned');
+</script>
+<script>document.title = 'JS hostile regex survived'; console.log('next script ran');</script>
+</body></html>

@@ -167,6 +167,7 @@ echo "OK: user programs: ${USER_PROGS[*]}"
 #    ustar.swift. No macOS metadata (._ files, xattrs); owner root.
 #    Phase 6C: staged in build/rootfs with the user programs in /bin.
 rm -rf build/rootfs && cp -R rootfs build/rootfs && mkdir -p build/rootfs/bin
+cp -R lib/js/fixtures/bench build/rootfs/js/bench  # Phase 9J: `js /js/bench/richards.js` under TCG
 for prog in "${USER_PROGS[@]+"${USER_PROGS[@]}"}"; do cp "build/user/$prog" build/rootfs/bin/; done
 COPYFILE_DISABLE=1 bsdtar --format ustar --no-mac-metadata --no-xattrs --no-fflags \
   --uid 0 --gid 0 --uname root --gname root -cf build/rootfs.tar -C build/rootfs .

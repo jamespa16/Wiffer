@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html><head><meta charset=utf-8><title>JS inner start</title>
+<style>body { margin: 0 } #out p { margin: 0; width: 200px; height: 40px; background: #40A040 }</style>
+</head><body>
+<div id=out></div>
+<script>
+// innerHTML and insertAdjacentHTML insert markup but never run its scripts;
+// a script element made with createElement does run.
+var out = document.getElementById('out');
+out.innerHTML = '<p id=p1>inserted</p><script>window.ran = (window.ran || 0) + 1; document.title = "JS inner BAD";<\/script>';
+out.insertAdjacentHTML('beforeend', '<script>window.ran = (window.ran || 0) + 10;<\/script>');
+var s = document.createElement('script');
+s.textContent = 'window.created = 1;';
+document.body.appendChild(s);
+setTimeout(function () {
+  document.title = 'JS inner ' + (window.ran ? 'ran' + window.ran : 'notrun') + ' ' +
+    (window.created ? 'created' : 'nocreated') + ' ' + document.getElementById('p1').textContent + ' ' +
+    out.getElementsByTagName('script').length;
+}, 100);
+</script>
+</body></html>
