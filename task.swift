@@ -510,25 +510,28 @@ func mayAdopt(_ task: Task, _ cpu: Int, online: UInt64, now: UInt64) -> Bool {
 
 /// Index of the task CPU `cpu` should run next: the first homed on it, else
 /// (when `stealing`) the first it may adopt. Under schedLock.
-func runnableIndex(_ cpu: Int, stealing: Bool) -> Int? {
-    guard softAffinity else { return scheduler.runQueue.firstIndex(where: { $0.affinity.allows(cpu) }) }
-    let online = onlineCPUMask()
-    if let i = scheduler.runQueue.firstIndex(where: { $0.affinity.allows(cpu) && isHome($0, cpu, online: online) }) {
-        return i
-    }
-    guard stealing else { return nil }
+func runnableIndex(_ cpu: Int, stealing: Bool, force: Bool = false, longWaiting: Bool = false) -> Int? {
+    let online = softAffinity ? onlineCPUMask() : 0
     let now = ticks
-    return scheduler.runQueue.firstIndex(where: {
-        $0.affinity.allows(cpu) && mayAdopt($0, cpu, online: online, now: now)
-    })
+    var adopted: Int? = nil
+    var fallback: Int? = nil
+    for i in 0..<scheduler.runQueue.count {
+        let task = scheduler.runQueue[i]
+        guard task.affinity.allows(cpu) else { continue }
+        if !softAffinity || isHome(task, cpu, online: online) { return i }
+        if adopted == nil && stealing && mayAdopt(task, cpu, online: online, now: now) { adopted = i }
+        if fallback == nil && (force || (longWaiting && now &- task.readySince >= stealDelayTicks)) {
+            fallback = i
+        }
+    }
+    return adopted ?? fallback
 }
 
 /// The task CPU `cpu` should run next (runnableIndex), removed. With
 /// `force`, failing that, any task it may run at all (the caller has
 /// nothing else to switch to). Under schedLock.
-func takeRunnable(_ cpu: Int, stealing: Bool, force: Bool = false) -> Task? {
-    if let i = runnableIndex(cpu, stealing: stealing) { return scheduler.runQueue.remove(at: i) }
-    guard force, let i = scheduler.runQueue.firstIndex(where: { $0.affinity.allows(cpu) }) else { return nil }
+func takeRunnable(_ cpu: Int, stealing: Bool, force: Bool = false, longWaiting: Bool = false) -> Task? {
+    guard let i = runnableIndex(cpu, stealing: stealing, force: force, longWaiting: longWaiting) else { return nil }
     return scheduler.runQueue.remove(at: i)
 }
 
@@ -536,10 +539,13 @@ func takeRunnable(_ cpu: Int, stealing: Bool, force: Bool = false) -> Task? {
 /// at least stealDelayTicks (preemption's fallback). Under schedLock.
 func takeLongWaiting(_ cpu: Int) -> Task? {
     let now = ticks
-    guard let i = scheduler.runQueue.firstIndex(where: {
-        $0.affinity.allows(cpu) && now &- $0.readySince >= stealDelayTicks
-    }) else { return nil }
-    return scheduler.runQueue.remove(at: i)
+    for i in 0..<scheduler.runQueue.count {
+        let task = scheduler.runQueue[i]
+        if task.affinity.allows(cpu) && now &- task.readySince >= stealDelayTicks {
+            return scheduler.runQueue.remove(at: i)
+        }
+    }
+    return nil
 }
 
 /// All the bookkeeping of a switch, under schedLock and before it, so no
@@ -567,9 +573,7 @@ func prepareSwitch(_ why: SwitchReason) -> (UnsafeMutablePointer<UInt64>, Unsafe
     let moving = yielding && !prev.affinity.allows(sched.cpu)
     let stealing = !yielding || prev.isMain || moving
     let force = (!yielding || moving) && sched.idle == nil
-    if let n = takeRunnable(sched.cpu, stealing: stealing, force: force) {
-        next = n
-    } else if why == .preempt, let n = takeLongWaiting(sched.cpu) {
+    if let n = takeRunnable(sched.cpu, stealing: stealing, force: force, longWaiting: why == .preempt) {
         next = n
     } else if yielding && !moving {
         watchdogSwitch(from: prev, toIdle: false) // cooperating counts, even with no switch
@@ -629,8 +633,13 @@ func switchedIn(_ next: Task, _ sched: CPUSched) {
 func afterSwitch() {
     guard let sched = thisSched(), !sched.zombies.isEmpty else { return }
     schedLock.withIRQsOff {
-        for dead in sched.zombies {
-            if let i = scheduler.all.firstIndex(where: { $0 === dead }) { scheduler.all.remove(at: i) }
+        // Finished tasks belong to the CPU whose stack they last ran on.
+        // Walk indices backwards so removal never invalidates the next index.
+        var i = scheduler.all.count
+        while i > 0 {
+            i -= 1
+            let dead = scheduler.all[i]
+            if dead.state == .finished && dead.lastCPU == sched.cpu { scheduler.all.remove(at: i) }
         }
     }
     sched.zombies.removeAll(keepingCapacity: true) // frees their stacks, unless someone still holds them

@@ -243,7 +243,14 @@ final class NetStack {
     func schedule(after ticks: UInt64, _ fn: @escaping () -> Void) -> Int {
         let id = nextTimerID
         nextTimerID += 1
-        timers.append(StackTimer(id: id, at: now &+ ticks, fn: fn))
+        let timer = StackTimer(id: id, at: now &+ ticks, fn: fn)
+        // Upper bound keeps equal-deadline timers in scheduling order.
+        var lo = 0, hi = timers.count
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2
+            if timers[mid].at <= timer.at { lo = mid + 1 } else { hi = mid }
+        }
+        timers.insert(timer, at: lo)
         return id
     }
 
@@ -253,9 +260,7 @@ final class NetStack {
 
     /// Earliest tick at which `poll` has timed work (UInt64.max if none).
     var nextDeadline: UInt64 {
-        var t = nextHousekeeping
-        for timer in timers where timer.at < t { t = timer.at }
-        return t
+        min(timers.first?.at ?? UInt64.max, nextHousekeeping)
     }
 
     /// True if `poll(now:)` has something to do: frames waiting, local
@@ -282,12 +287,8 @@ final class NetStack {
         var budget = 256
         while budget > 0 {
             budget -= 1
-            var best = -1
-            for i in 0..<timers.count where timers[i].at <= now {
-                if best < 0 || timers[i].at < timers[best].at { best = i }
-            }
-            guard best >= 0 else { return }
-            let timer = timers.remove(at: best)
+            guard let first = timers.first, first.at <= now else { return }
+            let timer = timers.removeFirst()
             timer.fn()
         }
     }

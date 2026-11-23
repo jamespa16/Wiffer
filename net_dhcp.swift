@@ -149,7 +149,8 @@ final class DHCPClient {
 
     private func arm(after ticks: UInt64, _ fn: @escaping () -> Void) {
         if timerIDs.count > 16 { // forget timers that already fired
-            timerIDs.removeAll(where: { id in !stack.timers.contains(where: { $0.id == id }) })
+            let liveIDs = Set(stack.timers.map { $0.id })
+            timerIDs.removeAll(where: { !liveIDs.contains($0) })
         }
         timerIDs.append(stack.schedule(after: ticks, fn))
     }

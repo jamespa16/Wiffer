@@ -30,9 +30,14 @@ func getc() -> UInt8 {
 /// while holding it.
 func putc(_ byte: UInt8) {
     stdoutLock.acquire()
+    putcUnlocked(byte)
+    stdoutLock.release()
+}
+
+/// Caller holds stdoutLock. Never allocates.
+private func putcUnlocked(_ byte: UInt8) {
     serialPutc(byte)
     consoleWrite(byte)
-    stdoutLock.release()
 }
 
 /// Spin until the transmit holding register is empty (bit 5), then write.
@@ -47,8 +52,8 @@ func puts(_ s: StaticString) {
     defer { stdoutLock.release() }
     s.withUTF8Buffer { buf in
         for byte in buf {
-            if byte == 0x0A { putc(0x0D) }
-            putc(byte)
+            if byte == 0x0A { putcUnlocked(0x0D) }
+            putcUnlocked(byte)
         }
     }
 }
@@ -56,8 +61,8 @@ func puts(_ s: StaticString) {
 func newline() {
     stdoutLock.acquire()
     defer { stdoutLock.release() }
-    putc(0x0D)
-    putc(0x0A)
+    putcUnlocked(0x0D)
+    putcUnlocked(0x0A)
 }
 
 /// Print `value` as `0x`-prefixed, zero-padded 16-digit hex.
@@ -68,7 +73,7 @@ func printHex(_ value: UInt64) {
     var shift: UInt64 = 60
     while true {
         let nibble = UInt8(truncatingIfNeeded: (value >> shift) & 0xF)
-        putc(nibble < 10 ? 0x30 + nibble : 0x61 + nibble - 10)
+        putcUnlocked(nibble < 10 ? 0x30 + nibble : 0x61 + nibble - 10)
         if shift == 0 { break }
         shift -= 4
     }
@@ -88,6 +93,6 @@ func printDec(_ value: UInt64) {
     defer { stdoutLock.release() }
     while count > 0 {
         count -= 1
-        putc(digits[count])
+        putcUnlocked(digits[count])
     }
 }

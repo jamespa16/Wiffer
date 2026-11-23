@@ -41,7 +41,9 @@ public final class JSEventLoop {
         var callback: JSPersistent
         var args: [JSPersistent]
     }
+    // Min-heap ordered by (due, seq), with ids mapped to heap positions.
     var timers: [Timer] = []
+    private var timerIndices: [Int: Int] = [:]
     var nextTimerID = 1
     var nextSeq = 0
     /// Nesting level of the timer callback running now (0 outside one).
@@ -133,22 +135,60 @@ public final class JSEventLoop {
         nextSeq += 1
         var pa: [JSPersistent] = []
         for a in args { pa.append(realm.heap.retain(a)) }
-        timers.append(Timer(id: id, seq: nextSeq, due: clock() + delay, interval: repeating ? delay : -1,
+        insertTimer(Timer(id: id, seq: nextSeq, due: clock() + delay, interval: repeating ? delay : -1,
                             nesting: nesting, callback: realm.heap.retain(f), args: pa))
         return id
     }
 
+    private func timerPrecedes(_ a: Timer, _ b: Timer) -> Bool {
+        a.due < b.due || (a.due == b.due && a.seq < b.seq)
+    }
+
+    private func swapTimers(_ a: Int, _ b: Int) {
+        timers.swapAt(a, b)
+        timerIndices[timers[a].id] = a
+        timerIndices[timers[b].id] = b
+    }
+
+    /// Restore the heap after changing or replacing a single timer.
+    private func repairTimer(at index: Int) {
+        var i = index
+        if i > 0 && timerPrecedes(timers[i], timers[(i - 1) / 2]) {
+            while i > 0 {
+                let parent = (i - 1) / 2
+                if !timerPrecedes(timers[i], timers[parent]) { break }
+                swapTimers(i, parent)
+                i = parent
+            }
+        } else {
+            while i * 2 + 1 < timers.count {
+                var child = i * 2 + 1
+                if child + 1 < timers.count && timerPrecedes(timers[child + 1], timers[child]) { child += 1 }
+                if !timerPrecedes(timers[child], timers[i]) { break }
+                swapTimers(i, child)
+                i = child
+            }
+        }
+    }
+
+    private func insertTimer(_ timer: Timer) {
+        timerIndices[timer.id] = timers.count
+        timers.append(timer)
+        repairTimer(at: timers.count - 1)
+    }
+
     func removeTimer(at i: Int) {
-        let t = timers.remove(at: i)
+        let last = timers.count - 1
+        if i != last { swapTimers(i, last) }
+        let t = timers.removeLast()
+        timerIndices[t.id] = nil
+        if i < timers.count { repairTimer(at: i) }
         realm.heap.release(t.callback)
         for p in t.args { realm.heap.release(p) }
     }
 
     public func clearTimer(_ id: Int) {
-        for i in 0..<timers.count where timers[i].id == id {
-            removeTimer(at: i)
-            return
-        }
+        if let i = timerIndices[id] { removeTimer(at: i) }
     }
 
     /// Cancel everything (the page is going away).
@@ -165,12 +205,7 @@ public final class JSEventLoop {
 
     /// Index of the timer to run next: earliest due, then oldest.
     func earliestTimer() -> Int? {
-        var best = -1
-        for i in 0..<timers.count {
-            if best < 0 || timers[i].due < timers[best].due
-                || (timers[i].due == timers[best].due && timers[i].seq < timers[best].seq) { best = i }
-        }
-        return best < 0 ? nil : best
+        timers.isEmpty ? nil : 0
     }
 
     // MARK: Running
@@ -223,6 +258,7 @@ public final class JSEventLoop {
                 timers[i].interval = 4
                 timers[i].due = max(timers[i].due, clock() + 4)
             }
+            repairTimer(at: i)
         } else {
             // Keep the callback and args alive through the call: take them
             // out of the table only afterwards.
@@ -233,7 +269,7 @@ public final class JSEventLoop {
         runJS(f, this: realm.global, args: args)
         currentNesting = saved
         if t.interval < 0 {
-            for j in 0..<timers.count where timers[j].id == t.id { removeTimer(at: j); break }
+            clearTimer(t.id)
         }
         performMicrotaskCheckpoint()
         return true

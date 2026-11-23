@@ -151,7 +151,29 @@ final class BrowserMemoryTransport: BrowserTransport {
     /// Requests seen (in order), and cancelled ids.
     private(set) var started: [(id: Int, request: BrowserRequest)] = []
     private(set) var cancelled: [Int] = []
-    private var pending: [(id: Int, url: URLRecord, key: String, polls: Int)] = []
+    private var pending: [(id: Int, url: URLRecord, key: String, polls: Int)?] = []
+    private var pendingHead = 0
+    private var pendingLive = 0
+
+    /// Skip consumed slots and occasionally compact holes left by requests
+    /// completing behind a delayed head. Stable order, amortized O(1) removal.
+    private func trimPending() {
+        while pendingHead < pending.count && pending[pendingHead] == nil { pendingHead += 1 }
+        if pendingLive == 0 {
+            pending.removeAll(keepingCapacity: true)
+            pendingHead = 0
+        } else if pendingLive <= pending.count / 2 {
+            var write = 0
+            for read in pendingHead..<pending.count {
+                if let p = pending[read] {
+                    pending[write] = p
+                    write += 1
+                }
+            }
+            pending.removeLast(pending.count - write)
+            pendingHead = 0
+        }
+    }
 
     override init() { super.init() }
 
@@ -169,22 +191,30 @@ final class BrowserMemoryTransport: BrowserTransport {
         started.append((id: id, request: req))
         let key = String(decoding: req.url.serializedBytes(excludeFragment: true), as: UTF8.self)
         pending.append((id: id, url: req.url, key: key, polls: resources[key]?.latency ?? 0))
+        pendingLive += 1
     }
 
     override func cancel(_ id: Int) {
         cancelled.append(id)
-        pending.removeAll { $0.id == id }
+        for i in pendingHead..<pending.count where pending[i]?.id == id {
+            pending[i] = nil
+            pendingLive -= 1
+        }
+        trimPending()
     }
 
-    override var hasImmediateWork: Bool { !pending.isEmpty }
+    override var hasImmediateWork: Bool { pendingLive > 0 }
 
-    var pendingCount: Int { pending.count }
+    var pendingCount: Int { pendingLive }
 
     override func poll(now: Int) {
-        var i = 0
+        var i = pendingHead
         while i < pending.count {
-            if pending[i].polls > 0 { pending[i].polls -= 1; i += 1; continue }
-            let p = pending.remove(at: i)
+            guard let p = pending[i] else { i += 1; continue }
+            if p.polls > 0 { pending[i]!.polls -= 1; i += 1; continue }
+            pending[i] = nil
+            pendingLive -= 1
+            trimPending()
             if let c = resources[p.key] {
                 var r = BrowserResponse(url: p.url)
                 r.status = c.status

@@ -181,6 +181,7 @@ final class TCPConnection {
     /// Highest right edge advertised.
     var rcvAdv: UInt32 = 0
     var rcvBuf = TCPRing(capacity: 0)
+    // Descending sequence order: draining the earliest segment pops the tail.
     var ooo: [TCPOutOfOrder] = []
     var oooBytes = 0
     var oooFin: UInt32? = nil
@@ -1064,10 +1065,16 @@ final class TCPConnection {
     }
 
     private func insertOutOfOrder(_ seq: UInt32, _ data: [UInt8]) {
-        var at = ooo.count
-        for (i, e) in ooo.enumerated() {
-            if e.seq == seq && e.data.count >= data.count { return } // duplicate
-            if tcpLT(seq, e.seq) { at = i; break }
+        var at = 0, end = ooo.count
+        while at < end {
+            let mid = at + (end - at) / 2
+            if tcpLT(seq, ooo[mid].seq) { at = mid + 1 } else { end = mid }
+        }
+        // New equal-sequence segments precede older ones, which drain first.
+        var i = at
+        while i < ooo.count && ooo[i].seq == seq {
+            if ooo[i].data.count >= data.count { return } // duplicate
+            i += 1
         }
         guard ooo.count < layer.oooMaxSegments, oooBytes + data.count <= rcvCapacity else {
             layer.stats.outOfOrderDropped += 1
@@ -1078,8 +1085,8 @@ final class TCPConnection {
     }
 
     private func drainOutOfOrder() {
-        while let first = ooo.first, tcpLEQ(first.seq, rcvNxt) {
-            ooo.removeFirst()
+        while let first = ooo.last, tcpLEQ(first.seq, rcvNxt) {
+            ooo.removeLast()
             oooBytes -= first.data.count
             let skip = Int(rcvNxt &- first.seq)
             if skip < first.data.count {

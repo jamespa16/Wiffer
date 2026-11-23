@@ -44,6 +44,28 @@ func icmpErrno(_ e: ICMPError) -> Int {
 
 typealias EchoReply = (src: IPv4Addr, ttl: UInt8, message: [UInt8])
 
+/// Bounded FIFO; consumed replies release their payload immediately.
+struct EchoReplyQueue {
+    private var entries = [EchoReply?](repeating: nil, count: SocketLimit.datagramQueue)
+    private var head = 0
+    private(set) var count = 0
+    var isEmpty: Bool { count == 0 }
+
+    mutating func append(_ reply: EchoReply) {
+        guard count < entries.count else { return }
+        entries[(head + count) % entries.count] = reply
+        count += 1
+    }
+
+    mutating func removeFirst() -> EchoReply {
+        let reply = entries[head]!
+        entries[head] = nil
+        head = (head + 1) % entries.count
+        count -= 1
+        return reply
+    }
+}
+
 final class NetSocket: FileObject {
     let kind: UInt64
     let ownerPid: Int
@@ -64,7 +86,7 @@ final class NetSocket: FileObject {
     var peerPort: UInt16 = 0
     // ICMP: our echo identifier and the replies to it.
     var echoID: UInt16 = 0
-    var echoQueue: [EchoReply] = []
+    var echoQueue = EchoReplyQueue()
 
     init(kind: UInt64, owner: Int, nonBlocking: Bool) {
         self.kind = kind
@@ -231,7 +253,7 @@ final class NetSocket: FileObject {
             udp = nil
         }
         if echoID != 0 { netStack?.echoHandlers[echoID] = nil }
-        echoQueue = []
+        echoQueue = EchoReplyQueue()
         liveSockets -= 1
         let left = (socketsByPid[ownerPid] ?? 1) - 1
         socketsByPid[ownerPid] = left > 0 ? left : nil
