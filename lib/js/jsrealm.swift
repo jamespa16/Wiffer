@@ -259,6 +259,7 @@ public final class JSRealm {
         jsInstallES2015Runtime(self)
         jsInstallPromise(self)
         jsInstallGenerators(self)
+        jsInstallIterator(self)
         jsInstallModules(self)
         jsInstallBigInt(self)
         jsInstallIntl(self)
