@@ -187,6 +187,17 @@ let jsBuiltins3Cases: [(String, String)] = [
     // ------------------------------------------------------ AggregateError
     ("var e = new AggregateError([1, 2], 'm', {cause: 'c'}); e.errors.join() + ',' + e.message + ',' + e.cause + ',' + e.name + ',' + (e instanceof Error)", "1,2,m,c,AggregateError,true"),
     ("new Error('x', {cause: 0}).cause", "0"),
+    // ---------------------------------------------------- Iterator helpers
+    // A next getter returning a fresh function: only the helper keeps it alive.
+    ("function churn() { var a = []; for (var i = 0; i < 20; i++) a.push(function () { return { done: true } }, new Error('other')) } var it = { __proto__: Iterator.prototype, get next() { var i = 0; return function () { var j = i++; return { get done() { churn(); return j >= 3 }, get value() { churn(); return j } } } } }; String(it.includes(2))", "true"),
+    ("function src(n) { return { __proto__: Iterator.prototype, get next() { var i = 0; return function () { var j = i++; return j < n ? { done: false, value: 'x' + j } : { done: true } } } } } src(4).join('-')", "x0-x1-x2-x3"),
+    ("function churn() { var a = []; for (var i = 0; i < 20; i++) a.push(function () { return { done: true } }, new Error('other')) } var it = { __proto__: Iterator.prototype, next() { return { done: false, value: { toString() { throw new Error('kept') } } } }, return() { try { churn(); throw 1 } catch (e) {} churn(); return {} } }; try { it.join() } catch (e) { e.message }", "kept"),
+    ("function src(n) { return { __proto__: Iterator.prototype, get next() { var i = 0; return function () { var j = i++; return j < n ? { done: false, value: { v: 'x' + j } } : { done: true } } } } } var out = []; for (var c of src(5).chunks(2)) out.push(c.map(function (o) { return o.v }).join('+')); out.join(' ')", "x0+x1 x2+x3 x4"),
+    ("var out = []; for (var w of [1, 2, 3, 4, 5, 6, 7].values().windows(3)) out.push(w.join('')); out.join(' ')", "123 234 345 456 567"),
+    ("var a = []; for (var w of [1, 2].values().windows(3)) a.push(w.join('')); var b = []; for (var w of [1, 2].values().windows(3, 'allow-partial')) b.push(w.join('')); a.length + ' ' + b.join('|')", "0 12"),
+    ("var h = [1].values().chunks(2); h.next(); var r = h.next(); String(r.done) + Object.prototype.toString.call(h)", "true[object Iterator Helper]"),
+    ("var n = 0; var u = { next() { return { done: false, value: n++ } }, return() { return {} } }; var h = Iterator.prototype.windows.call(u, 2); h.next(); u.return = function () { h.next() }; try { h.return() } catch (e) { e.name + ' ' + h.next().done }", "TypeError true"),
+    ("var h = [1].values().chunks(1); try { h.next.call([].values()) } catch (e) { e.name }", "TypeError"),
 ]
 
 /// Stand-ins for 9C built-ins these tests use, defined only when missing

@@ -212,6 +212,17 @@ final class JSScopeAnalysis {
         pending.append((node, scope, name, Int64(node) << 3 | which))
     }
 
+    /// A plain, non-generator, non-async function declaration in a
+    /// statement position. These are the Annex B (B.3.3) block-level
+    /// function declaration candidates.
+    func isBlockFunctionCandidate(_ cn: JSNode) -> Bool {
+        cn.kind == .function
+            && cn.flags & JSNodeFlags.declaration != 0
+            && cn.flags & JSNodeFlags.expression == 0
+            && cn.flags & (JSNodeFlags.async | JSNodeFlags.generator) == 0
+            && cn.a >= 0
+    }
+
     // MARK: The walk
 
     /// Analyse a script (or eval body when `evalCode`).
@@ -288,6 +299,19 @@ final class JSScopeAnalysis {
                 walkFunction(n, scope, &stack)
             case .classNode:
                 walkClass(n, scope, &stack)
+            case .ifStmt:
+                // Clause-level functions (if (x) function f() {}) are
+                // block-level declarations (B.3.3).
+                for c in [node.b, node.c] {
+                    guard c >= 0 else { continue }
+                    if isBlockFunctionCandidate(ast[c]) {
+                        walkFunction(c, scope, &stack, forceBlockFunction: true)
+                    } else {
+                        stack.append((c, scope))
+                    }
+                }
+                stack.append((node.a, scope))
+                break
             case .block:
                 let stmts = ast.list(node.a, node.b)
                 var s = scope
@@ -343,7 +367,14 @@ final class JSScopeAnalysis {
                 }
                 for c in ast.list(node.b, node.c).reversed() {
                     let cn = ast[c]
-                    for st in ast.list(cn.b, cn.c).reversed() { stack.append((st, s)) }
+                    for st in ast.list(cn.b, cn.c).reversed() {
+                        let stn = ast[st]
+                        if isBlockFunctionCandidate(stn) {
+                            walkFunction(st, s, &stack, forceBlockFunction: true)
+                        } else {
+                            stack.append((st, s))
+                        }
+                    }
                     stack.append((cn.a, s))
                 }
                 stack.append((node.a, scope))
@@ -358,7 +389,14 @@ final class JSScopeAnalysis {
                         for (name, _) in names { declare(name, .catchParam, in: c, end: 0) }
                     }
                     let h = ast[node.c]
-                    for st in ast.list(h.a, h.b).reversed() { stack.append((st, c)) }
+                    for st in ast.list(h.a, h.b).reversed() {
+                        let stn = ast[st]
+                        if isBlockFunctionCandidate(stn) {
+                            walkFunction(st, c, &stack, forceBlockFunction: true)
+                        } else {
+                            stack.append((st, c))
+                        }
+                    }
                     stack.append((node.b, c))
                 }
                 stack.append((node.a, scope))
@@ -406,14 +444,14 @@ final class JSScopeAnalysis {
         }
     }
 
-    private func walkFunction(_ n: Int32, _ scope: Int32, _ stack: inout [(Int32, Int32)]) {
+    private func walkFunction(_ n: Int32, _ scope: Int32, _ stack: inout [(Int32, Int32)], forceBlockFunction: Bool = false) {
         let node = ast[n]
         let kind = JSFunctionKind(rawValue: node.op) ?? .normal
         let isDecl = node.flags & JSNodeFlags.declaration != 0 && node.flags & JSNodeFlags.expression == 0
         if isDecl && node.a >= 0 {
             let name = ast[node.a].a
             let sc = scopes[Int(scope)]
-            if sc.isFunctionLike {
+            if !forceBlockFunction && sc.isFunctionLike {
                 declare(name, .function, in: scope, end: node.start)
             } else {
                 declare(name, .blockFunction, in: scope, end: node.start)

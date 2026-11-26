@@ -114,7 +114,7 @@ public enum JSIntrinsic: Int {
     // Phase 9E (jspromise.swift, jsgenerator.swift).
     case promisePrototype, promiseConstructor, generatorPrototype, asyncGeneratorPrototype
     case generatorFunctionPrototype, asyncFunctionPrototype, asyncGeneratorFunctionPrototype
-    case asyncIteratorPrototype, asyncFromSyncIteratorPrototype
+    case asyncIteratorPrototype, asyncFromSyncIteratorPrototype, iteratorHelperPrototype
     case symbolRegistry, regExpExecFn, regExpStringIteratorPrototype
     case arrayJoinStack, mathObject
     // Phase 9E

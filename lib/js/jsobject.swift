@@ -76,7 +76,8 @@ public enum JSObjectKind: UInt8 {
          map, set, weakMap, weakSet, weakRef, promise, proxy, generator, asyncGenerator, iterator,
          arrayBuffer, typedArray, dataView, environment, host, internalObject,
          // Phase 9E
-         mapIterator, setIterator, finalizationRegistry
+         mapIterator, setIterator, finalizationRegistry,
+         iteratorHelper
 }
 
 public struct JSObjectFlags: OptionSet {

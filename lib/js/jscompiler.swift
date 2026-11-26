@@ -630,16 +630,25 @@ final class JSCompiler {
             let n = ast[s]
             guard n.kind == .function, n.a >= 0,
                   n.flags & JSNodeFlags.declaration != 0, n.flags & JSNodeFlags.expression == 0 else { continue }
-            setPos(s)
-            let code = try compileFunction(s, name: atom(ast[n.a].a))
-            try emitU32(.closure, addConst(code.codeObject), 1)
-            let name = ast[n.a].a
-            if sc.kind == .script || (sc.kind == .eval && !sc.strict) {
-                try emitU32(.declareFunc, key(name), -1)
-            } else {
-                guard let b = sc.names[name] else { throw internalError("function binding") }
-                try emitPutBinding(b, initialize: true)
-            }
+            try hoistBlockFunctionNode(s, scope: scope)
+        }
+    }
+
+    /// Emit the closure for one block-level function declaration and store
+    /// it in its (lexical) binding. The binding is created by the scope
+    /// entry; the Annex B var binding copy happens in the `.function`
+    /// emission (at the declaration's own statement).
+    func hoistBlockFunctionNode(_ n: Int32, scope: Int32) throws(JSCompileError) {
+        setPos(n)
+        let code = try compileFunction(n, name: atom(ast[ast[n].a].a))
+        try emitU32(.closure, addConst(code.codeObject), 1)
+        let sc = sa.scopes[Int(scope)]
+        let name = ast[ast[n].a].a
+        if sc.kind == .script || (sc.kind == .eval && !sc.strict) {
+            try emitU32(.declareFunc, key(name), -1)
+        } else {
+            guard let b = sc.names[name] else { throw internalError("function binding") }
+            try emitPutBinding(b, initialize: true)
         }
     }
 
@@ -1054,6 +1063,18 @@ final class JSCompiler {
             }
             fs.depth = startDepth
         case .ifStmt:
+            // Hoist clause function declarations (if (x) function f() {}) into
+            // the enclosing scope, as blocks do for their own declarations.
+            for c in [node.b, node.c] {
+                guard c >= 0 else { continue }
+                let cn = ast[c]
+                if cn.kind == .function && cn.a >= 0
+                   && cn.flags & JSNodeFlags.declaration != 0
+                   && cn.flags & JSNodeFlags.expression == 0
+                   && cn.flags & (JSNodeFlags.async | JSNodeFlags.generator) == 0 {
+                    try hoistBlockFunctionNode(c, scope: fs.scope)
+                }
+            }
             let elseL = newLabel(), endL = newLabel()
             try emitCondition(node.a, falseLabel: elseL)
             try emitStatement(node.b)

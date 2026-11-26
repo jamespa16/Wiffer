@@ -5,7 +5,8 @@
 
 /// `features:` tags whose tests are skipped.
 let jsTest262RunSkipFeatures: [String] = [
-    // Not planned for Wiffer (no threads, no Intl, no host-defined oddities).
+    // Planned in JS_ROADMAP: T9 agents/shared memory, T11 Temporal,
+    // T12 host hooks/decorators, T8 realms and T10 proper tail calls.
     "Atomics", "SharedArrayBuffer", "Atomics.waitAsync", "Atomics.pause",
     "Temporal", "IsHTMLDDA", "ShadowRealm", "tail-call-optimization",
     "decorators", "cross-realm", "FinalizationRegistry.prototype.cleanupSome",
@@ -29,6 +30,8 @@ let jsTest262RunSkipSource: [(needle: String, reason: String)] = [
     ("$262.agent", "$262.agent"),
     ("$262.IsHTMLDDA", "IsHTMLDDA"),
     ("$262.AbstractModuleSource", "AbstractModuleSource"),
-    // Exhaustive code point sweeps (property escapes, character class escapes): seconds per test.
-    ("regExpUtils.js", "slow: code point sweep"),
 ]
+
+// Unicode sweeps are not skipped or given blanket budget overrides: measured
+// full-range buildString takes 85ms, property matching about 7ms per sweep
+// under -Osize (2026-11-25); both fit the normal 4s variant budget.
