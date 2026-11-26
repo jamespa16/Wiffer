@@ -633,10 +633,16 @@ final class JSParser {
         if allowFunction && !fn.strict && isWord(JSWord.function_) {
             let p = try peek()
             if p.kind == .star { throw error("generator declarations are not allowed here", tok.start) }
+            // B.3.3: exactly as if wrapped in a block, so the AST gets a
+            // synthetic block (its own scope for the function's binding).
+            let start = tok.start
             pushScope(1)
-            let f = try parseFunctionDeclaration(tok.start, async: false, inBlock: true)
+            let f = try parseFunctionDeclaration(start, async: false, inBlock: true)
             popScope()
-            return f
+            let mark = scratch.count
+            scratch.append(f)
+            let (ls, lc) = finishList(mark)
+            return try node(.block, start, ls, lc)
         }
         return try parseStatement()
     }

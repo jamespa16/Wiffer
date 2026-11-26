@@ -19,5 +19,6 @@ func libTests(_ t: Tests) {
     jsBenchTests(t)
     jsPerf9JTests(t)
     jsFuzz9JTests(t)
+    jsDebugTests(t)
     jsTest262RunTests(t)
 }

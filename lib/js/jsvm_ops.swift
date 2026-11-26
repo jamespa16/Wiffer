@@ -668,6 +668,89 @@ extension JSRealm {
         }
     }
 
+    func canDeclareGlobalVar(_ k: JSPropertyKey) -> Bool {
+        heap.hasOwnProperty(global, k) || heap.isExtensible(global)
+    }
+
+    func canDeclareGlobalFunction(_ k: JSPropertyKey) -> Bool {
+        guard let p = heap.getOwnProperty(global, k) else { return heap.isExtensible(global) }
+        if p.configurable { return true }
+        return !p.isAccessor && p.writable && p.enumerable
+    }
+
+    /// Whether an environment between the running one and the variable
+    /// environment (exclusive) binds k: a lexical conflict for eval's
+    /// `var k`. `skipCatch`: a catch parameter does not count (B.3.4).
+    func evalLexicalConflict(_ k: JSPropertyKey, upTo ve: JSValue?, skipCatch: Bool) -> Bool {
+        var e = env
+        var steps = 0
+        while e.isObject && steps < 100_000 {
+            if let ve, e == ve { return false }
+            if !heap.flags(e).contains(.user0) {
+                let info = heap.slot(e, 1)
+                if info.isObject, let p = heap.getOwnProperty(info, k), p.value.isInt32 {
+                    if !(skipCatch && p.value.asInt32 & JSScopeSlot.catchFlag != 0) { return true }
+                }
+            }
+            e = heap.slot(e, 0)
+            steps += 1
+        }
+        return false
+    }
+
+    /// GlobalDeclarationInstantiation / EvalDeclarationInstantiation: one
+    /// name's checks, run for every name before any binding is created.
+    func checkDeclare(_ k: JSPropertyKey, _ flags: UInt8) throws(JSThrow) {
+        if flags & JSDeclCheck.lexical != 0 {
+            if heap.hasOwnProperty(globalLex, k) { throw alreadyDeclared(k) }
+            if let p = heap.getOwnProperty(global, k), !p.configurable { throw alreadyDeclared(k) }
+            return
+        }
+        if flags & JSDeclCheck.eval != 0 {
+            let ve = varEnv()
+            if evalLexicalConflict(k, upTo: ve, skipCatch: true) { throw alreadyDeclared(k) }
+            if ve != nil { return }
+        }
+        if heap.hasOwnProperty(globalLex, k) { throw alreadyDeclared(k) }
+        let isFunc = flags & JSDeclCheck.function != 0
+        if !(isFunc ? canDeclareGlobalFunction(k) : canDeclareGlobalVar(k)) {
+            throw throwTypeError("Cannot declare global " + (isFunc ? "function" : "variable") + " '" + keyDisplay(k) + "'")
+        }
+    }
+
+    /// Annex B block function var binding, decided at instantiation: not
+    /// when an enclosing environment (eval) or the global lexical record
+    /// already binds the name, or the global object cannot take it.
+    func declareAnnexB(_ k: JSPropertyKey, isEval: Bool) throws(JSThrow) -> Bool {
+        if isEval {
+            let ve = varEnv()
+            if evalLexicalConflict(k, upTo: ve, skipCatch: false) { return false }
+            if ve != nil {
+                try declareVar(k, isEval: true)
+                return true
+            }
+        }
+        if heap.hasOwnProperty(globalLex, k) || !canDeclareGlobalVar(k) { return false }
+        try declareVar(k, isEval: isEval)
+        return true
+    }
+
+    /// SetMutableBinding on the running variable environment (Annex B
+    /// block function copy in sloppy eval code): the caller's function
+    /// environment, or the global object.
+    func putVarName(_ k: JSPropertyKey, _ v: JSValue) throws(JSThrow) {
+        if let e = varEnv() {
+            let info = heap.slot(e, 1)
+            if info.isObject, let p = heap.getOwnProperty(info, k), p.value.isInt32 {
+                heap.setSlot(e, Int(p.value.asInt32 & JSScopeSlot.indexMask), v)
+                return
+            }
+            try setV(e, k, v, strict: false)
+            return
+        }
+        try setV(global, k, v, strict: false)
+    }
+
     func declareLex(_ k: JSPropertyKey, isConst: Bool) throws(JSThrow) {
         if heap.hasOwnProperty(globalLex, k) { throw alreadyDeclared(k) }
         if let p = heap.getOwnProperty(global, k), !p.configurable { throw alreadyDeclared(k) }

@@ -69,6 +69,14 @@ enum JSOp: UInt8 {
     case getName, getNameOrUndef, putName, getNameForCall, deleteName
     case getGlobal, getGlobalOrUndef, putGlobal, getGlobalForCall
     case declareVar, declareFunc, declareLex, initLex
+    /// Annex B (B.3.2.3): store into the running variable environment.
+    case putVarName
+    /// Global / eval declaration instantiation: the checks that must all
+    /// pass before any binding is created (u32 key, u8 JSDeclCheck flags).
+    case checkDeclare
+    /// Annex B (B.3.2.2, B.3.2.3): create the var binding for a block
+    /// function if allowed at run time; pushes whether it was.
+    case declareAnnexB
     // Properties.
     case getField, putField, getElem, putElem, getFieldForCall, getElemForCall
     case deleteField, deleteElem, getSuperField, getSuperElem, putSuperField, putSuperElem
@@ -128,7 +136,7 @@ enum JSOpFormat {
     switch op {
     case .popN, .pushConst, .getLocal, .putLocal, .setLocal, .pushEnv, .saveEnv, .restoreEnv,
          .getName, .getNameOrUndef, .putName, .getNameForCall, .deleteName,
-         .getGlobal, .getGlobalOrUndef, .putGlobal, .getGlobalForCall, .declareVar, .declareFunc, .initLex,
+         .getGlobal, .getGlobalOrUndef, .putGlobal, .getGlobalForCall, .declareVar, .declareFunc, .initLex, .putVarName, .declareAnnexB,
          .getField, .putField, .getFieldForCall, .deleteField, .getSuperField, .putSuperField,
          .defineField, .closure, .templateObject, .objectRest, .newArray, .getModuleBinding:
         return .u32
@@ -136,7 +144,7 @@ enum JSOpFormat {
     case .getLocalChecked, .putLocalChecked, .mapArg: return .u32u32
     case .getEnv, .putEnv, .setEnv: return .env
     case .getEnvChecked, .putEnvChecked: return .envKey
-    case .declareLex, .defineMethod, .newClass, .newPrivateName: return .keyU8
+    case .declareLex, .checkDeclare, .defineMethod, .newClass, .newPrivateName: return .keyU8
     case .defineMethodElem, .asyncReturnCall, .setPrivateMethod: return .u8
     case .throwError: return .u8u32
     case .jump, .jumpIfTrue, .jumpIfFalse, .jumpIfTrueKeep, .jumpIfFalseKeep, .jumpIfNotNullishKeep,
@@ -178,7 +186,16 @@ public enum JSErrorKind: UInt8 {
 enum JSScopeSlot {
     static let constFlag: Int32 = 1 << 24
     static let lexicalFlag: Int32 = 1 << 25
+    /// A catch parameter (B.3.4: eval's `var` may redeclare it).
+    static let catchFlag: Int32 = 1 << 26
     static let indexMask: Int32 = (1 << 24) - 1
+}
+
+/// checkDeclare flags.
+enum JSDeclCheck {
+    static let function: UInt8 = 1
+    static let eval: UInt8 = 2
+    static let lexical: UInt8 = 4
 }
 
 /// What a JSCode is.
@@ -399,6 +416,9 @@ func jsOpName(_ op: JSOp) -> String {
     case .declareFunc: return "declareFunc"
     case .declareLex: return "declareLex"
     case .initLex: return "initLex"
+    case .putVarName: return "putVarName"
+    case .checkDeclare: return "checkDeclare"
+    case .declareAnnexB: return "declareAnnexB"
     case .getField: return "getField"
     case .putField: return "putField"
     case .getElem: return "getElem"
@@ -582,7 +602,7 @@ func jsDisassemble(_ code: JSCode, heap: JSHeap, codes: (JSValue) -> JSCode?, de
             switch op {
             case .pushConst, .closure, .templateObject, .pushEnv: line += " " + const_(v)
             case .getName, .getNameOrUndef, .putName, .getNameForCall, .deleteName, .getGlobal, .getGlobalOrUndef,
-                 .putGlobal, .getGlobalForCall, .declareVar, .declareFunc, .initLex, .getField, .putField,
+                 .putGlobal, .getGlobalForCall, .declareVar, .declareFunc, .initLex, .putVarName, .declareAnnexB, .getField, .putField,
                  .getFieldForCall, .deleteField, .getSuperField, .putSuperField, .defineField:
                 line += " " + key(v)
             default: line += " \(v)"

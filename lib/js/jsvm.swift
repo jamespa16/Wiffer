@@ -487,6 +487,15 @@ extension JSRealm {
                     case .initLex:
                         initLex(keys[jsReadU32(bc, pc + 1)], stack[sp - 1])
                         sp -= 1; pc += 5
+                    case .putVarName:
+                        try putVarName(keys[jsReadU32(bc, pc + 1)], stack[sp - 1])
+                        sp -= 1; pc += 5
+                    case .checkDeclare:
+                        try checkDeclare(keys[jsReadU32(bc, pc + 1)], bc[pc + 5])
+                        pc += 6
+                    case .declareAnnexB:
+                        push(try declareAnnexB(keys[jsReadU32(bc, pc + 1)], isEval: code.kind == .eval) ? .true : .false)
+                        pc += 5
                     case .getField:
                         let k = keys[jsReadU32(bc, pc + 1)]
                         pc += 5

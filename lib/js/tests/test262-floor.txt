@@ -2,7 +2,7 @@
 # Full skip ceilings bound both full runs and samples; they only decrease as features land.
 # The run fails if a directory's pass count drops below its floor. 0 = untracked.
 # Raise them as phases land: see the header of jstest262_run.swift and ROADMAP Phase 9D.
-TOTAL 39757 2506 7839
+TOTAL 40259 2538 7839
 annexB/built-ins/Array 0 0 1
 annexB/built-ins/Date 24 2 0
 annexB/built-ins/Function 6 1 0
@@ -13,10 +13,10 @@ annexB/built-ins/TypedArrayConstructors 0 0 1
 annexB/built-ins/escape 16 1 0
 annexB/built-ins/unescape 19 2 0
 annexB/language/comments 8 1 0
-annexB/language/eval-code 149 11 0
-annexB/language/expressions 5 0 17
-annexB/language/function-code 85 3 0
-annexB/language/global-code 63 5 0
+annexB/language/eval-code 469 30 0
+annexB/language/expressions 9 0 17
+annexB/language/function-code 159 10 0
+annexB/language/global-code 153 10 0
 annexB/language/literals 8 1 0
 annexB/language/statements 13 0 9
 built-ins/AbstractModuleSource 0 0 8
@@ -90,12 +90,12 @@ language/comments 52 4 0
 language/computed-property-names 48 3 0
 language/destructuring 18 2 0
 language/directive-prologue 62 4 0
-language/eval-code 325 20 1
+language/eval-code 336 21 1
 language/export 3 1 0
 language/expressions 10339 646 496
 language/function-code 217 14 0
 language/future-reserved-words 55 4 0
-language/global-code 39 3 0
+language/global-code 42 3 0
 language/identifier-resolution 13 1 0
 language/identifiers 268 17 0
 language/import 4 1 125

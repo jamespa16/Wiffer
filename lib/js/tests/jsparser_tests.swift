@@ -154,7 +154,7 @@ func jsASTShapeTests(_ t: Tests) {
         ("#x in y", "error: private name '#x' outside a class @1:1"),
         ("class C { #x; m(o) { return #x in o } }",
          "(script (class (id \"C\") - (prop field (private \"x\") -) (prop method (name \"m\") (function method - (id \"o\") (body (return (binary in (private \"x\") (id \"o\"))))))))"),
-        ("if (a) function f(){}", "(script (if (id \"a\") (function (id \"f\") (body)) -))"),
+        ("if (a) function f(){}", "(script (if (id \"a\") (block (function (id \"f\") (body))) -))"),  // B.3.3: as if in a block
         ("do x; while (y) z", "(script (do-while (expr (id \"x\")) (id \"y\")) (expr (id \"z\")))"),
         ("let\nx = 1", "(script (var let (decl (id \"x\") (num 1))))"),
         ("var let = 1; let\n[a] = b", "(script (var var (decl (id \"let\") (num 1))) (var let (decl (array-pattern (id \"a\")) (id \"b\"))))"),

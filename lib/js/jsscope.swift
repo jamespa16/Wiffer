@@ -24,7 +24,7 @@
 //   block, with, class); ref(node) for identifier / this / new.target
 //   nodes; superRefs for `super` (home object, this, active function,
 //   new.target); annexB[functionNode] = var binding to copy a sloppy block
-//   function into.
+//   function into (annexOnly: the ones no other declaration makes).
 
 enum JSScopeKind: UInt8 {
     case script, eval, function, block, catchClause, forLoop, switchBlock, classBody, with, fieldInit
@@ -108,6 +108,8 @@ struct JSScopeRec {
     /// Contains a sloppy direct eval itself (may declare vars here).
     var sloppyEval = false
     var usesArguments = false
+    /// A catch clause whose parameter is a single identifier.
+    var simpleCatch = false
     var funcKind: JSFunctionKind = .normal
 
     var isFunctionLike: Bool { kind == .script || kind == .eval || kind == .function || kind == .fieldInit || kind == .module }
@@ -127,6 +129,9 @@ final class JSScopeAnalysis {
     /// super: node << 3 | pseudo index (0 home, 1 this, 2 funcObj, 3 newTarget).
     var superRefs: [Int64: Int32] = [:]
     var annexB: [Int32: Int32] = [:]
+    /// Var bindings that exist only for Annex B block functions (in script
+    /// and eval code these are created at run time, if allowed).
+    var annexOnly: Set<Int32> = []
     /// Function nodes whose bodies are not compiled (generators, async).
     var stubs: Set<Int32> = []
 
@@ -299,19 +304,6 @@ final class JSScopeAnalysis {
                 walkFunction(n, scope, &stack)
             case .classNode:
                 walkClass(n, scope, &stack)
-            case .ifStmt:
-                // Clause-level functions (if (x) function f() {}) are
-                // block-level declarations (B.3.3).
-                for c in [node.b, node.c] {
-                    guard c >= 0 else { continue }
-                    if isBlockFunctionCandidate(ast[c]) {
-                        walkFunction(c, scope, &stack, forceBlockFunction: true)
-                    } else {
-                        stack.append((c, scope))
-                    }
-                }
-                stack.append((node.a, scope))
-                break
             case .block:
                 let stmts = ast.list(node.a, node.b)
                 var s = scope
@@ -383,6 +375,7 @@ final class JSScopeAnalysis {
                 if node.c >= 0 {
                     let c = newScope(.catchClause, parent: scope, node: node.c)
                     nodeScope[node.c] = c
+                    scopes[Int(c)].simpleCatch = node.b >= 0 && ast.kind(node.b) == .identifier
                     if node.b >= 0 {
                         var names: [(Int32, Int32)] = []
                         patternNames(node.b, &names)
@@ -587,16 +580,22 @@ final class JSScopeAnalysis {
             var clash = false
             var s = scopes[Int(block)].parent
             while s >= 0 && s != f {
-                if let b = scopes[Int(s)].names[name], bindings[Int(b)].kind != .var_ { clash = true; break }
+                // B.3.5: `var f` may redeclare a simple catch parameter.
+                if let b = scopes[Int(s)].names[name], bindings[Int(b)].kind != .var_,
+                   !(bindings[Int(b)].kind == .catchParam && scopes[Int(s)].simpleCatch) { clash = true; break }
                 s = scopes[Int(s)].parent
             }
+            // B.3.2.1: never `arguments` in function code.
+            if scopes[Int(f)].kind == .function && name == JSWord.arguments { clash = true }
             if let b = scopes[Int(f)].names[name] {
                 let k = bindings[Int(b)].kind
                 if k != .var_ && k != .function { clash = true }
             }
             if clash { continue }
-            let kind: JSBindingKind = scopes[Int(f)].kind == .eval && !scopes[Int(f)].strict ? .var_ : .var_
-            annexB[fnNode] = declare(name, kind, in: f, end: 0)
+            let existed = scopes[Int(f)].names[name] != nil
+            let vb = declare(name, .var_, in: f, end: 0)
+            annexB[fnNode] = vb
+            if !existed { annexOnly.insert(vb) }
         }
         // The arguments object.
         for i in 0..<scopes.count where scopes[i].kind == .function && !scopes[i].isArrow {

@@ -341,9 +341,11 @@ extension JSCompiler {
             try emitPrivateRecord(t)
             return .privateMember
         default:
-            // Annex B: f() = 1 evaluates f() then throws.
+            // Runtime errors for function call assignment targets (sloppy
+            // f() = 1): evaluate the call, then throw before the right side.
             try emitExpr(t)
             try emit(.pop, -1)
+            try throwError(.referenceError, "Invalid left-hand side in assignment")
             return .invalid
         }
     }
@@ -936,6 +938,12 @@ extension JSCompiler {
             try storeRefKeep(r)
             try emit(.pop, -1)
             freeTemp(tmp)
+        case .call:
+            // for (f() in o): the call runs each iteration, then throws.
+            try emit(.pop, -1)
+            try emitExpr(t)
+            try emit(.pop, -1)
+            try throwError(.referenceError, "Invalid left-hand side in assignment")
         default:
             try emit(.pop, -1)
             try throwError(.referenceError, "Invalid destructuring assignment target")

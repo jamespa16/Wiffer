@@ -98,6 +98,9 @@ final class JSCompiler {
     var fsStack: [JSFuncState] = []
     var atoms: [Int32: JSValue] = [:]
     var scopeInfos: [Int32: JSValue] = [:]
+    /// Script / eval Annex B var binding -> local holding whether it was
+    /// created (emitAnnexBDeclarations).
+    var annexFlags: [Int32: Int] = [:]
     /// A module body awaits at its top level (jsmodule.swift).
     var moduleHasTLA = false
 
@@ -368,6 +371,7 @@ final class JSCompiler {
                 var v = bd.slot
                 if bd.isConst { v |= JSScopeSlot.constFlag }
                 if bd.isLexical { v |= JSScopeSlot.lexicalFlag }
+                if bd.kind == .catchParam { v |= JSScopeSlot.catchFlag }
                 let a = atom(bd.name)
                 _ = heap.defineOwnProperty(info, heap.propertyKey(a) ?? .atom(a.handle),
                                            .data(.int32(v), [.writable]))
@@ -557,10 +561,21 @@ final class JSCompiler {
             try enterScope(top)
             try emitPseudoPrologue(top)
             if !sa.scopes[0].strict {
+                // EvalDeclarationInstantiation: every check, then the bindings.
+                for b in sa.scopes[0].bindings {
+                    let bd = sa.bindings[Int(b)]
+                    guard bd.name >= 0 else { continue }
+                    if bd.kind == .function {
+                        try emitCheckDeclare(bd.name, JSDeclCheck.eval | JSDeclCheck.function)
+                    } else if bd.kind == .var_ && !sa.annexOnly.contains(b) {
+                        try emitCheckDeclare(bd.name, JSDeclCheck.eval)
+                    }
+                }
+                try emitAnnexBDeclarations()
                 for b in sa.scopes[0].bindings {
                     let bd = sa.bindings[Int(b)]
                     if bd.name == JSWord.arguments && (bd.kind == .var_ || bd.kind == .function) { fs.code.declaresArguments = true }
-                    if (bd.kind == .var_) && bd.name >= 0 { try emitU32(.declareVar, key(bd.name), 0) }
+                    if bd.kind == .var_ && bd.name >= 0 && !sa.annexOnly.contains(b) { try emitU32(.declareVar, key(bd.name), 0) }
                 }
             }
         } else {
@@ -581,10 +596,42 @@ final class JSCompiler {
         }
     }
 
-    /// Script-level declarations: lexical first (conflict checks), then
-    /// vars, then functions (bound by hoistFunctions).
+    func emitCheckDeclare(_ name: Int32, _ flags: UInt8) throws(JSCompileError) {
+        try emit(.checkDeclare, 0)
+        put32(key(name))
+        fs.code.bytes.append(flags)
+    }
+
+    /// Annex B var bindings of script or sloppy eval code (B.3.2.2,
+    /// B.3.2.3): created at run time when allowed; a local remembers
+    /// whether, for the copy at each declaration.
+    func emitAnnexBDeclarations() throws(JSCompileError) {
+        for b in sa.scopes[0].bindings where sa.annexOnly.contains(b) {
+            let l = newLocal()
+            annexFlags[b] = l
+            try emitU32(.declareAnnexB, key(sa.bindings[Int(b)].name), 1)
+            try emitU32(.putLocal, l, -1)
+        }
+    }
+
+    /// GlobalDeclarationInstantiation: every check (lexical names, then
+    /// functions, then vars), then the Annex B vars, lexical bindings and
+    /// vars; functions are bound by hoistFunctions.
     func emitGlobalDeclarations() throws(JSCompileError) {
         let sc = sa.scopes[0]
+        for b in sc.bindings {
+            let bd = sa.bindings[Int(b)]
+            if bd.name >= 0 && bd.isLexical { try emitCheckDeclare(bd.name, JSDeclCheck.lexical) }
+        }
+        for b in sc.bindings {
+            let bd = sa.bindings[Int(b)]
+            if bd.name >= 0 && bd.kind == .function { try emitCheckDeclare(bd.name, JSDeclCheck.function) }
+        }
+        for b in sc.bindings {
+            let bd = sa.bindings[Int(b)]
+            if bd.name >= 0 && bd.kind == .var_ && !sa.annexOnly.contains(b) { try emitCheckDeclare(bd.name, 0) }
+        }
+        try emitAnnexBDeclarations()
         for b in sc.bindings {
             let bd = sa.bindings[Int(b)]
             guard bd.name >= 0 else { continue }
@@ -597,7 +644,7 @@ final class JSCompiler {
         for b in sc.bindings {
             let bd = sa.bindings[Int(b)]
             guard bd.name >= 0 else { continue }
-            if bd.kind == .var_ { try emitU32(.declareVar, key(bd.name), 0) }
+            if bd.kind == .var_ && !sa.annexOnly.contains(b) { try emitU32(.declareVar, key(bd.name), 0) }
         }
     }
 
@@ -1041,14 +1088,22 @@ final class JSCompiler {
         case .function:
             // Hoisted; Annex B copies a block function into its var binding.
             if let vb = sa.annexB[n], node.a >= 0, let bb = sa.scopes[Int(fs.scope)].names[ast[node.a].a] {
-                try emitGetBinding(bb, checked: false)
-                if sa.scopes[Int(sa.bindings[Int(vb)].scope)].kind == .script {
-                    try emitU32(.putGlobal, key(ast[node.a].a), -1)
-                } else if sa.bindings[Int(vb)].slot >= 0 || sa.bindings[Int(vb)].inEnv {
-                    try emitPutBinding(vb, initialize: true)
-                } else {
-                    try emitU32(.putName, key(ast[node.a].a), -1)
+                let skip = newLabel()
+                if let fl = annexFlags[vb] {
+                    try emitU32(.getLocal, fl, 1)
+                    try emitJump(.jumpIfFalse, skip, effect: -1)
                 }
+                try emitGetBinding(bb, checked: false)
+                let vs = sa.scopes[Int(sa.bindings[Int(vb)].scope)]
+                if vs.kind == .script {
+                    try emitU32(.putGlobal, key(ast[node.a].a), -1)
+                } else if vs.kind == .eval && !vs.strict {
+                    // The var lives in the caller's variable environment.
+                    try emitU32(.putVarName, key(ast[node.a].a), -1)
+                } else {
+                    try emitPutBinding(vb, initialize: true)
+                }
+                try place(skip)
             }
         case .classNode:
             try emitClass(n, nameHint: nil)
@@ -1063,18 +1118,8 @@ final class JSCompiler {
             }
             fs.depth = startDepth
         case .ifStmt:
-            // Hoist clause function declarations (if (x) function f() {}) into
-            // the enclosing scope, as blocks do for their own declarations.
-            for c in [node.b, node.c] {
-                guard c >= 0 else { continue }
-                let cn = ast[c]
-                if cn.kind == .function && cn.a >= 0
-                   && cn.flags & JSNodeFlags.declaration != 0
-                   && cn.flags & JSNodeFlags.expression == 0
-                   && cn.flags & (JSNodeFlags.async | JSNodeFlags.generator) == 0 {
-                    try hoistBlockFunctionNode(c, scope: fs.scope)
-                }
-            }
+            // Clause functions (if (x) function f() {}) arrive wrapped in a
+            // synthetic block by the parser (B.3.3).
             let elseL = newLabel(), endL = newLabel()
             try emitCondition(node.a, falseLabel: elseL)
             try emitStatement(node.b)
@@ -1426,8 +1471,14 @@ final class JSCompiler {
         let node = ast[n]
         try emitExpr(node.a)
         let scope = sa.nodeScope[n]
-        if let s = scope { try enterScope(s) }
         let cases = Array(ast.list(node.b, node.c))
+        if let s = scope {
+            // BlockDeclarationInstantiation, before any case selector runs.
+            try enterScope(s)
+            var all: [Int32] = []
+            for c in cases { all.append(contentsOf: ast.list(ast[c].b, ast[c].c)) }
+            try hoistFunctions(all[...], scope: s)
+        }
         var caseLabels: [Int] = []
         var defaultIndex = -1
         for (i, c) in cases.enumerated() {
@@ -1447,11 +1498,6 @@ final class JSCompiler {
         ctl.breakLabel = brk
         ctl.breakDepth = fs.depth - 1
         fs.controls.append(ctl)
-        if let s = scope {
-            var all: [Int32] = []
-            for c in cases { all.append(contentsOf: ast.list(ast[c].b, ast[c].c)) }
-            try hoistFunctions(all[...], scope: s)
-        }
         for (i, c) in cases.enumerated() {
             try place(caseLabels[i], dead: true)
             try emitStatements(ast.list(ast[c].b, ast[c].c))
